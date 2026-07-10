@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.logging_config import get_logger
 from app.models.fila import Fila, StatusFila
 from app.modules.catalog.domain.models import CoreCatalog, CoreOffering
-from app.modules.customer.domain.models import CoreCustomer
+from app.modules.customer.models import CoreCustomer
 from app.modules.waitlist.domain.models import CoreWaitlist, CoreWaitlistStatus
 
 logger = get_logger("waitlist_sync")

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.logging_config import get_logger
 from app.models.cliente import Cliente
-from app.modules.customer.domain.models import CoreCustomer
+from app.modules.customer.models import CoreCustomer
 
 logger = get_logger("customer_sync")
 

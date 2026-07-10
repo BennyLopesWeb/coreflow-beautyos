@@ -1,17 +1,17 @@
 """
-Consultas read-only de Customer genérico CoreFlow.
+Serviço read-only de Customer genérico CoreFlow (Support CRUD).
 """
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.modules.customer.domain.models import CoreCustomer
+from app.modules.customer.models import CoreCustomer
 
 
-class CustomerQueryService:
+class CustomerService:
     """
-    Serviço de leitura para core_customers.
+    Consultas de leitura para ``core_customers``.
 
     Args:
         db: Sessão SQLAlchemy.

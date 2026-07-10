@@ -1,8 +1,8 @@
 """Testes CF-5 — core_customers, outbox, booking.created."""
 from datetime import datetime, timedelta
 
-from app.modules.customer.application.legacy_sync_service import CustomerLegacySyncService
-from app.modules.customer.domain.models import CoreCustomer
+from app.modules.customer.legacy_sync import CustomerLegacySyncService
+from app.modules.customer.models import CoreCustomer
 from app.shared.events.outbox import CoreEventOutbox, OutboxService, OutboxStatus
 from app.shared.events.domain_event import DomainEvent
 
