@@ -1,0 +1,32 @@
+---
+description: Autor padrão de commits Git neste repositório
+alwaysApply: true
+---
+
+# Autor de commits Git
+
+Sempre usar este autor em **todos os commits** deste projeto:
+
+| Campo | Valor |
+|-------|-------|
+| **Nome** | `Benigno Lopes` |
+| **Email** | `benignofernandeslopes@gmail.com` |
+
+## Configuração local (já aplicada)
+
+```bash
+git config --local user.name "Benigno Lopes"
+git config --local user.email "benignofernandeslopes@gmail.com"
+```
+
+## Ao criar commits
+
+- Usar `git commit` normalmente — o autor será preenchido automaticamente.
+- Se precisar forçar explicitamente:
+
+```bash
+git commit --author="Benigno Lopes <benignofernandeslopes@gmail.com>" -m "mensagem"
+```
+
+- **Não** alterar `git config` global.
+- **Não** usar outro nome de autor sem pedido explícito do usuário.
