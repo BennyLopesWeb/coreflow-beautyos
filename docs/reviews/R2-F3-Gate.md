@@ -16,6 +16,7 @@
 | **Fase anterior** | R2-F2b ✅ Accepted (tech) |
 | **Baseline CI** | 305 passed, 6 skipped |
 | **Sprint doc** | [R2-F3.md](../sprints/R2-F3.md) |
+| **Branch ativa** | `r2-f3-resource-engine` |
 
 ---
 
