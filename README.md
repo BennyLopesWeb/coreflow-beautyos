@@ -6,6 +6,8 @@ Framework SaaS modular (API First · AI First · Event-Driven · Hexagonal · Pl
 
 **BeautyOS** é o primeiro produto — plugin `beauty` sobre o CoreFlow Engine.
 
+**Release atual:** `1.20.1-r2-f2b` · R2-F2b Accepted (tech) · próximo: [R2-F3 Resource Engine](docs/sprints/R2-F3.md)
+
 ---
 
 ## Documentação
@@ -13,6 +15,9 @@ Framework SaaS modular (API First · AI First · Event-Driven · Hexagonal · Pl
 | Recurso | Link |
 |---------|------|
 | **Docs SAB** | [`docs/README.md`](docs/README.md) |
+| **Sprint R2-F2b** | [`docs/sprints/R2-F2b.md`](docs/sprints/R2-F2b.md) |
+| **Sprint R2-F3 (próxima)** | [`docs/sprints/R2-F3.md`](docs/sprints/R2-F3.md) |
+| **PR R2-F2b** | [`docs/pull-requests/R2-F2b-PR.md`](docs/pull-requests/R2-F2b-PR.md) |
 | **Análise estratégica** | [`COREFLOW_ANALYSIS.md`](COREFLOW_ANALYSIS.md) |
 | **Sprint 0** | [`docs/04-SPRINTS/Sprint00.md`](docs/04-SPRINTS/Sprint00.md) |
 | **ADR Metamodelo** | [`docs/06-ADR/ADR001-metamodel.md`](docs/06-ADR/ADR001-metamodel.md) |
@@ -58,4 +63,4 @@ make run
 
 ---
 
-*CoreFlow Platform · Benigno Fernandes Lopes · Sprint 0*
+*CoreFlow Platform · Benigno Fernandes Lopes · Release 2 — F2b*
