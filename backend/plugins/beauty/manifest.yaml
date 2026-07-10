@@ -1,0 +1,137 @@
+# CoreFlow Plugin Manifest — BeautyOS
+# Build Once. Configure Everywhere.
+
+plugin_id: beauty
+name: BeautyOS
+version: "1.1.0"
+description: Plugin para profissionais da beleza (trancistas, barbearias, salões, manicures)
+product_name: BeautyOS
+api_version: "1"
+
+terminology:
+  worker: Profissional
+  resource: Cadeira
+  location: Unidade
+  catalog: Categoria
+  service: Serviço
+  offering: Modelo
+  booking: Reserva
+  customer: Cliente
+  waitlist: Fila de espera
+  queue: Fila operacional
+  payment: Pagamento
+
+features:
+  - deposit_payment
+  - waitlist
+  - operational_queue
+  - service_gallery
+  - approval_workflow
+  - ai_vision
+  - ai_crm
+
+ai_capabilities:
+  - crm_followup
+  - payment_reminder
+  - waitlist_notify
+  - booking_confirm
+
+hooks:
+  booking.created: app.modules.booking.application.handlers
+  payment.deposit.confirmed: app.modules.booking.application.handlers
+  waitlist.approved: app.plugins.beauty.hooks.on_waitlist_approved
+
+dependencies:
+  - coreflow-platform>=0.7.0
+
+sdk:
+  min_platform_version: "0.7.0"
+  manifest_schema: "1"
+  routes:
+    catalogs: /v1/catalogs
+    bookings: /v1/bookings
+    waitlist: /v1/waitlist
+    payments: /v1/payments
+    orders: /v1/orders
+    invoices: /v1/invoices
+    workflows: /v1/workflows
+    ai: /v1/ai
+    assets: /v1/assets
+    inventory: /v1/inventory
+    marketplace: /v1/marketplace
+  deep_links:
+    scheme: trancapro
+    universal_host: app.coreflow.app
+    routes:
+      booking_detail: /bookings/{booking_id}
+      booking_admin: /admin/reservas/{booking_id}
+      catalog_detail: /agendar/{catalog_id}
+      bookings_list: /agendamentos
+      waitlist: /fila
+
+mobile:
+  ios_app_id: TEAMID12345.com.trancapro.app
+  ios_bundle_id: com.trancapro.app
+  android_package: com.trancapro.app
+  android_fingerprints:
+    - "14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:AE:E8:94:FF:4D:66:8F:0D:F6:1A:FE:E4:FF"
+  cdn_host: app.coreflow.app
+  path_prefix: "/*"
+  app_name: BeautyOS
+  expo_slug: beautyos
+  eas_project_id: coreflow-beautyos-dev
+  submit:
+    ios:
+      asc_app_id: "1000000001"
+      apple_id: "beauty@coreflow.app"
+      apple_team_id: "TEAMID12345"
+    android:
+      track: internal
+      service_account_key: "./credentials/beauty-play-service-account.json"
+  update:
+    runtime_version: "1.0.0"
+    preview_channel: beauty-preview
+    production_channel: beauty-production
+    rollout_percentage: 100
+    rollout_stages: [10, 25, 50, 100]
+    canary_percentage: 10
+    canary_auto_promote: true
+    canary_auto_rollback: true
+    canary_health:
+      min_success_rate: 0.99
+      min_samples: 10
+      rollback_threshold: 0.95
+      rollback_min_samples: 5
+    canary_segments:
+      - trancista
+      - barbearia
+      - salao
+
+segments:
+  - trancista
+  - barbearia
+  - salao
+  - manicure
+  - lash
+  - estetica
+  - maquiagem
+  - tatuagem
+
+metamodel_mappings:
+  catalog: Tranca
+  offering: ServiceImage
+  booking: Agendamento
+  customer: Cliente
+  payment: Payment
+  order: Agendamento
+  invoice: Financeiro
+  schedule_block: Schedule
+  waitlist: Fila
+  operational_queue: QueueEntry
+  asset: InventoryItem
+  inventory: InventoryItem
+
+ui:
+  catalog_layout: gallery
+  max_photos_per_catalog: 6
+  default_deposit_pct: 0.30

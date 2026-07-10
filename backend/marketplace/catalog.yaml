@@ -1,0 +1,32 @@
+# CoreFlow Marketplace Catalog (cloud CF-11)
+# Plugins locais + preview cloud
+
+- plugin_id: beauty
+  name: BeautyOS
+  version: "1.1.0"
+  description: Plugin para profissionais da beleza — trancistas, salões, barbearias
+  product_name: BeautyOS
+  source: local
+  installable: true
+  pricing: free
+  min_platform_version: "0.7.0"
+
+- plugin_id: sports
+  name: SportsOS
+  version: "0.1.0"
+  description: Gestão de quadras, árbitros e reservas esportivas
+  product_name: SportsOS
+  source: local
+  installable: true
+  pricing: freemium
+  min_platform_version: "1.0.0"
+
+- plugin_id: clinic
+  name: ClinicOS
+  version: "0.1.0"
+  description: Clínicas e consultórios — agenda médica genérica
+  product_name: ClinicOS
+  source: local
+  installable: true
+  pricing: paid
+  min_platform_version: "1.0.0"

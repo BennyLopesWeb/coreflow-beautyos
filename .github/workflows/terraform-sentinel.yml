@@ -1,0 +1,45 @@
+name: CoreFlow Terraform Sentinel
+
+on:
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - "backend/app/modules/mobile/application/terraform_*.py"
+      - "backend/plugins/**/manifest.yaml"
+      - "scripts/terraform-sentinel.sh"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment (all | dev | staging | prod)"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - dev
+          - staging
+          - prod
+
+jobs:
+  sentinel-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt pydantic-settings pyyaml -q
+
+      - name: Evaluate Sentinel enterprise policies
+        run: |
+          ENV="${{ github.event.inputs.environment || 'all' }}"
+          chmod +x scripts/terraform-sentinel.sh
+          ./scripts/terraform-sentinel.sh "$ENV" || {
+            echo "::error::Terraform Sentinel policy violations detected"
+            exit 1
+          }

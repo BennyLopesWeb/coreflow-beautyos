@@ -1,0 +1,51 @@
+# FastAPI e servidor
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Banco de dados (SQLite dev; MySQL via Docker — ver docker-compose.mysql.yml)
+sqlalchemy==2.0.23
+alembic==1.13.1
+pymysql==1.1.0
+
+# Validação e serialização
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Utilitários
+python-dateutil==2.8.2
+pyyaml==6.0.1
+
+# Testes
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
+
+# Logging
+structlog==23.2.0
+
+# Integrações (opcionais - para produção)
+# google-api-python-client==2.108.0
+# google-auth-httplib2==0.1.1
+# google-auth-oauthlib==1.1.0
+# requests==2.31.0
+
+# OpenTelemetry (opcional — OTEL_ENABLED=true)
+opentelemetry-api==1.22.0
+opentelemetry-sdk==1.22.0
+opentelemetry-instrumentation-fastapi==0.43b0
+
+# Event bus assíncrono (CF-13/14/16 — opcional)
+pika==1.3.2
+kafka-python==2.0.2
+fastavro==1.9.4
+
+# CDN S3 sync (CF-17 — opcional)
+boto3==1.34.69
+# Prometheus (CF-22 — opcional)
+prometheus-client==0.19.0
+
+# Autenticação JWT
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+

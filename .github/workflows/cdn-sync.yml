@@ -1,0 +1,66 @@
+name: CoreFlow CDN Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Simular upload S3 sem gravar"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+  push:
+    tags:
+      - "cdn/v*"
+
+jobs:
+  export-and-sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pydantic-settings pyyaml
+
+      - name: Export multi-tenant well-known
+        run: |
+          python -c "
+          from app.core.plugin.registry import plugin_registry
+          from app.modules.mobile.application.plugin_cdn_service import PluginCdnService
+          plugin_registry.load_all()
+          PluginCdnService().export_all_plugins()
+          "
+
+      - name: Sync CDN to S3
+        env:
+          CDN_S3_ENABLED: ${{ github.event.inputs.dry_run == 'false' && 'true' || 'false' }}
+          CDN_S3_DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
+          CDN_S3_BUCKET: ${{ secrets.CDN_S3_BUCKET }}
+          CDN_S3_REGION: ${{ secrets.CDN_S3_REGION }}
+          CDN_CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CDN_CLOUDFRONT_DISTRIBUTION_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          python -c "
+          from app.modules.mobile.application.cdn_s3_sync_service import CdnS3SyncService
+          dry = '${{ github.event.inputs.dry_run || 'true' }}'.lower() == 'true'
+          print(CdnS3SyncService().sync_all(dry_run=dry))
+          "
+
+      - name: Upload CDN artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: well-known-cdn
+          path: backend/cdn/
+          retention-days: 30

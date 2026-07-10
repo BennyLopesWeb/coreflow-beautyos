@@ -1,0 +1,34 @@
+# CDN overlay — nginx serving exported .well-known
+# use: docker compose -f docker-compose.yml -f docker-compose.cdn.yml up
+
+services:
+  cdn:
+    image: nginx:1.25-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./backend/cdn:/usr/share/nginx/html:ro
+      - ./infra/nginx/cdn-default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+
+  api:
+    environment:
+      MOBILE_CDN_ENABLED: "true"
+      MOBILE_CDN_BASE_URL: "http://localhost:8080"
+      MOBILE_EAS_UPDATE_CANARY_ROLLBACK_WORKER_ENABLED: "true"
+
+  canary-rollback-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      - api
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    environment:
+      DATABASE_URL: sqlite:///./data/coreflow.db
+      MOBILE_EAS_UPDATE_CANARY_PERSIST_DB: "true"
+      MOBILE_EAS_UPDATE_CANARY_ROLLBACK_WORKER_ENABLED: "true"
+    command: python -m app.workers.canary_rollback_worker --mode loop --interval 120

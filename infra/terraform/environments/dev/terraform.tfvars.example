@@ -1,0 +1,13 @@
+{
+  "aws_region": "us-east-1",
+  "bucket_name": "coreflow-cdn-dev",
+  "cdn_prefix": "cdn",
+  "cloudfront_price_class": "PriceClass_100",
+  "cloudfront_aliases": ["app.coreflow.app"],
+  "well_known_cache_seconds": 86400,
+  "tenant_behaviors": [],
+  "tags": {
+    "Project": "CoreFlow",
+    "Environment": "dev"
+  }
+}

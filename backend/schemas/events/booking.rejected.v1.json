@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "coreflow://events/booking.rejected.v1",
+  "title": "booking.rejected",
+  "type": "object",
+  "required": ["booking_id"],
+  "properties": {
+    "booking_id": { "type": "integer" },
+    "reason": { "type": ["string", "null"] }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,109 @@
+# CoreFlow Plugin Manifest — SportsOS
+# Build Once. Configure Everywhere.
+
+plugin_id: sports
+name: SportsOS
+version: "0.1.0"
+description: Plugin para gestão esportiva — quadras, árbitros e reservas
+product_name: SportsOS
+api_version: "1"
+
+terminology:
+  worker: Árbitro
+  resource: Quadra
+  location: Complexo
+  catalog: Modalidade
+  service: Esporte
+  offering: Pacote
+  booking: Reserva
+  customer: Atleta
+  waitlist: Lista de espera
+  queue: Fila do dia
+  payment: Pagamento
+
+features:
+  - deposit_payment
+  - waitlist
+  - operational_queue
+  - approval_workflow
+
+ai_capabilities:
+  - booking_confirm
+  - payment_reminder
+
+dependencies:
+  - coreflow-platform>=1.0.0
+
+sdk:
+  min_platform_version: "1.0.0"
+  manifest_schema: "1"
+  routes:
+    catalogs: /v1/catalogs
+    bookings: /v1/bookings
+    scheduling: /v1/scheduling/availability
+    marketplace: /v1/marketplace
+  deep_links:
+    scheme: trancapro
+    universal_host: app.coreflow.app
+    routes:
+      booking_detail: /reservas/{booking_id}
+      booking_admin: /admin/reservas/{booking_id}
+      catalog_detail: /agendar/{catalog_id}
+      bookings_list: /agendamentos
+
+mobile:
+  ios_app_id: TEAMID12345.com.coreflow.sports
+  ios_bundle_id: com.coreflow.sports
+  android_package: com.coreflow.sports
+  android_fingerprints:
+    - "14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:AE:E8:94:FF:4D:66:8F:0D:F6:1A:FE:E4:FF"
+  cdn_host: sports.coreflow.app
+  path_prefix: "/*"
+  app_name: SportsOS
+  expo_slug: sportsos
+  eas_project_id: coreflow-sports-dev
+  submit:
+    ios:
+      asc_app_id: "1000000002"
+      apple_id: "sports@coreflow.app"
+      apple_team_id: "TEAMID12345"
+    android:
+      track: internal
+      service_account_key: "./credentials/sports-play-service-account.json"
+  update:
+    runtime_version: "1.0.0"
+    preview_channel: sports-preview
+    production_channel: sports-production
+    rollout_percentage: 50
+    rollout_stages: [10, 25, 50, 100]
+    canary_percentage: 15
+    canary_auto_promote: true
+    canary_auto_rollback: true
+    canary_health:
+      min_success_rate: 0.98
+      min_samples: 10
+      rollback_threshold: 0.90
+      rollback_min_samples: 5
+    canary_segments:
+      - futebol
+      - volei
+
+segments:
+  - futebol
+  - volei
+  - tenis
+  - basquete
+  - futsal
+
+metamodel_mappings:
+  catalog: Modalidade
+  offering: Pacote
+  booking: Reserva
+  customer: Atleta
+  worker: Arbitro
+  resource: Quadra
+  location: Complexo
+
+ui:
+  catalog_layout: list
+  default_deposit_pct: 0.50

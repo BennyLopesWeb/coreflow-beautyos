@@ -1,0 +1,333 @@
+"""
+Command CreateBooking — CQRS CoreFlow.
+
+R2-F0.5: ACL path (flag OFF).
+R2-F1: BookingDomainService core path (flag ON) + dual-write ADR-024/025.
+R2-F1b: Idempotency-Key + correlation_id ADR-031.
+"""
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+
+from sqlalchemy.orm import Session
+
+from app.core.architecture_metrics import ArchitectureMetricsStore
+from app.core.exceptions import (
+    ConflictError,
+    IdempotencyKeyReusedError,
+    ValidationError,
+)
+from app.core.feature_flags import feature_flags
+from app.modules.booking.application.booking_query_service import BookingQueryService
+from app.modules.booking.application.booking_response import booking_to_response_dict
+from app.modules.booking.domain.models import CoreBooking
+from app.modules.booking.domain.services.booking_domain_service import BookingDomainService
+from app.modules.booking.infrastructure.adapters.catalog_query_adapter import (
+    SqlAlchemyCatalogQueryAdapter,
+)
+from app.modules.booking.infrastructure.repositories.core_booking_repository import (
+    SqlAlchemyCoreBookingRepository,
+)
+from app.shared.acl.booking_port import LegacyBookingAdapter
+from app.shared.acl.scheduling_port import LegacySchedulingPortAdapter
+from app.shared.events.outbox import OutboxBatch
+from app.shared.idempotency.idempotency_store import (
+    BOOKING_CREATE_ENDPOINT,
+    IdempotencyStore,
+)
+
+
+@dataclass(frozen=True)
+class CreateBookingCommand:
+    """
+    Comando para criar reserva via metamodelo genérico.
+
+    Attributes:
+        customer_id: ID do cliente (Customer).
+        catalog_id: ID core_catalogs.
+        offering_id: ID core_offerings.
+        scheduled_at: Horário solicitado.
+        notes: Observações opcionais.
+        company_id: Tenant BeautyOS/CoreFlow.
+        idempotency_key: Header Idempotency-Key (F1b).
+        request_hash: SHA-256 do body normalizado.
+        correlation_id: Rastreio ponta-a-ponta HTTP → outbox.
+    """
+
+    customer_id: int
+    catalog_id: int
+    offering_id: int
+    scheduled_at: datetime
+    company_id: int
+    notes: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    request_hash: Optional[str] = None
+    correlation_id: Optional[str] = None
+
+
+@dataclass
+class CreateBookingResult:
+    """
+    Resultado do handler incluindo status HTTP idempotente.
+
+    Attributes:
+        booking: CoreBooking persistido ou reloaded do cache.
+        http_status: 201 primeira execução; 200 retry idempotente.
+    """
+
+    booking: CoreBooking
+    http_status: int = 201
+
+
+class CreateBookingHandler:
+    """
+    Handler CQRS — create booking com branch flag OFF (ACL) / ON (domain).
+
+    Args:
+        db: Sessão SQLAlchemy.
+    """
+
+    def __init__(self, db: Session):
+        self.db = db
+        self.booking_port = LegacyBookingAdapter(db)
+
+    def execute(self, command: CreateBookingCommand) -> CreateBookingResult:
+        """
+        Executa criação de booking com dedupe idempotente (ADR-025).
+
+        Args:
+            command: Dados validados do comando.
+
+        Returns:
+            CreateBookingResult com booking e status HTTP.
+
+        Raises:
+            ValidationError: Mapeamento ou regra inválida.
+            ConflictError: Slot indisponível (409).
+            IdempotencyKeyReusedError: Mesma key, body diferente.
+            BusinessRuleError: Regra de negócio.
+        """
+        cached = self._check_idempotency(command)
+        if cached:
+            booking = BookingQueryService(self.db).get_booking(
+                cached.booking_id, command.company_id
+            )
+            return CreateBookingResult(booking=booking, http_status=200)
+
+        self._outbox_batch = None
+        if feature_flags.is_enabled("booking.core.enabled"):
+            booking = self._execute_core_path(command)
+        else:
+            booking = self._execute_legacy_path(command)
+
+        self._save_idempotency(command, booking)
+        outbox = getattr(self, "_outbox_batch", None)
+        self.db.commit()
+        if outbox:
+            outbox.publish_after_commit()
+        return CreateBookingResult(booking=booking, http_status=201)
+
+    def _check_idempotency(self, command: CreateBookingCommand) -> Optional[object]:
+        """
+        Lookup idempotency antes de processar (ADR-025 step 2).
+
+        Args:
+            command: Comando com key/hash opcionais.
+
+        Returns:
+            IdempotencyCachedResult ou None.
+
+        Raises:
+            IdempotencyKeyReusedError: Hash divergente para mesma key.
+        """
+        if not command.idempotency_key or not command.request_hash:
+            return None
+        store = IdempotencyStore(self.db)
+        try:
+            return store.check(
+                command.idempotency_key,
+                command.company_id,
+                BOOKING_CREATE_ENDPOINT,
+                command.request_hash,
+            )
+        except ValueError as exc:
+            if str(exc) == "idempotency_key_reused":
+                raise IdempotencyKeyReusedError() from exc
+            raise
+
+    def _save_idempotency(self, command: CreateBookingCommand, booking: CoreBooking) -> None:
+        """
+        Persiste snapshot idempotente na TX antes do commit (ADR-025 step 4d).
+
+        Args:
+            command: Comando com key/hash.
+            booking: Booking criado.
+
+        Returns:
+            None
+        """
+        if not command.idempotency_key or not command.request_hash:
+            return
+        loaded = BookingQueryService(self.db).get_booking(booking.id, command.company_id)
+        response_body = booking_to_response_dict(loaded)
+        try:
+            IdempotencyStore(self.db).save(
+                idempotency_key=command.idempotency_key,
+                company_id=command.company_id,
+                endpoint=BOOKING_CREATE_ENDPOINT,
+                request_hash=command.request_hash,
+                response_status=201,
+                response_body=response_body,
+                booking_id=loaded.id,
+            )
+        except ValueError as exc:
+            if str(exc) == "idempotency_key_reused":
+                raise IdempotencyKeyReusedError() from exc
+            raise
+
+    def _execute_legacy_path(self, command: CreateBookingCommand) -> CoreBooking:
+        """
+        Path ACL legado (R2-F0.5) — comportamento idêntico pré-F1.
+
+        Args:
+            command: Comando.
+
+        Returns:
+            CoreBooking sincronizado.
+        """
+        ArchitectureMetricsStore.get().record_booking_create_legacy_path()
+        try:
+            tranca_id, service_image_id = self.booking_port.resolve_legacy_ids(
+                command.catalog_id, command.offering_id
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc))
+
+        ag = self.booking_port.create_booking_via_legacy(
+            customer_id=command.customer_id,
+            tranca_id=tranca_id,
+            service_image_id=service_image_id,
+            scheduled_at=command.scheduled_at,
+            company_id=command.company_id,
+            notes=command.notes,
+        )
+
+        core = self.booking_port.sync_booking_from_agendamento(ag.id)
+        if not core:
+            raise ValidationError("Falha ao sincronizar booking no metamodelo")
+
+        from app.modules.booking.domain.events import booking_created
+
+        outbox = OutboxBatch(self.db)
+        outbox.record(
+            booking_created(
+                company_id=command.company_id,
+                booking_id=core.id,
+                customer_id=command.customer_id,
+                catalog_id=command.catalog_id,
+                offering_id=command.offering_id,
+                legacy_agendamento_id=core.legacy_agendamento_id,
+                correlation_id=command.correlation_id,
+            )
+        )
+        self._outbox_batch = outbox
+        if command.correlation_id:
+            ArchitectureMetricsStore.get().record_event_correlation_id()
+        return core
+
+    def _execute_core_path(self, command: CreateBookingCommand) -> CoreBooking:
+        """
+        Path domain core (R2-F1) — dual-write TX ADR-025.
+
+        Args:
+            command: Comando.
+
+        Returns:
+            CoreBooking SoT.
+        """
+        ArchitectureMetricsStore.get().record_booking_create_core_path()
+        domain_service = BookingDomainService(
+            catalog_query=SqlAlchemyCatalogQueryAdapter(self.db),
+            scheduling=LegacySchedulingPortAdapter(self.db),
+        )
+        repository = SqlAlchemyCoreBookingRepository(self.db)
+
+        try:
+            booking = domain_service.create(
+                customer_id=command.customer_id,
+                catalog_id=command.catalog_id,
+                offering_id=command.offering_id,
+                scheduled_at=command.scheduled_at,
+                company_id=command.company_id,
+                notes=command.notes,
+            )
+            booking = repository.save(booking)
+
+            tranca_id, service_image_id = self.booking_port.resolve_legacy_ids(
+                command.catalog_id, command.offering_id
+            )
+            legacy_id = self.booking_port.project_create_booking(
+                company_id=command.company_id,
+                customer_id=command.customer_id,
+                tranca_id=tranca_id,
+                service_image_id=service_image_id,
+                scheduled_at=command.scheduled_at,
+                pricing_total=booking.pricing.price_total,
+                deposit_pct=booking.pricing.deposit_pct,
+                deposit_amount=booking.pricing.deposit_amount,
+                remaining_amount=booking.pricing.remaining_amount,
+                notes=command.notes,
+            )
+            booking.mark_legacy_synced(legacy_id)
+            booking = repository.save(booking)
+
+            from app.modules.booking.domain.events import (
+                booking_created,
+                reservation_created_alias,
+            )
+
+            outbox = OutboxBatch(self.db)
+            outbox.record(
+                booking_created(
+                    company_id=command.company_id,
+                    booking_id=booking.id,
+                    customer_id=command.customer_id,
+                    catalog_id=command.catalog_id,
+                    offering_id=command.offering_id,
+                    legacy_agendamento_id=legacy_id,
+                    correlation_id=command.correlation_id,
+                )
+            )
+            outbox.record(
+                reservation_created_alias(
+                    company_id=command.company_id,
+                    booking_id=booking.id,
+                    customer_id=command.customer_id,
+                    catalog_id=command.catalog_id,
+                    offering_id=command.offering_id,
+                    legacy_agendamento_id=legacy_id,
+                    deposit_amount=str(booking.pricing.deposit_amount),
+                    correlation_id=command.correlation_id,
+                )
+            )
+            self._outbox_batch = outbox
+            if command.correlation_id:
+                ArchitectureMetricsStore.get().record_event_correlation_id()
+
+            self.db.flush()
+        except Exception:
+            ArchitectureMetricsStore.get().record_booking_projection_failure()
+            self.db.rollback()
+            raise
+
+        core = (
+            self.db.query(CoreBooking)
+            .filter(
+                CoreBooking.id == booking.id,
+                CoreBooking.company_id == command.company_id,
+            )
+            .first()
+        )
+        if not core:
+            raise ValidationError("Falha ao carregar booking após create core")
+        return core

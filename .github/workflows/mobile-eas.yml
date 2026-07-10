@@ -1,0 +1,204 @@
+name: CoreFlow Mobile EAS
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile"
+        required: true
+        default: preview
+        type: choice
+        options:
+          - development
+          - preview
+          - production
+      platform:
+        description: "Target platform"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - android
+          - ios
+      plugin_id:
+        description: "White-label plugin (beauty, sports, clinic)"
+        required: true
+        default: beauty
+        type: choice
+        options:
+          - beauty
+          - sports
+          - clinic
+  push:
+    tags:
+      - "mobile/v*"
+
+jobs:
+  eas-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Setup EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Generate EAS white-label config
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt pydantic-settings pyyaml -q
+          python -c "
+          from app.core.plugin.registry import plugin_registry
+          from app.modules.mobile.application.eas_whitelabel_service import EasWhitelabelService
+          plugin_registry.load_all()
+          EasWhitelabelService().generate_plugins_file()
+          "
+
+      - name: EAS Build
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          PROFILE="${{ github.event.inputs.profile || 'preview' }}"
+          PLATFORM="${{ github.event.inputs.platform || 'all' }}"
+          PLUGIN="${{ github.event.inputs.plugin_id || 'beauty' }}"
+          PROFILE_KEY="${PLUGIN}-${PROFILE}"
+          eas build --profile "$PROFILE_KEY" --platform "$PLATFORM" --non-interactive --no-wait
+
+  eas-submit:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.profile == 'production'
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Generate EAS submit config
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt pydantic-settings pyyaml -q
+          python -c "
+          from app.core.plugin.registry import plugin_registry
+          from app.modules.mobile.application.eas_submit_service import EasSubmitService
+          plugin_registry.load_all()
+          EasSubmitService().generate_submit_file()
+          "
+
+      - name: EAS Submit
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          PLUGIN="${{ github.event.inputs.plugin_id || 'beauty' }}"
+          PLATFORM="${{ github.event.inputs.platform || 'all' }}"
+          SUBMIT_KEY="${PLUGIN}-production"
+          eas submit --profile "$SUBMIT_KEY" --platform "$PLATFORM" --non-interactive --latest
+
+  eas-update:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Generate EAS update config
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt pydantic-settings pyyaml -q
+          python -c "
+          from app.core.plugin.registry import plugin_registry
+          from app.modules.mobile.application.eas_update_service import EasUpdateService
+          plugin_registry.load_all()
+          EasUpdateService().generate_update_file()
+          "
+
+      - name: EAS Update OTA
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          PLUGIN="${{ github.event.inputs.plugin_id || 'beauty' }}"
+          ENV="${{ github.event.inputs.profile || 'preview' }}"
+          UPDATE_KEY="${PLUGIN}-${ENV}"
+          BRANCH=$(python -c "import json; print(json.load(open('eas.update.json'))['update']['${UPDATE_KEY}']['branch'])")
+          CHANNEL=$(python -c "import json; print(json.load(open('eas.update.json'))['update']['${UPDATE_KEY}']['channel'])")
+          eas update --branch "$BRANCH" --channel "$CHANNEL" --message "CI OTA $PLUGIN" --non-interactive
+
+  export-well-known:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pydantic-settings pyyaml
+
+      - name: Export multi-tenant well-known
+        run: |
+          python -c "
+          from app.core.plugin.registry import plugin_registry
+          from app.modules.mobile.application.plugin_cdn_service import PluginCdnService
+          plugin_registry.load_all()
+          results = PluginCdnService().export_all_plugins()
+          print(f'Exported {len(results)} plugin CDN bundles')
+          "
+
+      - name: Upload CDN artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: well-known-cdn
+          path: backend/cdn/
+          retention-days: 30

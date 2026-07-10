@@ -1,0 +1,31 @@
+# MySQL overlay — use: docker compose -f docker-compose.yml -f docker-compose.mysql.yml up
+
+services:
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: coreflow_root
+      MYSQL_DATABASE: coreflow
+      MYSQL_USER: coreflow
+      MYSQL_PASSWORD: coreflow
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ucoreflow", "-pcoreflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  api:
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+pymysql://coreflow:coreflow@mysql:3306/coreflow?charset=utf8mb4
+    command: ["sh", "scripts/docker-entrypoint.sh"]
+
+volumes:
+  mysql_data:

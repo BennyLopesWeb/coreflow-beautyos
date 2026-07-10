@@ -1,0 +1,16 @@
+# Sentinel enterprise policy — CoreFlow CDN (CF-24)
+# Referência para Terraform Cloud Enterprise policy sets.
+# CI usa TerraformSentinelService (Python embarcado) com regras equivalentes.
+
+# Mandatory tags on production
+required_tags = ["Environment", "Component", "Version", "CostCenter", "Owner"]
+
+# Production CloudFront must use global edge network
+prod_price_class = "PriceClass_All"
+
+# Remote state must be encrypted with DynamoDB locking (staging/prod)
+require_state_encrypt = true
+require_state_lock = true
+
+# Production cache TTL minimum (seconds)
+prod_min_default_ttl = 300

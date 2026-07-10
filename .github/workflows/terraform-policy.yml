@@ -1,0 +1,86 @@
+name: CoreFlow Terraform Policy
+
+on:
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - "backend/app/modules/mobile/application/terraform_*.py"
+      - "backend/plugins/**/manifest.yaml"
+      - "scripts/terraform-policy.sh"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment (all | dev | staging | prod)"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - dev
+          - staging
+          - prod
+
+jobs:
+  policy-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt pydantic-settings pyyaml -q
+
+      - name: Evaluate Terraform policies (embedded)
+        run: |
+          ENV="${{ github.event.inputs.environment || 'all' }}"
+          chmod +x scripts/terraform-policy.sh
+          ./scripts/terraform-policy.sh "$ENV" || {
+            echo "::error::Terraform policy violations detected"
+            exit 1
+          }
+
+  opa-check:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: policy-check
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OPA
+        run: |
+          curl -L -o opa https://openpolicyagent.org/downloads/v0.62.1/opa_linux_amd64_static
+          chmod +x opa
+          sudo mv opa /usr/local/bin/
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt pydantic-settings pyyaml -q
+
+      - name: Evaluate with OPA CLI
+        env:
+          TERRAFORM_OPA_LIVE: "true"
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          if [[ "$ENV" == "all" ]]; then ENV="prod"; fi
+          cd backend
+          python -c "
+          import os
+          os.environ['TERRAFORM_OPA_LIVE'] = 'true'
+          from app.core.plugin.registry import plugin_registry
+          from app.modules.mobile.application.terraform_policy_service import TerraformPolicyService
+          plugin_registry.load_all()
+          result = TerraformPolicyService().evaluate('$ENV')
+          print(result)
+          import sys
+          sys.exit(0 if result.get('passed') else 1)
+          "

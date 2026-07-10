@@ -1,0 +1,35 @@
+# Schema Registry overlay — Confluent SR + Kafka stack
+# use: docker compose -f docker-compose.yml -f docker-compose.kafka.yml -f docker-compose.schema-registry.yml up
+
+services:
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  api:
+    depends_on:
+      schema-registry:
+        condition: service_healthy
+    environment:
+      KAFKA_SCHEMA_REGISTRY_MODE: confluent
+      KAFKA_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KAFKA_SCHEMA_REGISTRY_ENABLED: "true"
+
+  outbox-worker:
+    environment:
+      KAFKA_SCHEMA_REGISTRY_MODE: confluent
+      KAFKA_SCHEMA_REGISTRY_URL: http://schema-registry:8081

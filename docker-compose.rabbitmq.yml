@@ -1,0 +1,45 @@
+# RabbitMQ overlay — use: docker compose -f docker-compose.yml -f docker-compose.rabbitmq.yml up
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  api:
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      OUTBOX_DISPATCH_MODE: rabbitmq
+      RABBITMQ_ENABLED: "true"
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+
+  outbox-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      api:
+        condition: service_started
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    environment:
+      DATABASE_URL: sqlite:///./data/coreflow.db
+      RABBITMQ_ENABLED: "true"
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      OUTBOX_DISPATCH_MODE: rabbitmq
+    command: python -m app.workers.outbox_worker --mode rabbitmq --interval 2

@@ -1,0 +1,110 @@
+# CoreFlow Plugin Manifest — ClinicOS
+# Build Once. Configure Everywhere.
+
+plugin_id: clinic
+name: ClinicOS
+version: "0.1.0"
+description: Plugin para clínicas e consultórios — agenda médica genérica
+product_name: ClinicOS
+api_version: "1"
+
+terminology:
+  worker: Médico
+  resource: Consultório
+  location: Clínica
+  catalog: Especialidade
+  service: Consulta
+  offering: Procedimento
+  booking: Consulta
+  customer: Paciente
+  waitlist: Lista de espera
+  payment: Pagamento
+
+features:
+  - deposit_payment
+  - waitlist
+  - approval_workflow
+  - ai_crm
+
+ai_capabilities:
+  - crm_followup
+  - booking_confirm
+  - payment_reminder
+
+dependencies:
+  - coreflow-platform>=1.0.0
+
+sdk:
+  min_platform_version: "1.0.0"
+  manifest_schema: "1"
+  routes:
+    catalogs: /v1/catalogs
+    bookings: /v1/bookings
+    customers: /v1/customers
+    payments: /v1/payments
+    marketplace: /v1/marketplace
+  deep_links:
+    scheme: trancapro
+    universal_host: app.coreflow.app
+    routes:
+      booking_detail: /consultas/{booking_id}
+      booking_admin: /admin/reservas/{booking_id}
+      catalog_detail: /agendar/{catalog_id}
+      bookings_list: /agendamentos
+
+mobile:
+  ios_app_id: TEAMID12345.com.trancapro.clinic
+  ios_bundle_id: com.coreflow.clinic
+  android_package: com.coreflow.clinic
+  android_fingerprints:
+    - "14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:AE:E8:94:FF:4D:66:8F:0D:F6:1A:FE:E4:FF"
+  cdn_host: clinic.coreflow.app
+  path_prefix: "/*"
+  app_name: ClinicOS
+  expo_slug: clinicos
+  eas_project_id: coreflow-clinic-dev
+  submit:
+    ios:
+      asc_app_id: "1000000003"
+      apple_id: "clinic@coreflow.app"
+      apple_team_id: "TEAMID12345"
+    android:
+      track: internal
+      service_account_key: "./credentials/clinic-play-service-account.json"
+  update:
+    runtime_version: "1.0.0"
+    preview_channel: clinic-preview
+    production_channel: clinic-production
+    rollout_percentage: 25
+    rollout_stages: [10, 25, 50, 100]
+    canary_percentage: 10
+    canary_auto_promote: true
+    canary_auto_rollback: true
+    canary_health:
+      min_success_rate: 0.99
+      min_samples: 5
+      rollback_threshold: 0.95
+      rollback_min_samples: 3
+    canary_segments:
+      - clinica_geral
+      - odontologia
+
+segments:
+  - clinica_geral
+  - odontologia
+  - dermatologia
+  - psicologia
+  - fisioterapia
+
+metamodel_mappings:
+  catalog: Especialidade
+  offering: Procedimento
+  booking: Consulta
+  customer: Paciente
+  worker: Medico
+  resource: Consultorio
+  location: Clinica
+
+ui:
+  catalog_layout: list
+  default_deposit_pct: 0.00

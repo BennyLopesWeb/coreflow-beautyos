@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "BookingApprovedV2",
+  "namespace": "coreflow.events",
+  "fields": [
+    {"name": "event_id", "type": "string"},
+    {"name": "event_type", "type": "string"},
+    {"name": "company_id", "type": "int"},
+    {"name": "booking_id", "type": "int"},
+    {"name": "legacy_agendamento_id", "type": ["null", "int"], "default": null},
+    {"name": "occurred_at", "type": "string"},
+    {"name": "approved_by", "type": ["null", "string"], "default": null}
+  ]
+}

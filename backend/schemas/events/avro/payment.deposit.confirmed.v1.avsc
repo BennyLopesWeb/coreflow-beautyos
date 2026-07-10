@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "PaymentDepositConfirmed",
+  "namespace": "coreflow.events",
+  "fields": [
+    {"name": "event_id", "type": "string"},
+    {"name": "event_type", "type": "string"},
+    {"name": "company_id", "type": "int"},
+    {"name": "agendamento_id", "type": "int"},
+    {"name": "legacy_agendamento_id", "type": ["null", "int"], "default": null},
+    {"name": "payment_id", "type": ["null", "int"], "default": null},
+    {"name": "occurred_at", "type": "string"}
+  ]
+}

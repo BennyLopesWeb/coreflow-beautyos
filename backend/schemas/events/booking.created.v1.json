@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "coreflow://events/booking.created.v1",
+  "title": "booking.created",
+  "type": "object",
+  "required": ["booking_id"],
+  "properties": {
+    "booking_id": { "type": "integer" },
+    "legacy_agendamento_id": { "type": ["integer", "null"] },
+    "customer_id": { "type": ["integer", "null"] }
+  },
+  "additionalProperties": true
+}

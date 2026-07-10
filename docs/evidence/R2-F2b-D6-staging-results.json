@@ -1,0 +1,116 @@
+{
+  "sprint": "R2-F2b",
+  "version": "1.20.1-r2-f2b",
+  "environment": "staging-simulated",
+  "app_env": "staging",
+  "executed_at": "2026-07-09T23:28:27.663544+00:00",
+  "scenarios": [
+    {
+      "id": "PRE-1",
+      "passed": true,
+      "detail": "health 200 version=1.20.1-r2-f2b"
+    },
+    {
+      "id": "PRE-2",
+      "passed": true,
+      "detail": "booking.core.enabled=true via health.featureFlags"
+    },
+    {
+      "id": "S1",
+      "passed": true,
+      "detail": "cancel pending 200",
+      "extra": {
+        "booking_id": 1
+      }
+    },
+    {
+      "id": "S2",
+      "passed": true,
+      "detail": "cancel approved \u226524h 200",
+      "extra": {
+        "booking_id": 1
+      }
+    },
+    {
+      "id": "S3",
+      "passed": true,
+      "detail": "policy violation 409"
+    },
+    {
+      "id": "S4",
+      "passed": true,
+      "detail": "reject terminal 409"
+    },
+    {
+      "id": "S5",
+      "passed": true,
+      "detail": "double cancel 404 (idempot\u00eancia documentada)"
+    },
+    {
+      "id": "S6",
+      "passed": true,
+      "detail": "outbox booking.cancelled + alias",
+      "extra": {
+        "correlation_id": "660ddb39-3388-4885-86b0-3b027022affc"
+      }
+    },
+    {
+      "id": "O3",
+      "passed": true,
+      "detail": "correlation_id nos eventos"
+    },
+    {
+      "id": "S7",
+      "passed": true,
+      "detail": "legacy projection ok",
+      "extra": {
+        "legacy_id": 1
+      }
+    },
+    {
+      "id": "S8",
+      "passed": true,
+      "detail": "If-Match stale 409"
+    },
+    {
+      "id": "S9",
+      "passed": true,
+      "detail": "legacy cancel pending 200"
+    },
+    {
+      "id": "S10",
+      "passed": true,
+      "detail": "legacy cancel approved permissivo 200"
+    },
+    {
+      "id": "O1",
+      "passed": true,
+      "detail": "no unexpected errors in test run"
+    },
+    {
+      "id": "O4",
+      "passed": true,
+      "detail": "outbox orphans=0"
+    },
+    {
+      "id": "R1",
+      "passed": true,
+      "detail": "flag OFF effective"
+    },
+    {
+      "id": "R2",
+      "passed": true,
+      "detail": "legacy cancel p\u00f3s-rollback OK"
+    },
+    {
+      "id": "R3",
+      "passed": true,
+      "detail": "rollback instant\u00e2neo em harness staging-simulated"
+    }
+  ],
+  "summary": {
+    "total": 18,
+    "passed": 18,
+    "failed": 0
+  }
+}

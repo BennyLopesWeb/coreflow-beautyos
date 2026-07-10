@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "coreflow://events/payment.deposit.confirmed.v1",
+  "title": "payment.deposit.confirmed",
+  "type": "object",
+  "required": ["agendamento_id"],
+  "properties": {
+    "agendamento_id": { "type": "integer" },
+    "legacy_agendamento_id": { "type": ["integer", "null"] },
+    "payment_id": { "type": ["integer", "null"] }
+  },
+  "additionalProperties": true
+}

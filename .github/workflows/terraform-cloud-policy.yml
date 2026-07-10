@@ -1,0 +1,32 @@
+name: CoreFlow Terraform Cloud Policy Set
+
+on:
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - "backend/app/modules/mobile/application/terraform_*.py"
+      - "scripts/terraform-cloud-policy.sh"
+  workflow_dispatch:
+
+jobs:
+  policy-set:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt pydantic-settings pyyaml -q
+
+      - name: Export and validate TFC policy set
+        run: |
+          chmod +x scripts/terraform-cloud-policy.sh
+          ./scripts/terraform-cloud-policy.sh || {
+            echo "::error::Terraform Cloud policy set validation failed"
+            exit 1
+          }

@@ -1,0 +1,26 @@
+# Workflow BeautyOS — ciclo de aprovação de reserva (CF-8)
+- workflow_id: beauty_deposit_to_approval
+  name: Sinal confirmado → aguarda aprovação admin
+  plugin_id: beauty
+  trigger: payment.deposit.confirmed
+  enabled: true
+  steps:
+    - action: notify_admin
+      when: always
+      params:
+        message: "Nova reserva com sinal pago aguarda aprovação"
+    - action: log
+      when: always
+      params:
+        message: "Workflow deposit→approval concluído"
+
+- workflow_id: beauty_booking_approved
+  name: Reserva aprovada → confirma agenda
+  plugin_id: beauty
+  trigger: booking.approved
+  enabled: true
+  steps:
+    - action: log
+      when: always
+      params:
+        message: "Booking aprovado — agenda operacional atualizada"

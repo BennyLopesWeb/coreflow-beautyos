@@ -1,0 +1,85 @@
+name: CoreFlow Terraform CDN
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Terraform environment"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      action:
+        description: "Terraform action"
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - "backend/app/modules/mobile/application/terraform_export_service.py"
+      - "backend/app/modules/mobile/application/terraform_pipeline_service.py"
+      - "scripts/terraform-pipeline.sh"
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform/environments/dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Export Terraform config
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt pydantic-settings pyyaml -q
+          python -c "
+          from app.core.plugin.registry import plugin_registry
+          from app.modules.mobile.application.terraform_pipeline_service import TerraformPipelineService
+          plugin_registry.load_all()
+          env = '${{ github.event.inputs.environment || 'dev' }}'
+          svc = TerraformPipelineService()
+          svc.export_environment(env)
+          svc.export_pipeline_manifest()
+          "
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
+      - name: Terraform Init
+        working-directory: infra/terraform/environments/${{ github.event.inputs.environment || 'dev' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform Plan
+        if: github.event.inputs.action != 'apply' && github.event_name != 'push'
+        working-directory: infra/terraform/environments/${{ github.event.inputs.environment || 'dev' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: terraform plan -var-file=terraform.tfvars.json
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        working-directory: infra/terraform/environments/${{ github.event.inputs.environment || 'dev' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: terraform apply -var-file=terraform.tfvars.json -auto-approve
