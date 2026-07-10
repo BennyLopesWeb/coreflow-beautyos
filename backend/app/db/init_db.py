@@ -25,7 +25,7 @@ from app.modules.workflow.domain.config_models import CoreWorkflowConfig  # noqa
 from app.modules.order.domain.models import CoreOrder  # noqa: F401
 from app.modules.invoice.domain.models import CoreInvoice  # noqa: F401
 from app.modules.asset.domain.models import CoreAsset  # noqa: F401
-from app.modules.inventory.domain.models import CoreInventory  # noqa: F401
+from app.modules.inventory.models import CoreInventory  # noqa: F401
 from app.modules.push.domain.models import CoreDeviceToken  # noqa: F401
 from app.modules.mobile.domain.models import CoreCanaryPromotion  # noqa: F401
 from app.shared.idempotency.models import IdempotencyKey  # noqa: F401

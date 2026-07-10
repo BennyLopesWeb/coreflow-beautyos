@@ -1,17 +1,17 @@
 """
-Consultas read-only de Inventory genérico CoreFlow.
+Serviço read-only de Inventory genérico CoreFlow (Support CRUD).
 """
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.modules.inventory.domain.models import CoreInventory
+from app.modules.inventory.models import CoreInventory
 
 
-class InventoryQueryService:
+class InventoryService:
     """
-    Serviço de leitura para core_inventory.
+    Consultas de leitura para ``core_inventory``.
 
     Args:
         db: Sessão SQLAlchemy.
@@ -46,7 +46,7 @@ class InventoryQueryService:
         rows = query.order_by(CoreInventory.asset_id.asc()).all()
         if low_stock_only:
             return [
-                r for r in rows if r.quantity_on_hand <= r.reorder_level
+                row for row in rows if row.quantity_on_hand <= row.reorder_level
             ]
         return rows
 
