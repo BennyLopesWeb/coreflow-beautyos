@@ -16,6 +16,16 @@
 
 ---
 
+## 2026-07-16 — R2-F3b Catalog/Customer repos + tiering emend
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **In progress / Implemented** | R2-F3b Catalog + Customer repositories | ADR-030 ports, ACL LegacyCatalog/Customer, TD-R2-F2-002, `1.21.1-r2-f3b` |
+| **Emended** | ModuleTieringPolicy v1.1 | `catalog` + `customer` → CORE-SUPPORT (hexagonal lite); flatten Wave 2 catalog cancelado |
+| **Published** | R2-F3b sprint doc | [R2-F3b.md](../sprints/R2-F3b.md) |
+
+---
+
 ## 2026-07-16 — R2-F3 Resource Engine implemented (tech)
 
 | Evento | Artefato | Notas |

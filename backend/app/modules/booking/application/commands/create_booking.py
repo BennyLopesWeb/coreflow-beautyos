@@ -28,6 +28,9 @@ from app.modules.booking.infrastructure.adapters.catalog_query_adapter import (
 from app.modules.booking.infrastructure.repositories.core_booking_repository import (
     SqlAlchemyCoreBookingRepository,
 )
+from app.modules.customer.infrastructure.adapters.customer_query_adapter import (
+    SqlAlchemyCustomerQueryAdapter,
+)
 from app.shared.acl.booking_port import LegacyBookingAdapter
 from app.shared.acl.scheduling_port import LegacySchedulingPortAdapter
 from app.shared.events.outbox import OutboxBatch
@@ -262,6 +265,7 @@ class CreateBookingHandler:
         domain_service = BookingDomainService(
             catalog_query=SqlAlchemyCatalogQueryAdapter(self.db),
             scheduling=scheduling_port,
+            customer_query=SqlAlchemyCustomerQueryAdapter(self.db),
         )
         repository = SqlAlchemyCoreBookingRepository(self.db)
 

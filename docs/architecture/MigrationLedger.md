@@ -1,8 +1,10 @@
 # Migration Ledger — Support CRUD Simplification
 
 **Versão processo:** v3  
-**Última atualização:** 2026-07-10  
+**Última atualização:** 2026-07-16  
 **Fonte única de verdade** da migração arquitetural Support → Flat.
+
+**Nota R2-F3b:** `catalog` e `customer` saíram do pipeline flatten — ver emenda ModuleTieringPolicy v1.1 (CORE-SUPPORT).
 
 Classificação oficial: [ModuleTieringPolicy.md](./ModuleTieringPolicy.md)
 
@@ -13,11 +15,11 @@ Classificação oficial: [ModuleTieringPolicy.md](./ModuleTieringPolicy.md)
 | Module | Tier | Wave | Priority | Status | Commit | Architecture |
 |--------|------|------|----------|--------|--------|--------------|
 | `inventory` | CRUD | 1 | P1 | **DONE** | `7b3328a` | Flat |
-| `customer` | CRUD | 1 | P2 | **DONE** | `0cad7dc` | Flat |
+| `customer` | CORE-SUPPORT | — | — | **KEEP** (F3b) | — | Hexagonal lite — flatten Wave 1 DONE revertido de tier |
 | `asset` | CRUD | 1 | P3 | TODO | — | CRUD Flat (target) |
 | `invoice` | CRUD | 1 | P4 | TODO | — | CRUD Flat (target) |
 | `order` | CRUD | 1 | P5 | TODO | — | CRUD Flat (target) |
-| `catalog` | CRUD | 2 | P6 | TODO | — | CRUD Flat (target) — **sensitive** |
+| `catalog` | CORE-SUPPORT | — | — | **KEEP** (F3b) | — | Hexagonal lite — flatten Wave 2 **CANCELLED** |
 | `waitlist` | CRUD | 2 | P7 | TODO | — | CRUD Flat (target) |
 | `payments` (read) | CRUD | 2 | P8 | TODO | — | CRUD Flat (target) — **sensitive** |
 | `platform` | OPS | 3 | P9 | TODO | — | OPS thin |

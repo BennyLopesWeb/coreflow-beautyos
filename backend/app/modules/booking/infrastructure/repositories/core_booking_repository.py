@@ -65,6 +65,31 @@ class SqlAlchemyCoreBookingRepository:
             key = ReservationStatus(status)
         return _ORM_TO_LIFECYCLE.get(key, BookingLifecycleStatus.PENDING)
 
+    def _resolve_duration_minutes(self, row: CoreBooking) -> int:
+        """
+        Resolve duração do offering para reconstruir TimeSlot no load (TD-R2-F2-002).
+
+        Args:
+            row: Linha core_bookings com offering_id.
+
+        Returns:
+            Duração em minutos (≥30 fallback apenas se offering sem duração).
+        """
+        from app.modules.catalog.domain.models import CoreOffering
+
+        offering = (
+            self._db.query(CoreOffering)
+            .filter(
+                CoreOffering.id == row.offering_id,
+                CoreOffering.company_id == row.company_id,
+                CoreOffering.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if offering and offering.duration_minutes:
+            return max(int(offering.duration_minutes), 1)
+        return 30
+
     def _to_domain(self, row: CoreBooking) -> Booking:
         """
         Mapeia ORM → aggregate.
@@ -76,7 +101,8 @@ class SqlAlchemyCoreBookingRepository:
             Booking domain entity.
         """
         sync = SyncStatus(row.sync_status) if row.sync_status else SyncStatus.SYNCED
-        ends_at = row.scheduled_at + timedelta(minutes=30)
+        duration = self._resolve_duration_minutes(row)
+        ends_at = row.scheduled_at + timedelta(minutes=duration)
         return Booking(
             id=row.id,
             company_id=row.company_id,

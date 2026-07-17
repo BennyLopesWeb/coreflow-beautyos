@@ -1,17 +1,22 @@
 """
-Queries de catálogo — camada CQRS (leitura).
+Queries de catálogo — facade sobre CatalogRepository (R2-F3b).
 """
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.modules.catalog.domain.models import CoreCatalog, CoreOffering
 from app.core.exceptions import NotFoundError
+from app.modules.catalog.domain.models import CoreCatalog, CoreOffering
+from app.modules.catalog.infrastructure.repositories.catalog_repository import (
+    SqlAlchemyCatalogRepository,
+)
 
 
 class CatalogQueryService:
     """
     Consultas read-only sobre catálogo genérico CoreFlow.
+
+    Delega ao ``CatalogRepository`` (ADR-030). API pública estável para routers.
 
     Args:
         db: Sessão SQLAlchemy.
@@ -19,6 +24,7 @@ class CatalogQueryService:
 
     def __init__(self, db: Session):
         self.db = db
+        self._repo = SqlAlchemyCatalogRepository(db)
 
     def list_catalogs(
         self, company_id: int, active_only: bool = True
@@ -33,13 +39,7 @@ class CatalogQueryService:
         Returns:
             Lista de CoreCatalog.
         """
-        q = self.db.query(CoreCatalog).filter(
-            CoreCatalog.company_id == company_id,
-            CoreCatalog.deleted_at.is_(None),
-        )
-        if active_only:
-            q = q.filter(CoreCatalog.active == True)
-        return q.order_by(CoreCatalog.name).all()
+        return self._repo.list_by_company(company_id, active_only=active_only)
 
     def get_catalog(self, catalog_id: int, company_id: Optional[int] = None) -> CoreCatalog:
         """
@@ -55,13 +55,17 @@ class CatalogQueryService:
         Raises:
             NotFoundError: Se não existir.
         """
-        q = self.db.query(CoreCatalog).filter(
-            CoreCatalog.id == catalog_id,
-            CoreCatalog.deleted_at.is_(None),
-        )
         if company_id is not None:
-            q = q.filter(CoreCatalog.company_id == company_id)
-        row = q.first()
+            row = self._repo.get_by_id(catalog_id, company_id)
+        else:
+            row = (
+                self.db.query(CoreCatalog)
+                .filter(
+                    CoreCatalog.id == catalog_id,
+                    CoreCatalog.deleted_at.is_(None),
+                )
+                .first()
+            )
         if not row:
             raise NotFoundError("Catalog", str(catalog_id))
         return row
@@ -84,14 +88,16 @@ class CatalogQueryService:
             Lista de CoreOffering.
         """
         self.get_catalog(catalog_id, company_id)
+        if company_id is not None:
+            return self._repo.list_offerings(
+                catalog_id, company_id, active_only=active_only
+            )
         q = self.db.query(CoreOffering).filter(
             CoreOffering.catalog_id == catalog_id,
             CoreOffering.deleted_at.is_(None),
         )
-        if company_id is not None:
-            q = q.filter(CoreOffering.company_id == company_id)
         if active_only:
-            q = q.filter(CoreOffering.active == True)
+            q = q.filter(CoreOffering.active.is_(True))
         return q.order_by(CoreOffering.id).all()
 
     def get_offering(
@@ -110,13 +116,17 @@ class CatalogQueryService:
         Raises:
             NotFoundError: Se não existir.
         """
-        q = self.db.query(CoreOffering).filter(
-            CoreOffering.id == offering_id,
-            CoreOffering.deleted_at.is_(None),
-        )
         if company_id is not None:
-            q = q.filter(CoreOffering.company_id == company_id)
-        row = q.first()
+            row = self._repo.get_offering(offering_id, company_id)
+        else:
+            row = (
+                self.db.query(CoreOffering)
+                .filter(
+                    CoreOffering.id == offering_id,
+                    CoreOffering.deleted_at.is_(None),
+                )
+                .first()
+            )
         if not row:
             raise NotFoundError("Offering", str(offering_id))
         return row

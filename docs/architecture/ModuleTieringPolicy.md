@@ -1,9 +1,11 @@
 # Module Tiering Policy — Classificação Oficial
 
-**Versão:** 1.0  
-**Data:** 2026-07-10  
+**Versão:** 1.1  
+**Data:** 2026-07-16  
 **Autoridade:** Architecture Census (Phase 0) + Migration Matrix (Phase 1)  
 **Regra:** Durante a migração, **nenhum módulo pode ser reclassificado** sem ADR ou emenda ao Decision Log.
+
+**Emenda 2026-07-16 (R2-F3b):** `catalog` e `customer` reclassificados de CRUD → **CORE-SUPPORT** (hexagonal lite) para cumprir ADR-030 / FF-HEX-006. Flatten Wave 2 de catalog **cancelado**. Freeze flat de customer excepcionado para ports/repos/ACL.
 
 ---
 
@@ -32,17 +34,17 @@
 | `identity` | **CORE-SUPPORT** | Ports auth/repo; sem aggregate |
 | `workflow` | **CORE-SUPPORT** | Event-driven engine |
 | `push` | **CORE-SUPPORT** | Event consumer + Expo |
+| `catalog` | **CORE-SUPPORT** | Hexagonal lite (R2-F3b) — Repository + QueryPort + ACL; sem aggregate |
+| `customer` | **CORE-SUPPORT** | Hexagonal lite (R2-F3b) — Repository + QueryPort + ACL; service flat permanece facade |
 
 ### CRUD — Flat Architecture — **MIGRATE**
 
 | Módulo | Tipo | Wave | Status |
 |--------|------|------|--------|
 | `inventory` | **CRUD** | 1 | ✅ DONE |
-| `customer` | **CRUD** | 1 | ✅ DONE |
 | `asset` | **CRUD** | 1 | TODO (P3) |
 | `invoice` | **CRUD** | 1 | TODO (P4) |
 | `order` | **CRUD** | 1 | TODO (P5) |
-| `catalog` | **CRUD** | 2 | TODO (P6) — **sensitive** |
 | `waitlist` | **CRUD** | 2 | TODO (P7) |
 | `payments` (read) | **CRUD** | 2 | TODO (P8) — **sensitive** |
 

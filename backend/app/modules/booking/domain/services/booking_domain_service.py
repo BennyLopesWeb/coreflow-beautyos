@@ -95,6 +95,30 @@ class SchedulingPort(Protocol):
         ...
 
 
+class CustomerQueryPort(Protocol):
+    """
+    Port read-only para validar cliente no create (ADR-025 / R2-F3b).
+
+    ``customer_id`` é o ID legado ``clientes.id`` (FK de core_bookings).
+    """
+
+    def get_customer(self, customer_id: int, company_id: int):
+        """
+        Carrega snapshot do cliente.
+
+        Args:
+            customer_id: ID ``clientes``.
+            company_id: Tenant.
+
+        Returns:
+            Objeto com atributo ``active`` (bool).
+
+        Raises:
+            ValueError: Cliente inválido.
+        """
+        ...
+
+
 class BookingDomainService:
     """
     Serviço de domínio para operações que envolvem ports externos no create.
@@ -106,14 +130,17 @@ class BookingDomainService:
         self,
         catalog_query: Optional[CatalogQueryPort] = None,
         scheduling: Optional[SchedulingPort] = None,
+        customer_query: Optional[CustomerQueryPort] = None,
     ):
         """
         Args:
             catalog_query: Port de leitura catalog/offering (obrigatório para create).
             scheduling: Port de disponibilidade (obrigatório para create).
+            customer_query: Port de validação de cliente (R2-F3b; opcional legado).
         """
         self._catalog = catalog_query
         self._scheduling = scheduling
+        self._customer = customer_query
 
     def create(
         self,
@@ -142,8 +169,8 @@ class BookingDomainService:
             Booking aggregate em estado pending.
 
         Raises:
-            ValidationError: Offering inválido ou no passado.
-            BusinessRuleError: Catalog inativo.
+            ValidationError: Offering inválido, cliente inválido ou no passado.
+            BusinessRuleError: Catalog/cliente inativo.
             ConflictError: Slot/resource indisponível (409).
         """
         if scheduled_at.replace(tzinfo=None) < datetime.now():
@@ -151,6 +178,14 @@ class BookingDomainService:
 
         if not self._catalog or not self._scheduling:
             raise ValidationError("Catalog e scheduling ports são obrigatórios para create")
+
+        if self._customer is not None:
+            try:
+                customer = self._customer.get_customer(customer_id, company_id)
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
+            if not getattr(customer, "active", True):
+                raise BusinessRuleError("Cliente inválido ou inativo")
 
         try:
             snapshot = self._catalog.get_offering_snapshot(

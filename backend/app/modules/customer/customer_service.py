@@ -1,11 +1,14 @@
 """
-Serviço read-only de Customer genérico CoreFlow (Support CRUD).
+Serviço read-only de Customer — facade sobre CustomerRepository (R2-F3b).
 """
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
+from app.modules.customer.infrastructure.repositories.customer_repository import (
+    SqlAlchemyCustomerRepository,
+)
 from app.modules.customer.models import CoreCustomer
 
 
@@ -13,12 +16,16 @@ class CustomerService:
     """
     Consultas de leitura para ``core_customers``.
 
+    Delega ao ``CustomerRepository`` (ADR-030). Mantém API pública estável
+    para routers existentes.
+
     Args:
         db: Sessão SQLAlchemy.
     """
 
     def __init__(self, db: Session):
         self.db = db
+        self._repo = SqlAlchemyCustomerRepository(db)
 
     def list_customers(
         self, company_id: int, active_only: bool = True
@@ -33,13 +40,7 @@ class CustomerService:
         Returns:
             Lista de CoreCustomer.
         """
-        query = self.db.query(CoreCustomer).filter(
-            CoreCustomer.company_id == company_id,
-            CoreCustomer.deleted_at.is_(None),
-        )
-        if active_only:
-            query = query.filter(CoreCustomer.active.is_(True))
-        return query.order_by(CoreCustomer.name).all()
+        return self._repo.list_by_company(company_id, active_only=active_only)
 
     def get_customer(self, customer_id: int, company_id: int) -> CoreCustomer:
         """
@@ -55,15 +56,7 @@ class CustomerService:
         Raises:
             NotFoundError: Se não encontrado.
         """
-        row = (
-            self.db.query(CoreCustomer)
-            .filter(
-                CoreCustomer.id == customer_id,
-                CoreCustomer.company_id == company_id,
-                CoreCustomer.deleted_at.is_(None),
-            )
-            .first()
-        )
+        row = self._repo.get_by_id(customer_id, company_id)
         if not row:
             raise NotFoundError("Customer", str(customer_id))
         return row
@@ -79,12 +72,4 @@ class CustomerService:
         Returns:
             CoreCustomer ou None.
         """
-        return (
-            self.db.query(CoreCustomer)
-            .filter(
-                CoreCustomer.phone == phone,
-                CoreCustomer.company_id == company_id,
-                CoreCustomer.deleted_at.is_(None),
-            )
-            .first()
-        )
+        return self._repo.find_by_phone(phone, company_id)
