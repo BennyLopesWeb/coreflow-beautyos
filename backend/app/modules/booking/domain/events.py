@@ -1,9 +1,18 @@
 """
 Constantes e factories de eventos do bounded context Booking.
+
+R3-F2 (ADR-027 sunset schedule): os commands de booking **não publicam
+mais** os eventos alias ``reservation.*``. As factories ``*_alias`` abaixo
+são mantidas apenas para o catálogo de eventos e eventual consumo R4
+(cleanup); qualquer chamador remanescente recebe um ``logger.warning``
+indicando que o alias está sunset.
 """
 from typing import Optional
 
+from app.core.logging_config import get_logger
 from app.shared.events.domain_event import DomainEvent
+
+logger = get_logger("booking_events")
 
 RESERVATION_CREATED = "reservation.created"
 BOOKING_CREATED = "booking.created"
@@ -98,6 +107,11 @@ def reservation_created_alias(
     """
     Alias ADR-027 — ``reservation.created`` com payload superset de booking.
 
+    .. deprecated:: R3-F2
+        Sunset conforme cronograma ADR-027 — os commands de booking não
+        chamam mais esta factory. Mantida para o catálogo de eventos até
+        remoção definitiva em R4.
+
     Args:
         company_id: Tenant.
         booking_id: ID core_bookings.
@@ -110,6 +124,9 @@ def reservation_created_alias(
     Returns:
         DomainEvent alias reservation.created.
     """
+    logger.warning(
+        "[events] reservation_created_alias chamado — alias sunset em R3-F2 (ADR-027)"
+    )
     return DomainEvent(
         event_type=RESERVATION_CREATED,
         company_id=company_id,
@@ -173,6 +190,11 @@ def reservation_approved_alias(
     """
     Alias ADR-027 — ``reservation.approved``.
 
+    .. deprecated:: R3-F2
+        Sunset conforme cronograma ADR-027 — os commands de booking não
+        chamam mais esta factory. Mantida para o catálogo de eventos até
+        remoção definitiva em R4.
+
     Args:
         company_id: Tenant.
         booking_id: ID core.
@@ -183,6 +205,9 @@ def reservation_approved_alias(
     Returns:
         DomainEvent alias.
     """
+    logger.warning(
+        "[events] reservation_approved_alias chamado — alias sunset em R3-F2 (ADR-027)"
+    )
     return DomainEvent(
         event_type=RESERVATION_APPROVED,
         company_id=company_id,
@@ -249,6 +274,11 @@ def reservation_rejected_alias(
     """
     Alias ADR-027 — ``reservation.rejected``.
 
+    .. deprecated:: R3-F2
+        Sunset conforme cronograma ADR-027 — os commands de booking não
+        chamam mais esta factory. Mantida para o catálogo de eventos até
+        remoção definitiva em R4.
+
     Args:
         company_id: Tenant.
         booking_id: ID core.
@@ -260,6 +290,9 @@ def reservation_rejected_alias(
     Returns:
         DomainEvent alias.
     """
+    logger.warning(
+        "[events] reservation_rejected_alias chamado — alias sunset em R3-F2 (ADR-027)"
+    )
     return DomainEvent(
         event_type=RESERVATION_REJECTED,
         company_id=company_id,
@@ -329,6 +362,11 @@ def reservation_cancelled_alias(
     """
     Alias ADR-027 — ``reservation.cancelled``.
 
+    .. deprecated:: R3-F2
+        Sunset conforme cronograma ADR-027 — os commands de booking não
+        chamam mais esta factory. Mantida para o catálogo de eventos até
+        remoção definitiva em R4.
+
     Args:
         company_id: Tenant.
         booking_id: ID core.
@@ -340,6 +378,9 @@ def reservation_cancelled_alias(
     Returns:
         DomainEvent alias.
     """
+    logger.warning(
+        "[events] reservation_cancelled_alias chamado — alias sunset em R3-F2 (ADR-027)"
+    )
     return DomainEvent(
         event_type=RESERVATION_CANCELLED,
         company_id=company_id,

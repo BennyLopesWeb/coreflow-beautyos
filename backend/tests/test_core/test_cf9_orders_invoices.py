@@ -37,29 +37,54 @@ def _slot_disponivel(db, tranca_id: int, service_image_id: int) -> datetime:
     return next(h for h in horarios if h.disponivel).horario
 
 
+def _project_booking(db, company_id, cliente_exemplo, tranca_exemplo, service_image_exemplo) -> int:
+    """
+    Cria agendamento legado via dual-write ACL (R3-F2 — sem ReservationService).
+
+    Substitui o antigo ``ReservationService.criar_de_schema`` (removido em
+    R3-F2) usando ``LegacyBookingAdapter.project_create_booking``.
+
+    Args:
+        db: Sessão SQLAlchemy de teste.
+        company_id: Tenant.
+        cliente_exemplo: Fixture de cliente.
+        tranca_exemplo: Fixture de categoria (tranca).
+        service_image_exemplo: Fixture de modelo (service image).
+
+    Returns:
+        ID do agendamento legado criado.
+    """
+    from app.shared.acl.booking_port import LegacyBookingAdapter
+    from app.utils.service_image_precos import resolver_precos_imagem
+
+    slot = _slot_disponivel(db, tranca_exemplo.id, service_image_exemplo.id)
+    precos = resolver_precos_imagem(service_image_exemplo)
+    ag_id = LegacyBookingAdapter(db).project_create_booking(
+        company_id=company_id,
+        customer_id=cliente_exemplo.id,
+        tranca_id=tranca_exemplo.id,
+        service_image_id=service_image_exemplo.id,
+        scheduled_at=slot,
+        pricing_total=precos["valor_total"],
+        deposit_pct=precos["percentual_sinal"],
+        deposit_amount=precos["valor_sinal"],
+        remaining_amount=precos["valor_restante"],
+    )
+    db.commit()
+    return ag_id
+
+
 def test_order_sync_from_booking(
     db, cliente_exemplo, tranca_exemplo, service_image_exemplo, default_company
 ):
     """Sync cria core_order a partir de agendamento legado."""
-    from app.services.reservation_service import ReservationService
-    from app.schemas.reservation import ReservationCreate
-
-    slot = _slot_disponivel(db, tranca_exemplo.id, service_image_exemplo.id)
-    ag = ReservationService(db).criar_de_schema(
-        ReservationCreate(
-            cliente_id=cliente_exemplo.id,
-            tranca_id=tranca_exemplo.id,
-            service_image_id=service_image_exemplo.id,
-            data_hora=slot,
-        ),
-        company_id=default_company.id,
-    )
+    ag_id = _project_booking(db, default_company.id, cliente_exemplo, tranca_exemplo, service_image_exemplo)
     LegacySyncService(db).sync_all()
-    OrderLegacySyncService(db).sync_one(ag.id)
+    OrderLegacySyncService(db).sync_one(ag_id)
 
     row = (
         db.query(CoreOrder)
-        .filter(CoreOrder.legacy_agendamento_id == ag.id)
+        .filter(CoreOrder.legacy_agendamento_id == ag_id)
         .first()
     )
     assert row is not None
@@ -71,21 +96,10 @@ def test_invoice_sync_from_financeiro(
     db, cliente_exemplo, tranca_exemplo, service_image_exemplo, default_company
 ):
     """Sync cria core_invoice a partir de entrada financeira."""
-    from app.services.reservation_service import ReservationService
-    from app.schemas.reservation import ReservationCreate
     from app.services.payment_reservation_service import PaymentReservationService
 
-    slot = _slot_disponivel(db, tranca_exemplo.id, service_image_exemplo.id)
-    ag = ReservationService(db).criar_de_schema(
-        ReservationCreate(
-            cliente_id=cliente_exemplo.id,
-            tranca_id=tranca_exemplo.id,
-            service_image_id=service_image_exemplo.id,
-            data_hora=slot,
-        ),
-        company_id=default_company.id,
-    )
-    PaymentReservationService(db).confirmar_deposito(ag.id, transaction_id="tx-inv")
+    ag_id = _project_booking(db, default_company.id, cliente_exemplo, tranca_exemplo, service_image_exemplo)
+    PaymentReservationService(db).confirmar_deposito(ag_id, transaction_id="tx-inv")
     LegacySyncService(db).sync_all()
     OrderLegacySyncService(db).sync_all()
     InvoiceLegacySyncService(db).sync_all()
@@ -93,7 +107,7 @@ def test_invoice_sync_from_financeiro(
     mov = (
         db.query(Financeiro)
         .filter(
-            Financeiro.agendamento_id == ag.id,
+            Financeiro.agendamento_id == ag_id,
             Financeiro.tipo == TipoMovimento.ENTRADA,
         )
         .first()

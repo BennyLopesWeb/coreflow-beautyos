@@ -3,6 +3,9 @@ Command ApproveBooking — CQRS CoreFlow.
 
 R2-F0.5: ACL path (flag OFF).
 R2-F2: BookingDomainService.approve + dual-write + optimistic lock.
+R3-F2: path core-only — legado (service de reservas via ACL) removido
+(ADR-027/ADR-033/RFC-003 M4). Flag OFF é kill-switch de emergência que
+bloqueia a escrita com ``BusinessRuleError`` (sem fallback legado).
 """
 from dataclasses import dataclass
 from typing import Optional
@@ -55,7 +58,7 @@ class ApproveBookingCommand:
 
 class ApproveBookingHandler:
     """
-    Handler CQRS — approve com branch flag OFF (ACL) / ON (domain).
+    Handler CQRS — approve core-only (R3-F2).
 
     Args:
         db: Sessão SQLAlchemy.
@@ -79,46 +82,16 @@ class ApproveBookingHandler:
             NotFoundError: Booking não encontrado.
             DepositRequiredError: P04 — sinal não pago.
             VersionConflictError: Optimistic lock.
-            BusinessRuleError: Regra de negócio / estado inválido.
+            BusinessRuleError: Regra de negócio / estado inválido, ou flag
+                ``booking.core.enabled`` desligada (R3-F2 removeu o path
+                legado — sem fallback).
         """
-        if feature_flags.is_enabled("booking.core.enabled"):
-            return self._execute_core_path(command)
-        return self._execute_legacy_path(command)
-
-    def _execute_legacy_path(self, command: ApproveBookingCommand) -> CoreBooking:
-        """Path ACL legado (F0.5) — inalterado exceto métricas F2."""
-        ArchitectureMetricsStore.get().record_booking_approve_legacy_path()
-        booking = self._load_core_row(command)
-        if not booking.legacy_agendamento_id:
-            raise ValidationError("Booking sem mapeamento legado para aprovação")
-
-        try:
-            self.booking_port.approve_booking_via_legacy(booking.legacy_agendamento_id)
-        except BusinessRuleError as exc:
-            if "Sinal" in str(exc.detail) or "sinal" in str(exc.detail).lower():
-                ArchitectureMetricsStore.get().record_booking_deposit_required()
-                raise DepositRequiredError() from exc
-            raise
-
-        core = self.booking_port.sync_booking_from_agendamento(
-            booking.legacy_agendamento_id
-        )
-        if not core:
-            raise ValidationError("Falha ao sincronizar booking após aprovação")
-
-        from app.modules.booking.domain.events import booking_approved
-        from app.shared.events.outbox import OutboxService
-
-        OutboxService(self.db).record_and_publish(
-            booking_approved(
-                company_id=command.company_id,
-                booking_id=core.id,
-                legacy_agendamento_id=core.legacy_agendamento_id,
-                correlation_id=command.correlation_id,
-                version=core.version,
+        if not feature_flags.is_enabled("booking.core.enabled"):
+            raise BusinessRuleError(
+                "Path legado de aprovação de booking foi removido em R3-F2. "
+                "Use /v1/bookings com FEATURE_BOOKING_CORE_ENABLED=true."
             )
-        )
-        return core
+        return self._execute_core_path(command)
 
     def _execute_core_path(self, command: ApproveBookingCommand) -> CoreBooking:
         """Path domain core (R2-F2) — dual-write TX ADR-025."""
@@ -158,22 +131,10 @@ class ApproveBookingHandler:
                 booking.legacy.legacy_agendamento_id
             )
 
-            from app.modules.booking.domain.events import (
-                booking_approved,
-                reservation_approved_alias,
-            )
+            from app.modules.booking.domain.events import booking_approved
 
             outbox.record(
                 booking_approved(
-                    company_id=command.company_id,
-                    booking_id=booking.id,
-                    legacy_agendamento_id=booking.legacy.legacy_agendamento_id,
-                    correlation_id=command.correlation_id,
-                    version=booking.version,
-                )
-            )
-            outbox.record(
-                reservation_approved_alias(
                     company_id=command.company_id,
                     booking_id=booking.id,
                     legacy_agendamento_id=booking.legacy.legacy_agendamento_id,

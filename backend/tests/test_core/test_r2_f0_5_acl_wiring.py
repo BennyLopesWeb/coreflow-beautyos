@@ -1,8 +1,11 @@
-"""R2-F0.5 / R2-F1 — ACL wiring e scheduling port."""
+"""R2-F0.5 / R2-F1 / R3-F2 — ACL wiring e scheduling port."""
 from pathlib import Path
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
+import pytest
+
+from app.core.exceptions import BusinessRuleError
 from app.shared.acl.booking_port import LegacyBookingAdapter
 from app.shared.acl.scheduling_port import LegacySchedulingPortAdapter
 
@@ -38,8 +41,8 @@ def test_booking_commands_have_no_forbidden_imports():
     assert not violations, "Imports proibidos em commands:\n" + "\n".join(violations)
 
 
-def test_legacy_booking_adapter_approve_reject_sync(db, monkeypatch):
-    """ACL expõe approve, reject e sync encapsulando legado."""
+def test_legacy_booking_adapter_approve_reject_removed(db, monkeypatch):
+    """R3-F2 — approve/reject via_legacy nunca delegam a ReservationService; BusinessRuleError."""
     adapter = LegacyBookingAdapter(db)
     monkeypatch.setattr(adapter, "_track", lambda: None)
 
@@ -54,11 +57,13 @@ def test_legacy_booking_adapter_approve_reject_sync(db, monkeypatch):
         reject_mock,
     )
 
-    adapter.approve_booking_via_legacy(42)
-    approve_mock.assert_called_once_with(42)
+    with pytest.raises(BusinessRuleError):
+        adapter.approve_booking_via_legacy(42)
+    approve_mock.assert_not_called()
 
-    adapter.reject_booking_via_legacy(42, "motivo teste")
-    reject_mock.assert_called_once_with(42, "motivo teste")
+    with pytest.raises(BusinessRuleError):
+        adapter.reject_booking_via_legacy(42, "motivo teste")
+    reject_mock.assert_not_called()
 
     sync_mock = MagicMock(return_value=None)
     monkeypatch.setattr(

@@ -26,4 +26,4 @@ CORE_ENFORCEMENT_MODE=warn
 
 ## Próximo
 
-R3-F2 — Remover delegation booking em `ReservationService` (código legado).
+R3-F2 — ✅ Implementado — Remover delegation booking em `ReservationService` (código legado). Ver [R3-F2.md](../sprints/R3-F2.md) e [R3-F2-Gate.md](R3-F2-Gate.md).

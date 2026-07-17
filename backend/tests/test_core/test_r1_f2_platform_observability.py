@@ -18,9 +18,9 @@ def reset_architecture_metrics():
 
 
 def test_feature_flags_all_disabled_by_default():
-    """Nenhuma feature flag de migração ativa por padrão (R1-F2)."""
+    """Flags de migração — booking.core.enabled True (R3-F2); demais false."""
     flags = feature_flags.all_flags()
-    assert flags["booking.core.enabled"]["enabled"] is False
+    assert flags["booking.core.enabled"]["enabled"] is True
     assert flags["resource.engine.enabled"]["enabled"] is False
     assert flags["ai.core.enabled"]["enabled"] is False
     assert flags["workflow.enabled"]["enabled"] is False
@@ -111,35 +111,37 @@ def test_identified_couplings_static_audit():
     assert "*/legacy_sync_service.py" in sources
 
 
-def test_acl_adapter_delegates_to_reservation_service(db):
-    """LegacyBookingAdapter delega ao ReservationService sem alterar regras."""
+def test_acl_adapter_create_via_legacy_removed(db):
+    """R3-F2 — create_booking_via_legacy nunca delega a ReservationService; sempre BusinessRuleError."""
+    from app.core.exceptions import BusinessRuleError
+
     adapter = LegacyBookingAdapter(db)
-    mock_agendamento = MagicMock()
     with patch(
         "app.services.reservation_service.ReservationService.criar_de_schema",
-        return_value=mock_agendamento,
     ) as criar:
-        result = adapter.create_booking_via_legacy(
-            customer_id=1,
-            tranca_id=2,
-            service_image_id=3,
-            scheduled_at="2026-07-01T10:00:00",
-            company_id=1,
-            notes="teste",
-        )
-    assert result is mock_agendamento
-    criar.assert_called_once()
+        with pytest.raises(BusinessRuleError):
+            adapter.create_booking_via_legacy(
+                customer_id=1,
+                tranca_id=2,
+                service_image_id=3,
+                scheduled_at="2026-07-01T10:00:00",
+                company_id=1,
+                notes="teste",
+            )
+    criar.assert_not_called()
     assert ArchitectureMetricsStore.get().snapshot()["acl_invocations"] == 1
 
 
 def test_acl_adapter_raises_when_core_booking_flag_enabled(db, monkeypatch):
-    """booking.core.enabled sem path core levanta NotImplementedError."""
+    """R3-F2 — create_booking_via_legacy é fail-fast independente da flag."""
+    from app.core.exceptions import BusinessRuleError
+
     monkeypatch.setattr(
         "app.core.feature_flags.settings.FEATURE_BOOKING_CORE_ENABLED",
         True,
     )
     adapter = LegacyBookingAdapter(db)
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(BusinessRuleError):
         adapter.create_booking_via_legacy(
             customer_id=1,
             tranca_id=2,

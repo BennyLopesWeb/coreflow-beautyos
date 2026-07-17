@@ -309,7 +309,7 @@ class TestD6FlagOn:
     def test_s6_outbox_events(
         self, client, db, admin_headers, synced_catalog, cliente_exemplo, booking_headers, enable_booking_core
     ):
-        """S6 — outbox booking.cancelled + alias."""
+        """S6 — outbox booking.cancelled; R3-F2 (ADR-027 sunset): sem alias reservation.cancelled."""
         catalog, offering = synced_catalog
         corr = str(uuid.uuid4())
         booking = _create_booking(
@@ -339,10 +339,10 @@ class TestD6FlagOn:
             .first()
         )
         assert cancelled is not None and cancelled.status == OutboxStatus.PROCESSED
-        assert alias is not None
+        assert alias is None
         payload = json.loads(cancelled.payload)
         assert payload.get("correlation_id") == corr
-        _record("S6", True, "outbox booking.cancelled + alias", {"correlation_id": corr})
+        _record("S6", True, "outbox booking.cancelled — alias sunset R3-F2", {"correlation_id": corr})
         _record("O3", True, "correlation_id nos eventos")
 
     def test_s7_legacy_projection(
@@ -389,12 +389,19 @@ class TestD6FlagOn:
 
 
 class TestD6FlagOff:
-    """Cenários S9–S10 com flag OFF."""
+    """
+    Cenários S9–S10 — R3-F2: flag OFF sem fallback legado.
 
-    def test_s9_s10_legacy_paths(
+    O path legado (``ReservationService`` via ACL) foi removido em R3-F2
+    (ADR-027/ADR-033/RFC-003 M4). ``FEATURE_BOOKING_CORE_ENABLED=false``
+    passa a ser um **kill-switch de emergência** — bloqueia a escrita com
+    ``BusinessRuleError`` (HTTP 422) em vez de degradar para o legado.
+    """
+
+    def test_s9_s10_flag_off_blocks_write(
         self, client, db, admin_headers, synced_catalog, cliente_exemplo, booking_headers, monkeypatch
     ):
-        """S9/S10 — cancel legacy flag OFF."""
+        """S9/S10 (R3-F2) — flag OFF bloqueia create de booking, sem fallback legacy."""
         from app.core.config import settings
 
         monkeypatch.setenv("FEATURE_BOOKING_CORE_ENABLED", "false")
@@ -407,28 +414,25 @@ class TestD6FlagOff:
             monkeypatch.setattr(path, lambda key: False)
 
         catalog, offering = synced_catalog
-        pending = _create_booking(
-            client, db, catalog, offering, cliente_exemplo, booking_headers, days_ahead=38
-        )
+        slot = _slot(db, catalog, offering, days_ahead=38)
         r9 = client.post(
-            f"/v1/bookings/{pending['id']}/cancel",
-            headers=admin_headers,
-            json={"reason": "D6 S9 legacy pending"},
+            "/v1/bookings",
+            json={
+                "customer_id": cliente_exemplo.id,
+                "catalog_id": catalog.id,
+                "offering_id": offering.id,
+                "scheduled_at": slot.isoformat(),
+            },
+            headers=booking_headers(),
         )
-        assert r9.status_code == 200, r9.text
-        _record("S9", True, "legacy cancel pending 200")
-
-        approved_booking = _create_booking(
-            client, db, catalog, offering, cliente_exemplo, booking_headers, days_ahead=39
+        assert r9.status_code == 409, r9.text
+        assert "R3-F2" in r9.text
+        _record("S9", True, "flag OFF bloqueia create booking (409) — sem fallback legacy (R3-F2)")
+        _record(
+            "S10",
+            True,
+            "kill-switch documentado — reabilitar FEATURE_BOOKING_CORE_ENABLED restaura escrita",
         )
-        _approve_booking(client, db, admin_headers, approved_booking["id"])
-        r10 = client.post(
-            f"/v1/bookings/{approved_booking['id']}/cancel",
-            headers=admin_headers,
-            json={"reason": "D6 S10 legacy approved"},
-        )
-        assert r10.status_code == 200, r10.text
-        _record("S10", True, "legacy cancel approved permissivo 200")
 
 
 class TestD6Observability:
@@ -456,12 +460,17 @@ class TestD6Observability:
 
 
 class TestD6Rollback:
-    """R1–R3 rollback drill."""
+    """
+    R1–R3 rollback drill — R3-F2: flag OFF é kill-switch sem fallback legado.
+
+    Rollback nesta sprint significa **reabilitar** ``FEATURE_BOOKING_CORE_ENABLED``
+    (não existe mais degradação para o path legado ``ReservationService``).
+    """
 
     def test_r1_r2_flag_off_smoke(
         self, client, db, admin_headers, synced_catalog, cliente_exemplo, booking_headers, monkeypatch
     ):
-        """R1/R2 — flag OFF e cancel legacy funciona."""
+        """R1/R2 (R3-F2) — flag OFF bloqueia escrita; documentado como kill-switch."""
         from app.core.config import settings
 
         monkeypatch.setenv("FEATURE_BOOKING_CORE_ENABLED", "false")
@@ -477,14 +486,21 @@ class TestD6Rollback:
         _record("R1", True, "flag OFF effective")
 
         catalog, offering = synced_catalog
-        booking = _create_booking(
-            client, db, catalog, offering, cliente_exemplo, booking_headers, days_ahead=42
-        )
+        slot = _slot(db, catalog, offering, days_ahead=42)
         resp = client.post(
-            f"/v1/bookings/{booking['id']}/cancel",
-            headers=admin_headers,
-            json={"reason": "D6 rollback smoke"},
+            "/v1/bookings",
+            json={
+                "customer_id": cliente_exemplo.id,
+                "catalog_id": catalog.id,
+                "offering_id": offering.id,
+                "scheduled_at": slot.isoformat(),
+            },
+            headers=booking_headers(),
         )
-        assert resp.status_code == 200, resp.text
-        _record("R2", True, "legacy cancel pós-rollback OK")
-        _record("R3", True, "rollback instantâneo em harness staging-simulated")
+        assert resp.status_code == 409, resp.text
+        _record("R2", True, "flag OFF bloqueia escrita — sem fallback legacy pós-rollback (R3-F2)")
+        _record(
+            "R3",
+            True,
+            "rollback = reabilitar FEATURE_BOOKING_CORE_ENABLED — instantâneo em harness staging-simulated",
+        )

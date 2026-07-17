@@ -4,6 +4,9 @@ Command CreateBooking — CQRS CoreFlow.
 R2-F0.5: ACL path (flag OFF).
 R2-F1: BookingDomainService core path (flag ON) + dual-write ADR-024/025.
 R2-F1b: Idempotency-Key + correlation_id ADR-031.
+R3-F2: path core-only — legado (service de reservas via ACL) removido
+(ADR-027/ADR-033/RFC-003 M4). Flag OFF agora é apenas kill-switch de
+emergência que bloqueia a escrita com ``BusinessRuleError`` (sem fallback).
 """
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.architecture_metrics import ArchitectureMetricsStore
 from app.core.exceptions import (
+    BusinessRuleError,
     ConflictError,
     IdempotencyKeyReusedError,
     ValidationError,
@@ -87,7 +91,7 @@ class CreateBookingResult:
 
 class CreateBookingHandler:
     """
-    Handler CQRS — create booking com branch flag OFF (ACL) / ON (domain).
+    Handler CQRS — create booking core-only (R3-F2).
 
     Args:
         db: Sessão SQLAlchemy.
@@ -111,7 +115,8 @@ class CreateBookingHandler:
             ValidationError: Mapeamento ou regra inválida.
             ConflictError: Slot indisponível (409).
             IdempotencyKeyReusedError: Mesma key, body diferente.
-            BusinessRuleError: Regra de negócio.
+            BusinessRuleError: Regra de negócio, ou flag ``booking.core.enabled``
+                desligada (R3-F2 removeu o path legado — sem fallback).
         """
         cached = self._check_idempotency(command)
         if cached:
@@ -120,11 +125,14 @@ class CreateBookingHandler:
             )
             return CreateBookingResult(booking=booking, http_status=200)
 
+        if not feature_flags.is_enabled("booking.core.enabled"):
+            raise BusinessRuleError(
+                "Path legado de criação de booking foi removido em R3-F2. "
+                "Use /v1/bookings com FEATURE_BOOKING_CORE_ENABLED=true."
+            )
+
         self._outbox_batch = None
-        if feature_flags.is_enabled("booking.core.enabled"):
-            booking = self._execute_core_path(command)
-        else:
-            booking = self._execute_legacy_path(command)
+        booking = self._execute_core_path(command)
 
         self._save_idempotency(command, booking)
         outbox = getattr(self, "_outbox_batch", None)
@@ -190,56 +198,6 @@ class CreateBookingHandler:
             if str(exc) == "idempotency_key_reused":
                 raise IdempotencyKeyReusedError() from exc
             raise
-
-    def _execute_legacy_path(self, command: CreateBookingCommand) -> CoreBooking:
-        """
-        Path ACL legado (R2-F0.5) — comportamento idêntico pré-F1.
-
-        Args:
-            command: Comando.
-
-        Returns:
-            CoreBooking sincronizado.
-        """
-        ArchitectureMetricsStore.get().record_booking_create_legacy_path()
-        try:
-            tranca_id, service_image_id = self.booking_port.resolve_legacy_ids(
-                command.catalog_id, command.offering_id
-            )
-        except ValueError as exc:
-            raise ValidationError(str(exc))
-
-        ag = self.booking_port.create_booking_via_legacy(
-            customer_id=command.customer_id,
-            tranca_id=tranca_id,
-            service_image_id=service_image_id,
-            scheduled_at=command.scheduled_at,
-            company_id=command.company_id,
-            notes=command.notes,
-        )
-
-        core = self.booking_port.sync_booking_from_agendamento(ag.id)
-        if not core:
-            raise ValidationError("Falha ao sincronizar booking no metamodelo")
-
-        from app.modules.booking.domain.events import booking_created
-
-        outbox = OutboxBatch(self.db)
-        outbox.record(
-            booking_created(
-                company_id=command.company_id,
-                booking_id=core.id,
-                customer_id=command.customer_id,
-                catalog_id=command.catalog_id,
-                offering_id=command.offering_id,
-                legacy_agendamento_id=core.legacy_agendamento_id,
-                correlation_id=command.correlation_id,
-            )
-        )
-        self._outbox_batch = outbox
-        if command.correlation_id:
-            ArchitectureMetricsStore.get().record_event_correlation_id()
-        return core
 
     def _execute_core_path(self, command: CreateBookingCommand) -> CoreBooking:
         """
@@ -319,10 +277,7 @@ class CreateBookingHandler:
             booking.mark_legacy_synced(legacy_id)
             booking = repository.save(booking)
 
-            from app.modules.booking.domain.events import (
-                booking_created,
-                reservation_created_alias,
-            )
+            from app.modules.booking.domain.events import booking_created
 
             outbox = OutboxBatch(self.db)
             outbox.record(
@@ -333,18 +288,6 @@ class CreateBookingHandler:
                     catalog_id=command.catalog_id,
                     offering_id=command.offering_id,
                     legacy_agendamento_id=legacy_id,
-                    correlation_id=command.correlation_id,
-                )
-            )
-            outbox.record(
-                reservation_created_alias(
-                    company_id=command.company_id,
-                    booking_id=booking.id,
-                    customer_id=command.customer_id,
-                    catalog_id=command.catalog_id,
-                    offering_id=command.offering_id,
-                    legacy_agendamento_id=legacy_id,
-                    deposit_amount=str(booking.pricing.deposit_amount),
                     correlation_id=command.correlation_id,
                 )
             )

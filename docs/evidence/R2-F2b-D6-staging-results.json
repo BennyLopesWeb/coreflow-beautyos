@@ -3,7 +3,7 @@
   "version": "1.20.1-r2-f2b",
   "environment": "staging-simulated",
   "app_env": "staging",
-  "executed_at": "2026-07-17T00:18:18.221703+00:00",
+  "executed_at": "2026-07-17T02:27:21.406313+00:00",
   "scenarios": [
     {
       "id": "PRE-1",
@@ -49,9 +49,9 @@
     {
       "id": "S6",
       "passed": true,
-      "detail": "outbox booking.cancelled + alias",
+      "detail": "outbox booking.cancelled \u2014 alias sunset R3-F2",
       "extra": {
-        "correlation_id": "495b5ce3-a2de-44e0-8794-c3164c69e2ac"
+        "correlation_id": "934c2a26-f1ee-4782-bac1-00ea52185db3"
       }
     },
     {
@@ -75,12 +75,12 @@
     {
       "id": "S9",
       "passed": true,
-      "detail": "legacy cancel pending 200"
+      "detail": "flag OFF bloqueia create booking (409) \u2014 sem fallback legacy (R3-F2)"
     },
     {
       "id": "S10",
       "passed": true,
-      "detail": "legacy cancel approved permissivo 200"
+      "detail": "kill-switch documentado \u2014 reabilitar FEATURE_BOOKING_CORE_ENABLED restaura escrita"
     },
     {
       "id": "O1",
@@ -100,12 +100,12 @@
     {
       "id": "R2",
       "passed": true,
-      "detail": "legacy cancel p\u00f3s-rollback OK"
+      "detail": "flag OFF bloqueia escrita \u2014 sem fallback legacy p\u00f3s-rollback (R3-F2)"
     },
     {
       "id": "R3",
       "passed": true,
-      "detail": "rollback instant\u00e2neo em harness staging-simulated"
+      "detail": "rollback = reabilitar FEATURE_BOOKING_CORE_ENABLED \u2014 instant\u00e2neo em harness staging-simulated"
     }
   ],
   "summary": {

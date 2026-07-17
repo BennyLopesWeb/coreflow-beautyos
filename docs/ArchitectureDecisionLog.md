@@ -16,6 +16,17 @@
 
 ---
 
+## 2026-07-16 — R3-F2 Remove ReservationService booking path delegation
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R3-F2 Remove booking legado | Commands core-only, ACL `*_via_legacy` fail-fast, `ReservationService` writes removidos, `2.2.0-r3-f2` |
+| **Sunset** | ADR-027 alias `reservation.*` | Outbox para de publicar aliases; factories mantidas com `logger.warning` até R4 |
+| **Amended (default)** | `FEATURE_BOOKING_CORE_ENABLED` | Default `true` — flag OFF passa a kill-switch sem fallback legado |
+| **Published** | Release + sprint + gate | [2.2.0-r3-f2.md](releases/2.2.0-r3-f2.md) · [R3-F2.md](sprints/R3-F2.md) · [R3-F2-Gate.md](reviews/R3-F2-Gate.md) |
+
+---
+
 ## 2026-07-16 — R3-F1 Enforcement expand + production pilot
 
 | Evento | Artefato | Notas |
