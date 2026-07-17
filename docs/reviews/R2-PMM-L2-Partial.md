@@ -24,7 +24,7 @@
 
 ## Lacunas conscientes (R3+)
 
-- Production `CORE_ENFORCEMENT_MODE=block`
-- Block payments/fila
-- Remoção física de routers legado
+- ~~Production `CORE_ENFORCEMENT_MODE=block`~~ → R3-F1
+- ~~Block payments/fila~~ → R3-F1
+- Remoção física de routers legado (R3-F2+)
 - PMM L2 full (Integration Hub, BI, Marketplace)

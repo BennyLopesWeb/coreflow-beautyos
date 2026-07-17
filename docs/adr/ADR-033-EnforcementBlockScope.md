@@ -25,10 +25,11 @@ RFC-002 define enforcement gradual. R2-F6 ativa block — escopo incorreto quebr
 | `PUT /agendamentos/{id}` (approve) | `POST /v1/bookings/{id}/approve` | ✅ staging |
 | `PUT /agendamentos/{id}` (reject) | `POST /v1/bookings/{id}/reject` | ✅ staging |
 | `DELETE /agendamentos/{id}` (cancel) | `POST /v1/bookings/{id}/cancel` | ✅ staging |
-| `POST /payments/*` | `POST /v1/payments` | ❌ R3 |
-| `POST /fila/*` | `POST /v1/waitlist` | ❌ R3 |
-| `POST /trancas/*` | `POST /v1/catalogs` | ❌ R3 |
-| `GET /*` (reads) | — | ❌ Never block R2 |
+| `POST /payments/*` | `POST /v1/payments` | ✅ R3-F1 |
+| `POST /fila/*` | `POST /v1/waitlist` | ✅ R3-F1 |
+| `POST /trancas/*` | `POST /v1/catalogs` | ❌ R3+ |
+| `POST /financeiro/saida` | `POST /v1/invoices` | ❌ warn only (R3-F1) |
+| `GET /*` (reads) | — | ❌ Never block |
 
 ### Modos
 
@@ -90,10 +91,19 @@ Default all environments until F6. Production stays `warn` until production bloc
 | B | Block booking writes only | ✅ Escolhida |
 | C | Warn forever | ❌ No sunset progress |
 
+## Emenda R3-F1 (2026-07-16)
+
+Escopo block ampliado:
+
+- `POST /payments/deposit`, `/payments/final`, `/pagamentos/sinal` → 409
+- `POST /fila` → 409
+- Production `APP_ENV=production` → `block` (piloto)
+- `/financeiro/saida` e catalog writes permanecem fora do block
+
 ## Consequências
 
-- F6 staging block only booking narrow
-- Production block R3-F1
+- F6 staging block only booking narrow *(histórico)*
+- R3-F1: staging + production block booking + payments + fila
 - 70% global writes removed as R2 success criterion (RFC-003 S11 uses booking-specific)
 
 ## Referências

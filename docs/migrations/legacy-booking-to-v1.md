@@ -1,7 +1,7 @@
 # Migração — Booking legado → CoreFlow v1
 
-**Release:** `2.0.0-beta.1` (R2-F6)  
-**Escopo:** escritas de booking. Payments/fila permanecem no legado até R3.
+**Release:** `2.0.0-beta.1` (R2-F6) · atualizado em `2.1.0-r3-f1`  
+**Escopo:** escritas de booking. Payments/fila: ver [legacy-payments-fila-to-v1.md](./legacy-payments-fila-to-v1.md) (R3-F1).
 
 ## Antes → Depois
 
