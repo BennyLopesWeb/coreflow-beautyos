@@ -22,7 +22,7 @@ def upgrade() -> None:
     if "sync_status" not in columns:
         op.add_column(
             "core_bookings",
-            sa.Column("sync_status", sa.String(), nullable=False, server_default="synced"),
+            sa.Column("sync_status", sa.String(255), nullable=False, server_default="synced"),
         )
     if "version" not in columns:
         op.add_column(

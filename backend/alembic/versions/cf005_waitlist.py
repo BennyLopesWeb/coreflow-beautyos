@@ -27,7 +27,7 @@ def upgrade() -> None:
         sa.Column("position", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("booking_id", sa.Integer(), nullable=True),
-        sa.Column("notes", sa.String(), nullable=True),
+        sa.Column("notes", sa.String(255), nullable=True),
         sa.Column("same_day", sa.Boolean(), nullable=False),
         sa.Column("legacy_fila_id", sa.Integer(), nullable=True),
         sa.Column("legacy_cliente_id", sa.Integer(), nullable=True),
