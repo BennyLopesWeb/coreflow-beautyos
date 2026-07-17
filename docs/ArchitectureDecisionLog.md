@@ -16,6 +16,15 @@
 
 ---
 
+## 2026-07-16 — R2-F4 Plugin Engine + BeautyAgent + P10
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R2-F4 Plugin Engine | Typed HookRegistry, BeautyAgent em `app/plugins/beauty/`, P10, `1.22.0-r2-f4` |
+| **Published** | R2-F4 sprint + gate | [R2-F4.md](../sprints/R2-F4.md) · [R2-F4-Gate.md](../reviews/R2-F4-Gate.md) |
+
+---
+
 ## 2026-07-16 — R2-F3b Catalog/Customer repos + tiering emend
 
 | Evento | Artefato | Notas |

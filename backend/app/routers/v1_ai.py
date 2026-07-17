@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.modules.ai.beauty_agent import BeautyAgent
+from app.plugins.beauty.agents.beauty_agent import BeautyAgent
 from app.modules.identity.api.deps import get_tenant_context, get_current_admin_user
 from app.models.user import User
 from app.schemas.agente import AgentTaskResponse

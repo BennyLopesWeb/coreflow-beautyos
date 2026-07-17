@@ -436,6 +436,34 @@ class WaitlistResponse(BaseModel):
         from_attributes = True
 
 
+class WaitlistPromoteRequest(BaseModel):
+    """
+    Request para promover waitlist → booking (R2-F4 / P10).
+
+    Attributes:
+        scheduled_at: Horário confirmado da reserva.
+        notes: Observações opcionais.
+    """
+
+    scheduled_at: datetime
+    notes: Optional[str] = None
+
+
+class WaitlistPromoteResponse(BaseModel):
+    """
+    Resposta da promoção waitlist → booking.
+
+    Attributes:
+        waitlist: Item atualizado.
+        booking_id: Booking criado.
+        hook_dispatched: Handlers de plugin invocados (0 se engine OFF).
+    """
+
+    waitlist: WaitlistResponse
+    booking_id: int
+    hook_dispatched: int
+
+
 class OrderResponse(BaseModel):
     """
     Resposta de pedido comercial genérico CoreFlow.

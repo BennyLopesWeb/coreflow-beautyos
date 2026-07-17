@@ -1,0 +1,1 @@
+"""Plugin ClinicOS — stubs."""

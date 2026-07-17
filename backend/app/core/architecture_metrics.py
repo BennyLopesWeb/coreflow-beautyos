@@ -392,10 +392,10 @@ def identified_couplings() -> List[Dict[str, str]]:
             "remediation": "Scheduling Port — Release 3",
         },
         {
-            "source": "modules/ai/beauty_agent.py",
+            "source": "app/plugins/beauty/agents/beauty_agent.py",
             "target": "app.services.agente_service",
             "severity": "medium",
-            "remediation": "Mover para plugin beauty",
+            "remediation": "Substituir AgenteService por AI Platform core (R3+)",
         },
         {
             "source": "*/legacy_sync_service.py",

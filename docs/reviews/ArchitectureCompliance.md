@@ -82,7 +82,7 @@ Health check arquitetural recorrente — verifica conformidade com Constituiçã
 | # | Critério | Pass |
 |---|----------|------|
 | PL1 | Hooks via manifest only | ☐ |
-| PL2 | BeautyAgent em `plugins/beauty/` (F4) | ☐ |
+| PL2 | BeautyAgent em `plugins/beauty/` (F4) | ✅ |
 | PL3 | Zero plugin import plugin | ☐ |
 | PL4 | Manifest schema valid | ☐ |
 
