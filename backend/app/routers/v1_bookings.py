@@ -129,6 +129,7 @@ def criar_booking(
             idempotency_key=idempotency_key.strip(),
             request_hash=request_hash,
             correlation_id=corr,
+            resource_id=body.resource_id,
         )
         result = handler.execute(cmd)
         booking = BookingQueryService(db).get_booking(

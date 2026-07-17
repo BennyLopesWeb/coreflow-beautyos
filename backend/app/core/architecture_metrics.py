@@ -228,6 +228,42 @@ class ArchitectureMetricsStore:
                 self._outbox_defer_commit = 0
             self._outbox_defer_commit += 1
 
+    def record_resource_engine_path(self) -> None:
+        """
+        Incrementa operações no path Resource Engine (R2-F3).
+
+        Returns:
+            None
+        """
+        with self._lock:
+            if not hasattr(self, "_resource_engine_path"):
+                self._resource_engine_path = 0
+            self._resource_engine_path += 1
+
+    def record_resource_conflict(self) -> None:
+        """
+        Incrementa rejeições P11 resource conflict (R2-F3).
+
+        Returns:
+            None
+        """
+        with self._lock:
+            if not hasattr(self, "_resource_conflicts"):
+                self._resource_conflicts = 0
+            self._resource_conflicts += 1
+
+    def record_resource_create(self) -> None:
+        """
+        Incrementa creates de resource (R2-F3).
+
+        Returns:
+            None
+        """
+        with self._lock:
+            if not hasattr(self, "_resource_creates"):
+                self._resource_creates = 0
+            self._resource_creates += 1
+
     def record_booking_approve_core_path(self) -> None:
         """Incrementa approve via domain core path (R2-F2)."""
         with self._lock:

@@ -12,6 +12,7 @@ def test_feature_flags_defaults():
     """Flags de migração com defaults seguros (R1-F2: todas false)."""
     flags = feature_flags.all_flags()
     assert flags["booking.core.enabled"]["enabled"] is False
+    assert flags["resource.engine.enabled"]["enabled"] is False
     assert flags["ai.core.enabled"]["enabled"] is False
     assert flags["workflow.enabled"]["enabled"] is False
     assert flags["plugin.engine.enabled"]["enabled"] is False

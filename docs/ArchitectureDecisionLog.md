@@ -16,13 +16,22 @@
 
 ---
 
+## 2026-07-16 — R2-F3 Resource Engine implemented (tech)
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R2-F3 Resource Engine | `modules/resource/`, CRUD `/v1/resources`, flag `resource.engine.enabled`, P11, `1.21.0-r2-f3` |
+| **Accepted** | Sign-off §7 Resource Engine | Platform Lead via aprovação de implementação |
+| **Updated** | R2-F3 Gate | [R2-F3-Gate.md](../reviews/R2-F3-Gate.md) — IMPLEMENTED |
+
+---
+
 ## 2026-07-09 — R2-F3 sprint doc (governança)
 
 | Evento | Artefato | Notas |
 |--------|----------|-------|
-| **Published** | R2-F3 sprint doc | Resource Engine v1 — [R2-F3.md](../sprints/R2-F3.md) — implementation BLOCKED |
+| **Published** | R2-F3 sprint doc | Resource Engine v1 — [R2-F3.md](../sprints/R2-F3.md) |
 | **Published** | R2-F3 Gate v1.0 | [R2-F3-Gate.md](../reviews/R2-F3-Gate.md) |
-| **Pending** | Sign-off §7 Resource Engine | DoR D5–D6 Platform Lead |
 
 ---
 

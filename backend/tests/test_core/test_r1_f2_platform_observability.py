@@ -21,6 +21,7 @@ def test_feature_flags_all_disabled_by_default():
     """Nenhuma feature flag de migração ativa por padrão (R1-F2)."""
     flags = feature_flags.all_flags()
     assert flags["booking.core.enabled"]["enabled"] is False
+    assert flags["resource.engine.enabled"]["enabled"] is False
     assert flags["ai.core.enabled"]["enabled"] is False
     assert flags["workflow.enabled"]["enabled"] is False
     assert flags["plugin.engine.enabled"]["enabled"] is False
@@ -34,10 +35,12 @@ def test_enforcement_warn_in_development():
 
 def test_platform_health_endpoint(client):
     """GET /v1/platform/health retorna snapshot arquitetural."""
+    from app.core.config import settings
+
     response = client.get("/v1/platform/health")
     assert response.status_code == 200
     body = response.json()
-    assert body["version"] == "1.20.1-r2-f2b"
+    assert body["version"] == settings.APP_VERSION
     assert body["core"] == "healthy"
     assert "legacy" in body
     assert "plugins" in body

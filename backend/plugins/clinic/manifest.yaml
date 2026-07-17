@@ -96,6 +96,11 @@ segments:
   - psicologia
   - fisioterapia
 
+resource_types:
+  - id: room
+    label: Consultório
+    default_capacity: 1
+
 metamodel_mappings:
   catalog: Especialidade
   offering: Procedimento

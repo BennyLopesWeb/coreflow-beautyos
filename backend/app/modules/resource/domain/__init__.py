@@ -1,0 +1,1 @@
+"""Domain layer — Resource Engine."""

@@ -117,6 +117,11 @@ segments:
   - maquiagem
   - tatuagem
 
+resource_types:
+  - id: chair
+    label: Cadeira
+    default_capacity: 1
+
 metamodel_mappings:
   catalog: Tranca
   offering: ServiceImage

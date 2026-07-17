@@ -95,6 +95,11 @@ segments:
   - basquete
   - futsal
 
+resource_types:
+  - id: court
+    label: Quadra
+    default_capacity: 1
+
 metamodel_mappings:
   catalog: Modalidade
   offering: Pacote

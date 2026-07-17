@@ -123,6 +123,7 @@ class BookingDomainService:
         scheduled_at: datetime,
         company_id: int,
         notes: Optional[str] = None,
+        resource_id: Optional[int] = None,
     ) -> Booking:
         """
         Cria aggregate Booking após validar offering e slot (INV-B3).
@@ -134,6 +135,8 @@ class BookingDomainService:
             scheduled_at: Horário solicitado.
             company_id: Tenant.
             notes: Observações.
+            resource_id: ID core_resources (R2-F3). Se informado com Resource
+                Engine ON, valida conflito via ResourcePort (P11).
 
         Returns:
             Booking aggregate em estado pending.
@@ -141,7 +144,7 @@ class BookingDomainService:
         Raises:
             ValidationError: Offering inválido ou no passado.
             BusinessRuleError: Catalog inativo.
-            ConflictError: Slot indisponível (409).
+            ConflictError: Slot/resource indisponível (409).
         """
         if scheduled_at.replace(tzinfo=None) < datetime.now():
             raise ValidationError("Não é possível reservar no passado")
@@ -162,9 +165,12 @@ class BookingDomainService:
         duration = max(snapshot.duration_minutes or 30, 30)
         ends_at = scheduled_at + timedelta(minutes=duration)
 
+        # Resource Engine (F3): resource_id = core_resources.id
+        # Legacy path: resource_id interim = catalog_id (ACL)
+        scheduling_resource_id = resource_id if resource_id is not None else catalog_id
         available = self._scheduling.check_availability(
             company_id=company_id,
-            resource_id=catalog_id,
+            resource_id=scheduling_resource_id,
             starts_at=scheduled_at,
             ends_at=ends_at,
             offering_id=offering_id,
@@ -172,6 +178,8 @@ class BookingDomainService:
             legacy_service_image_id=snapshot.legacy_service_image_id,
         )
         if not available:
+            if resource_id is not None:
+                raise ConflictError("resource_unavailable")
             raise ConflictError("slot_unavailable")
 
         return Booking.create(

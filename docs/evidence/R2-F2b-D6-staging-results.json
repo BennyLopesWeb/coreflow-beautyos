@@ -3,7 +3,7 @@
   "version": "1.20.1-r2-f2b",
   "environment": "staging-simulated",
   "app_env": "staging",
-  "executed_at": "2026-07-09T23:28:27.663544+00:00",
+  "executed_at": "2026-07-17T00:18:18.221703+00:00",
   "scenarios": [
     {
       "id": "PRE-1",
@@ -51,7 +51,7 @@
       "passed": true,
       "detail": "outbox booking.cancelled + alias",
       "extra": {
-        "correlation_id": "660ddb39-3388-4885-86b0-3b027022affc"
+        "correlation_id": "495b5ce3-a2de-44e0-8794-c3164c69e2ac"
       }
     },
     {

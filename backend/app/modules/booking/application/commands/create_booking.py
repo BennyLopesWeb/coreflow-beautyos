@@ -52,6 +52,7 @@ class CreateBookingCommand:
         idempotency_key: Header Idempotency-Key (F1b).
         request_hash: SHA-256 do body normalizado.
         correlation_id: Rastreio ponta-a-ponta HTTP → outbox.
+        resource_id: ID core_resources opcional (R2-F3 / P11).
     """
 
     customer_id: int
@@ -63,6 +64,7 @@ class CreateBookingCommand:
     idempotency_key: Optional[str] = None
     request_hash: Optional[str] = None
     correlation_id: Optional[str] = None
+    resource_id: Optional[int] = None
 
 
 @dataclass
@@ -246,9 +248,20 @@ class CreateBookingHandler:
             CoreBooking SoT.
         """
         ArchitectureMetricsStore.get().record_booking_create_core_path()
+
+        use_resource_engine = feature_flags.is_enabled("resource.engine.enabled")
+        if use_resource_engine and command.resource_id is not None:
+            from app.modules.resource.infrastructure.adapters.scheduling_resource_port_adapter import (
+                SchedulingResourcePortAdapter,
+            )
+
+            scheduling_port = SchedulingResourcePortAdapter(self.db)
+        else:
+            scheduling_port = LegacySchedulingPortAdapter(self.db)
+
         domain_service = BookingDomainService(
             catalog_query=SqlAlchemyCatalogQueryAdapter(self.db),
-            scheduling=LegacySchedulingPortAdapter(self.db),
+            scheduling=scheduling_port,
         )
         repository = SqlAlchemyCoreBookingRepository(self.db)
 
@@ -260,6 +273,7 @@ class CreateBookingHandler:
                 scheduled_at=command.scheduled_at,
                 company_id=command.company_id,
                 notes=command.notes,
+                resource_id=command.resource_id if use_resource_engine else None,
             )
             booking = repository.save(booking)
 
@@ -310,6 +324,32 @@ class CreateBookingHandler:
                     correlation_id=command.correlation_id,
                 )
             )
+
+            if use_resource_engine and command.resource_id is not None:
+                from app.modules.resource.domain.events import resource_allocated
+                from app.modules.resource.infrastructure.adapters.resource_allocation_adapter import (
+                    SqlAlchemyResourceAllocationAdapter,
+                )
+
+                allocated = SqlAlchemyResourceAllocationAdapter(self.db).allocate(
+                    company_id=command.company_id,
+                    resource_id=command.resource_id,
+                    booking_id=booking.id,
+                    starts_at=booking.time_slot.starts_at,
+                    ends_at=booking.time_slot.ends_at,
+                )
+                if allocated:
+                    outbox.record(
+                        resource_allocated(
+                            company_id=command.company_id,
+                            resource_id=command.resource_id,
+                            booking_id=booking.id,
+                            starts_at=booking.time_slot.starts_at.isoformat(),
+                            ends_at=booking.time_slot.ends_at.isoformat(),
+                            correlation_id=command.correlation_id,
+                        )
+                    )
+
             self._outbox_batch = outbox
             if command.correlation_id:
                 ArchitectureMetricsStore.get().record_event_correlation_id()

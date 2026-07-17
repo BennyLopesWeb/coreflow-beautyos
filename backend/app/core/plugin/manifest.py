@@ -42,6 +42,7 @@ class PluginManifest(BaseModel):
     dependencies: List[str] = Field(default_factory=list)
     sdk: Dict[str, Any] = Field(default_factory=dict)
     mobile: Dict[str, Any] = Field(default_factory=dict)
+    resource_types: List[Dict[str, Any]] = Field(default_factory=list)
 
     def has_feature(self, feature: str) -> bool:
         """
