@@ -16,9 +16,9 @@ class Cliente(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
-    nome = Column(String, nullable=False, index=True)
-    telefone = Column(String, unique=True, nullable=False, index=True)  # Telefone único
-    email = Column(String, nullable=True)
+    nome = Column(String(255), nullable=False, index=True)
+    telefone = Column(String(255), unique=True, nullable=False, index=True)  # Telefone único
+    email = Column(String(255), nullable=True)
     
     # Soft delete
     deleted_at = Column(DateTime(timezone=True), nullable=True)

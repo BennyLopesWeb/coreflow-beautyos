@@ -52,11 +52,11 @@ class CoreEventOutbox(Base):
     __tablename__ = "core_event_outbox"
 
     id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(String, nullable=False, unique=True, index=True)
-    event_type = Column(String, nullable=False, index=True)
+    event_id = Column(String(255), nullable=False, unique=True, index=True)
+    event_type = Column(String(255), nullable=False, index=True)
     company_id = Column(Integer, nullable=False, index=True)
-    aggregate_id = Column(String, nullable=True, index=True)
-    aggregate_type = Column(String, nullable=True)
+    aggregate_id = Column(String(255), nullable=True, index=True)
+    aggregate_type = Column(String(255), nullable=True)
     payload = Column(Text, nullable=False)
     status = Column(
         enum_values(OutboxStatus),

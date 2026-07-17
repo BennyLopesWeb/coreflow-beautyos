@@ -25,7 +25,7 @@ class Financeiro(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
     tipo = Column(SQLEnum(TipoMovimento), nullable=False, index=True)
-    descricao = Column(String, nullable=False)
+    descricao = Column(String(255), nullable=False)
     valor = Column(Numeric(10, 2), nullable=False)
     agendamento_id = Column(Integer, ForeignKey("agendamentos.id"), nullable=True)  # Opcional
     data = Column(DateTime(timezone=True), nullable=False, index=True)

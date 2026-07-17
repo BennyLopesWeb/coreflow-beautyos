@@ -70,10 +70,10 @@ class CoreLocation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
-    name = Column(String, nullable=False, index=True)
-    slug = Column(String, nullable=False, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    slug = Column(String(255), nullable=False, index=True)
     address = Column(JSON, default=dict)
-    timezone = Column(String, nullable=True)
+    timezone = Column(String(255), nullable=True)
     active = Column(Boolean, default=True, nullable=False)
     is_default = Column(Boolean, default=False, nullable=False)
     plugin_metadata = Column(JSON, default=dict)
@@ -110,9 +110,9 @@ class CoreWorker(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    display_name = Column(String, nullable=False)
-    email = Column(String, nullable=True)
-    role = Column(String, nullable=False, default="professional")
+    display_name = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=True)
+    role = Column(String(255), nullable=False, default="professional")
     active = Column(Boolean, default=True, nullable=False)
     plugin_metadata = Column(JSON, default=dict)
 
@@ -148,8 +148,8 @@ class CoreResource(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
     location_id = Column(Integer, ForeignKey("core_locations.id"), nullable=False, index=True)
-    name = Column(String, nullable=False)
-    slug = Column(String, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(255), nullable=False, index=True)
     resource_type = Column(
         enum_values(ResourceType),
         default=ResourceType.CHAIR,

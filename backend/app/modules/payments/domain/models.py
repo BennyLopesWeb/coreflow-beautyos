@@ -69,8 +69,8 @@ class CorePayment(Base):
         nullable=False,
         index=True,
     )
-    transaction_id = Column(String, nullable=True, index=True)
-    receipt_url = Column(String, nullable=True)
+    transaction_id = Column(String(255), nullable=True, index=True)
+    receipt_url = Column(String(255), nullable=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)
     legacy_payment_id = Column(Integer, nullable=True, index=True)
     legacy_agendamento_id = Column(Integer, nullable=True, index=True)

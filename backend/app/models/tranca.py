@@ -16,8 +16,8 @@ class Tranca(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
-    nome = Column(String, nullable=False, index=True)
-    descricao = Column(String, nullable=True)
+    nome = Column(String(255), nullable=False, index=True)
+    descricao = Column(String(255), nullable=True)
     # Campos legados — não usar em regras de negócio (preço/duração ficam no modelo)
     duracao_minutos = Column(Integer, nullable=True)
     valor_total = Column(Numeric(10, 2), nullable=True)

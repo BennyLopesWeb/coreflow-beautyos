@@ -86,18 +86,18 @@ class Agendamento(Base):
         default=StatusPagamento.PENDING_PAYMENT,
         nullable=False,
     )
-    comprovante_url = Column(String, nullable=True)
+    comprovante_url = Column(String(255), nullable=True)
     status = Column(
         enum_values(ReservationStatus),
         default=ReservationStatus.PENDING_PAYMENT,
         nullable=False,
         index=True,
     )
-    observacoes = Column(String, nullable=True)
+    observacoes = Column(String(255), nullable=True)
     motivo_rejeicao = Column(Text, nullable=True)
     horario_sugerido = Column(DateTime(timezone=True), nullable=True)
     mensagem_reagendamento = Column(Text, nullable=True)
-    google_calendar_event_id = Column(String, nullable=True)
+    google_calendar_event_id = Column(String(255), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

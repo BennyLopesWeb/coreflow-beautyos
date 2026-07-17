@@ -39,12 +39,12 @@ class NotificationLog(Base):
     # Informações da notificação
     tipo = Column(SQLEnum(NotificationType), nullable=False)
     status = Column(SQLEnum(NotificationStatus), default=NotificationStatus.PENDENTE, nullable=False)
-    destinatario = Column(String, nullable=False)  # Telefone, email, etc
+    destinatario = Column(String(255), nullable=False)  # Telefone, email, etc
     mensagem = Column(Text, nullable=True)  # Conteúdo da mensagem
     
     # Metadados
     tentativas = Column(Integer, default=0, nullable=False)
-    erro = Column(String, nullable=True)  # Mensagem de erro se falhou
+    erro = Column(String(255), nullable=True)  # Mensagem de erro se falhou
     
     # Timestamps
     enviada_at = Column(DateTime(timezone=True), nullable=True)  # Quando foi enviada

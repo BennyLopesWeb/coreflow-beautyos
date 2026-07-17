@@ -61,9 +61,9 @@ class CoreBooking(Base):
     deposit_amount = Column(Numeric(10, 2), nullable=False)
     remaining_amount = Column(Numeric(10, 2), nullable=False)
     deposit_paid = Column(Boolean, default=False, nullable=False)
-    notes = Column(String, nullable=True)
+    notes = Column(String(255), nullable=True)
     legacy_agendamento_id = Column(Integer, nullable=True, index=True)
-    sync_status = Column(String, default="synced", nullable=False)
+    sync_status = Column(String(255), default="synced", nullable=False)
     version = Column(Integer, default=1, nullable=False)
 
     deleted_at = Column(DateTime(timezone=True), nullable=True)

@@ -41,7 +41,7 @@ class Fila(Base):
     service_image_id = Column(Integer, ForeignKey("service_images.id"), nullable=False, index=True)
     data = Column(Date, nullable=False, index=True)
     horario_desejado = Column(Time, nullable=True)
-    observacoes = Column(String, nullable=True)
+    observacoes = Column(String(255), nullable=True)
     mesmo_dia = Column(Boolean, default=False, nullable=False)
     posicao = Column(Integer, nullable=False)
     status = Column(SQLEnum(StatusFila), default=StatusFila.WAITING, nullable=False, index=True)

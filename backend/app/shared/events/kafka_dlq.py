@@ -47,11 +47,11 @@ class CoreEventDlq(Base):
     __tablename__ = "core_event_dlq"
 
     id = Column(Integer, primary_key=True, index=True)
-    source_topic = Column(String, nullable=False, index=True)
+    source_topic = Column(String(255), nullable=False, index=True)
     raw_payload = Column(Text, nullable=False)
     error_type = Column(enum_values(DlqReason), nullable=False, index=True)
     error_message = Column(Text, nullable=False)
-    event_type = Column(String, nullable=True, index=True)
+    event_type = Column(String(255), nullable=True, index=True)
     partition = Column(Integer, nullable=True)
     offset = Column(Integer, nullable=True)
     replay_attempts = Column(Integer, default=0, nullable=False)

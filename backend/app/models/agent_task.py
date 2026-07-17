@@ -35,7 +35,7 @@ class AgentTask(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
     tipo = Column(SQLEnum(AgentTaskType), nullable=False, index=True)
-    titulo = Column(String, nullable=False)
+    titulo = Column(String(255), nullable=False)
     descricao = Column(Text, nullable=False)
     status = Column(SQLEnum(AgentTaskStatus), default=AgentTaskStatus.PENDENTE, nullable=False)
     referencia_id = Column(Integer, nullable=True)

@@ -53,8 +53,8 @@ class Company(Base):
     __tablename__ = "companies"
 
     id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String, nullable=False, index=True)
-    slug = Column(String, unique=True, nullable=False, index=True)
+    nome = Column(String(255), nullable=False, index=True)
+    slug = Column(String(255), unique=True, nullable=False, index=True)
     segmento = Column(
         SQLEnum(CompanySegment),
         default=CompanySegment.TRANCISTA,
@@ -65,9 +65,9 @@ class Company(Base):
         default=CompanyPlan.FREE,
         nullable=False,
     )
-    timezone = Column(String, default="America/Sao_Paulo", nullable=False)
-    logo_url = Column(String, nullable=True)
-    plugin_id = Column(String, default="beauty", nullable=False, index=True)
+    timezone = Column(String(255), default="America/Sao_Paulo", nullable=False)
+    logo_url = Column(String(255), nullable=True)
+    plugin_id = Column(String(255), default="beauty", nullable=False, index=True)
     ativo = Column(Boolean, default=True, nullable=False)
 
     deleted_at = Column(DateTime(timezone=True), nullable=True)

@@ -34,9 +34,9 @@ class CoreCustomer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
-    name = Column(String, nullable=False, index=True)
-    phone = Column(String, nullable=False, index=True)
-    email = Column(String, nullable=True)
+    name = Column(String(255), nullable=False, index=True)
+    phone = Column(String(255), nullable=False, index=True)
+    email = Column(String(255), nullable=True)
     active = Column(Boolean, default=True, nullable=False)
     plugin_metadata = Column(JSON, default=dict)
     legacy_cliente_id = Column(Integer, nullable=True, index=True)
