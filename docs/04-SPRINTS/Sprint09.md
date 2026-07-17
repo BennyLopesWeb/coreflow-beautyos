@@ -28,7 +28,7 @@ PATCH /v1/workflows/definitions/{workflow_id}  {"enabled": false}
 
 ```bash
 CORE_ENFORCEMENT_MODE=warn make run   # headers, permite request
-CORE_ENFORCEMENT_MODE=block make run  # HTTP 403
+CORE_ENFORCEMENT_MODE=block make run  # HTTP 409 (booking legado only, ADR-033)
 CORE_ENFORCEMENT_ENABLED=true         # legado → força block
 ```
 

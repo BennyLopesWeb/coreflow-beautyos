@@ -37,9 +37,16 @@ ai_capabilities:
   - booking_confirm
 
 hooks:
-  booking.created: app.modules.booking.application.handlers
-  payment.deposit.confirmed: app.modules.booking.application.handlers
-  waitlist.approved: app.plugins.beauty.hooks.on_waitlist_approved
+  booking.created:
+    handler: app.plugins.beauty.hooks.on_booking_created
+    async: true
+  waitlist.promoted:
+    handler: app.plugins.beauty.hooks.on_waitlist_promoted
+    async: true
+
+agents:
+  - id: beauty-assistant
+    path: app.plugins.beauty.agents.beauty_agent
 
 dependencies:
   - coreflow-platform>=0.7.0
@@ -116,6 +123,11 @@ segments:
   - estetica
   - maquiagem
   - tatuagem
+
+resource_types:
+  - id: chair
+    label: Cadeira
+    default_capacity: 1
 
 metamodel_mappings:
   catalog: Tranca

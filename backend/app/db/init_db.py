@@ -15,7 +15,7 @@ from app.modules.scheduling.domain.models import (  # noqa: F401
     CoreScheduleBlock,
     CoreWorker,
 )
-from app.modules.customer.domain.models import CoreCustomer  # noqa: F401
+from app.modules.customer.models import CoreCustomer  # noqa: F401
 from app.shared.events.outbox import CoreEventOutbox  # noqa: F401
 from app.shared.events.kafka_dlq import CoreEventDlq  # noqa: F401
 from app.modules.payments.domain.models import CorePayment  # noqa: F401
@@ -25,7 +25,7 @@ from app.modules.workflow.domain.config_models import CoreWorkflowConfig  # noqa
 from app.modules.order.domain.models import CoreOrder  # noqa: F401
 from app.modules.invoice.domain.models import CoreInvoice  # noqa: F401
 from app.modules.asset.domain.models import CoreAsset  # noqa: F401
-from app.modules.inventory.domain.models import CoreInventory  # noqa: F401
+from app.modules.inventory.models import CoreInventory  # noqa: F401
 from app.modules.push.domain.models import CoreDeviceToken  # noqa: F401
 from app.modules.mobile.domain.models import CoreCanaryPromotion  # noqa: F401
 from app.shared.idempotency.models import IdempotencyKey  # noqa: F401
@@ -36,16 +36,18 @@ def init_db():
     Cria todas as tabelas no banco de dados
     Executa apenas se as tabelas não existirem
     """
-    if settings.DATABASE_URL.startswith("mysql"):
-        from app.db.alembic_runner import run_alembic_upgrade
-        run_alembic_upgrade()
-
+    # Legado (companies/clientes/…) primeiro — migrations CoreFlow FK para essas tabelas.
     Base.metadata.create_all(bind=engine)
 
     # Migrações incrementais SQLite (legado)
     if settings.DATABASE_URL.startswith("sqlite"):
         from app.db.migrate_schema import migrate_schema
         migrate_schema()
+
+    # MySQL: Alembic aplica/idempotenta metamodelo após base legado existir
+    if settings.DATABASE_URL.startswith("mysql"):
+        from app.db.alembic_runner import run_alembic_upgrade
+        run_alembic_upgrade()
 
     bootstrap_tenant()
 
@@ -80,9 +82,7 @@ def bootstrap_tenant() -> None:
         scheduling_stats = SchedulingLegacySyncService(db).sync_all()
         print(f"✅ Scheduling sync: {scheduling_stats}")
 
-        from app.modules.customer.application.legacy_sync_service import (
-            CustomerLegacySyncService,
-        )
+        from app.modules.customer.legacy_sync import CustomerLegacySyncService
         customer_stats = CustomerLegacySyncService(db).sync_all()
         print(f"✅ Customer sync: {customer_stats}")
 

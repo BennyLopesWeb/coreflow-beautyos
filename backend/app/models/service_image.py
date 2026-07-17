@@ -17,11 +17,11 @@ class ServiceImage(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     service_id = Column(Integer, ForeignKey("trancas.id"), nullable=False, index=True)
-    url = Column(String, nullable=False)  # URL da imagem
+    url = Column(String(255), nullable=False)  # URL da imagem
     ordem = Column(Integer, default=0, nullable=False)  # Ordem de exibição
     is_principal = Column(Boolean, default=False, nullable=False)  # Imagem principal
-    nome = Column(String, nullable=True)  # Nome do modelo (ex: Box Braids Premium)
-    descricao = Column(String, nullable=True)  # Descrição do modelo
+    nome = Column(String(255), nullable=True)  # Nome do modelo (ex: Box Braids Premium)
+    descricao = Column(String(255), nullable=True)  # Descrição do modelo
     nivel_complexidade = Column(String(20), nullable=True)  # baixa, media, alta
     valor_total = Column(Numeric(10, 2), nullable=True)
     valor_sinal = Column(Numeric(10, 2), nullable=True)

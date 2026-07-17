@@ -1,12 +1,13 @@
 # CoreFlow Platform — Makefile
 # Build Once. Configure Everywhere.
 
-.PHONY: help install test run migrate alembic-upgrade docker-up docker-down docker-mysql-up docker-mysql-down docker-rabbitmq-up docker-rabbitmq-down docker-kafka-up docker-kafka-down outbox-worker lint
+.PHONY: help install test fitness run migrate alembic-upgrade docker-up docker-down docker-mysql-up docker-mysql-down docker-rabbitmq-up docker-rabbitmq-down docker-kafka-up docker-kafka-down outbox-worker lint
 
 help:
 	@echo "CoreFlow Platform — comandos disponíveis:"
 	@echo "  make install          Instala dependências do backend"
 	@echo "  make test             Executa testes"
+	@echo "  make fitness          Gate Architecture Fitness F5 (ERROR)"
 	@echo "  make run              Inicia API (porta 8000)"
 	@echo "  make migrate          Bootstrap SQLite + sync metamodelo"
 	@echo "  make alembic-upgrade  Aplica migrações Alembic (head)"
@@ -25,6 +26,9 @@ install:
 
 test:
 	cd backend && python -m pytest tests/ -q -o addopts=""
+
+fitness:
+	python scripts/architecture_fitness_check.py --phase f5
 
 run:
 	cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

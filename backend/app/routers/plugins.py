@@ -35,7 +35,7 @@ def _to_response(manifest: PluginManifest) -> PluginManifestResponse:
         segments=manifest.segments,
         ui=manifest.ui,
         api_version=manifest.api_version,
-        hooks=manifest.hooks,
+        hooks=manifest.hook_handler_map(),
         ai_capabilities=manifest.ai_capabilities,
         dependencies=manifest.dependencies,
         sdk=manifest.sdk,

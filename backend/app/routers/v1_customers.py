@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
-from app.modules.customer.application.customer_query_service import CustomerQueryService
-from app.modules.customer.application.legacy_sync_service import CustomerLegacySyncService
+from app.modules.customer.customer_service import CustomerService
+from app.modules.customer.legacy_sync import CustomerLegacySyncService
 from app.modules.identity.api.deps import get_tenant_context, get_current_admin_user
 from app.models.user import User
 from app.schemas.coreflow_v1 import CustomerResponse
@@ -32,7 +32,7 @@ def listar_customers(
         Lista de core_customers sincronizados.
     """
     CustomerLegacySyncService(db).sync_all()
-    return CustomerQueryService(db).list_customers(tenant.company_id)
+    return CustomerService(db).list_customers(tenant.company_id)
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
@@ -51,6 +51,6 @@ def obter_customer(
         CustomerResponse.
     """
     try:
-        return CustomerQueryService(db).get_customer(customer_id, tenant.company_id)
+        return CustomerService(db).get_customer(customer_id, tenant.company_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

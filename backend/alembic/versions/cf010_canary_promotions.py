@@ -18,11 +18,11 @@ def upgrade() -> None:
         op.create_table(
             "core_canary_promotions",
             sa.Column("id", sa.Integer(), nullable=False),
-            sa.Column("plugin_id", sa.String(), nullable=False),
-            sa.Column("segment", sa.String(), nullable=False),
-            sa.Column("previous_branch", sa.String(), nullable=False),
-            sa.Column("promoted_branch", sa.String(), nullable=False),
-            sa.Column("production_channel", sa.String(), nullable=False),
+            sa.Column("plugin_id", sa.String(255), nullable=False),
+            sa.Column("segment", sa.String(255), nullable=False),
+            sa.Column("previous_branch", sa.String(255), nullable=False),
+            sa.Column("promoted_branch", sa.String(255), nullable=False),
+            sa.Column("production_channel", sa.String(255), nullable=False),
             sa.Column("active", sa.Boolean(), nullable=False, server_default=sa.text("1")),
             sa.Column("rolled_back_at", sa.DateTime(timezone=True), nullable=True),
             sa.Column(

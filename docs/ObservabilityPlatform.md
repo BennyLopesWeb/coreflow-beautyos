@@ -157,7 +157,7 @@ Executive view — ver `DigitalOperationsCenter.md`.
 
 | Release | Entrega |
 |---------|---------|
-| R2 | OTEL span on booking core path |
+| R2 | OTEL span on booking core path | ✅ `booking.create.core` (R2-F5) |
 | R3 | Docker stack Grafana+Prometheus+AM+Loki |
 | R3 | Business metrics counters |
 | R4 | Trace full request → event → workflow |

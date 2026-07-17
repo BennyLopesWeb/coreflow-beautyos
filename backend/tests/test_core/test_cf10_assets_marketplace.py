@@ -5,7 +5,7 @@ from app.core.core_enforcement import CoreEnforcementMiddleware, resolve_enforce
 from app.models.inventory_item import InventoryItem
 from app.modules.asset.application.legacy_sync_service import AssetLegacySyncService
 from app.modules.asset.domain.models import CoreAsset
-from app.modules.inventory.domain.models import CoreInventory
+from app.modules.inventory.models import CoreInventory
 from app.modules.marketplace.application.marketplace_service import MarketplaceService
 from app.core.config import settings
 

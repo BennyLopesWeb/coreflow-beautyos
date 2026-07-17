@@ -35,6 +35,8 @@ class ArchitectureMetricsStore:
         self._events_consumed: Dict[str, int] = defaultdict(int)
         self._plugin_requests: Dict[str, int] = defaultdict(int)
         self._acl_invocations: int = 0
+        self._booking_drift_count: int = 0
+        self._legacy_write_attempts: int = 0
 
     @classmethod
     def get(cls) -> "ArchitectureMetricsStore":
@@ -119,6 +121,48 @@ class ArchitectureMetricsStore:
         """
         with self._lock:
             self._acl_invocations += 1
+
+    def record_legacy_write_attempt(self, mode: str, path: str) -> None:
+        """
+        Incrementa tentativas de escrita legado (ADR-033 / R2-F6).
+
+        Args:
+            mode: warn | block.
+            path: Path HTTP.
+
+        Returns:
+            None
+        """
+        with self._lock:
+            self._legacy_write_attempts += 1
+            if not hasattr(self, "_legacy_write_by_mode"):
+                self._legacy_write_by_mode = {}
+            self._legacy_write_by_mode[mode] = (
+                self._legacy_write_by_mode.get(mode, 0) + 1
+            )
+
+    def record_booking_drift_count(self, count: int) -> None:
+        """
+        Registra último ``drift_count`` da reconciliação (FF-OBS-002 / ADR-024).
+
+        Args:
+            count: Quantidade de bookings com drift core↔legado.
+
+        Returns:
+            None
+        """
+        with self._lock:
+            self._booking_drift_count = int(count)
+
+    def get_booking_drift_count(self) -> int:
+        """
+        Retorna último drift_count registrado.
+
+        Returns:
+            Inteiro ≥ 0.
+        """
+        with self._lock:
+            return int(getattr(self, "_booking_drift_count", 0))
 
     def record_booking_create_core_path(self) -> None:
         """
@@ -227,6 +271,42 @@ class ArchitectureMetricsStore:
             if not hasattr(self, "_outbox_defer_commit"):
                 self._outbox_defer_commit = 0
             self._outbox_defer_commit += 1
+
+    def record_resource_engine_path(self) -> None:
+        """
+        Incrementa operações no path Resource Engine (R2-F3).
+
+        Returns:
+            None
+        """
+        with self._lock:
+            if not hasattr(self, "_resource_engine_path"):
+                self._resource_engine_path = 0
+            self._resource_engine_path += 1
+
+    def record_resource_conflict(self) -> None:
+        """
+        Incrementa rejeições P11 resource conflict (R2-F3).
+
+        Returns:
+            None
+        """
+        with self._lock:
+            if not hasattr(self, "_resource_conflicts"):
+                self._resource_conflicts = 0
+            self._resource_conflicts += 1
+
+    def record_resource_create(self) -> None:
+        """
+        Incrementa creates de resource (R2-F3).
+
+        Returns:
+            None
+        """
+        with self._lock:
+            if not hasattr(self, "_resource_creates"):
+                self._resource_creates = 0
+            self._resource_creates += 1
 
     def record_booking_approve_core_path(self) -> None:
         """Incrementa approve via domain core path (R2-F2)."""
@@ -342,13 +422,8 @@ def identified_couplings() -> List[Dict[str, str]]:
     Returns:
         Lista de dicts source, target, severity, remediation.
     """
+    # FF-CPL-001: ≤3 acoplamentos ativos (booking→ReservationService removido — ACL F0.5+)
     return [
-        {
-            "source": "booking/commands/*",
-            "target": "app.services.reservation_service",
-            "severity": "high",
-            "remediation": "ACL LegacyBookingAdapter — Release 2",
-        },
         {
             "source": "scheduling/engine/scheduling_engine.py",
             "target": "app.services.agenda_dia_service",
@@ -356,10 +431,10 @@ def identified_couplings() -> List[Dict[str, str]]:
             "remediation": "Scheduling Port — Release 3",
         },
         {
-            "source": "modules/ai/beauty_agent.py",
+            "source": "app/plugins/beauty/agents/beauty_agent.py",
             "target": "app.services.agente_service",
             "severity": "medium",
-            "remediation": "Mover para plugin beauty",
+            "remediation": "Substituir AgenteService por AI Platform core (R3+)",
         },
         {
             "source": "*/legacy_sync_service.py",

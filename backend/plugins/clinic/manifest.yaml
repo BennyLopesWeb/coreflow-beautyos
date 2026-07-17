@@ -31,6 +31,13 @@ ai_capabilities:
   - booking_confirm
   - payment_reminder
 
+hooks:
+  waitlist.promoted:
+    handler: app.plugins.clinic.hooks.on_waitlist_promoted
+    async: true
+
+agents: []
+
 dependencies:
   - coreflow-platform>=1.0.0
 
@@ -95,6 +102,11 @@ segments:
   - dermatologia
   - psicologia
   - fisioterapia
+
+resource_types:
+  - id: room
+    label: Consultório
+    default_capacity: 1
 
 metamodel_mappings:
   catalog: Especialidade

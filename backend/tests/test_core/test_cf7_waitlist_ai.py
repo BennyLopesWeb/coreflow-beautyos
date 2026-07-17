@@ -3,7 +3,7 @@ from datetime import date
 
 from app.models.fila import Fila, StatusFila
 from app.modules.catalog.application.legacy_sync_service import LegacySyncService
-from app.modules.customer.application.legacy_sync_service import CustomerLegacySyncService
+from app.modules.customer.legacy_sync import CustomerLegacySyncService
 from app.modules.waitlist.application.legacy_sync_service import WaitlistLegacySyncService
 from app.modules.waitlist.domain.models import CoreWaitlist
 from app.core.plugin.registry import plugin_registry

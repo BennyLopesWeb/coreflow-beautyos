@@ -31,6 +31,13 @@ ai_capabilities:
   - booking_confirm
   - payment_reminder
 
+hooks:
+  waitlist.promoted:
+    handler: app.plugins.sports.hooks.on_waitlist_promoted
+    async: true
+
+agents: []
+
 dependencies:
   - coreflow-platform>=1.0.0
 
@@ -94,6 +101,11 @@ segments:
   - tenis
   - basquete
   - futsal
+
+resource_types:
+  - id: court
+    label: Quadra
+    default_capacity: 1
 
 metamodel_mappings:
   catalog: Modalidade

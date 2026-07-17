@@ -80,6 +80,7 @@ class BookingCreateRequest(BaseModel):
         offering_id: ID core_offerings.
         scheduled_at: Data/hora solicitada.
         notes: Observações opcionais.
+        resource_id: ID core_resources opcional (R2-F3 / P11).
     """
 
     customer_id: int
@@ -87,6 +88,7 @@ class BookingCreateRequest(BaseModel):
     offering_id: int
     scheduled_at: datetime
     notes: Optional[str] = None
+    resource_id: Optional[int] = None
 
 
 class BookingRejectRequest(BaseModel):
@@ -203,6 +205,40 @@ class WorkerResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ResourceCreateRequest(BaseModel):
+    """
+    Body para criar resource (R2-F3).
+
+    Attributes:
+        location_id: Unidade física.
+        name: Nome do recurso.
+        resource_type: Tipo (chair, court, room, generic).
+        capacity: Vagas simultâneas (>= 1).
+        slug: Slug opcional.
+        is_default: Recurso padrão do local.
+    """
+
+    location_id: int
+    name: str
+    resource_type: str = "chair"
+    capacity: int = 1
+    slug: Optional[str] = None
+    is_default: bool = False
+
+
+class ResourceUpdateRequest(BaseModel):
+    """
+    Body para atualizar resource (R2-F3).
+
+    Attributes:
+        name: Novo nome.
+        capacity: Nova capacidade.
+    """
+
+    name: Optional[str] = None
+    capacity: Optional[int] = None
 
 
 class ResourceResponse(BaseModel):
@@ -398,6 +434,34 @@ class WaitlistResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class WaitlistPromoteRequest(BaseModel):
+    """
+    Request para promover waitlist → booking (R2-F4 / P10).
+
+    Attributes:
+        scheduled_at: Horário confirmado da reserva.
+        notes: Observações opcionais.
+    """
+
+    scheduled_at: datetime
+    notes: Optional[str] = None
+
+
+class WaitlistPromoteResponse(BaseModel):
+    """
+    Resposta da promoção waitlist → booking.
+
+    Attributes:
+        waitlist: Item atualizado.
+        booking_id: Booking criado.
+        hook_dispatched: Handlers de plugin invocados (0 se engine OFF).
+    """
+
+    waitlist: WaitlistResponse
+    booking_id: int
+    hook_dispatched: int
 
 
 class OrderResponse(BaseModel):

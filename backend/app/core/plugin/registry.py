@@ -57,6 +57,16 @@ class PluginRegistry:
                 logger.info(f"Plugin carregado: {manifest.plugin_id} ({manifest.name})")
             except Exception as exc:
                 logger.error(f"Erro ao carregar {manifest_path}: {exc}")
+
+        # Instala handlers tipados (ADR-011); dispatch gated pela flag
+        try:
+            from app.core.plugin.hook_registry import hook_registry
+
+            installed = hook_registry.install_from_registry(self.list_all())
+            logger.info(f"Hook registry: {installed} handler(s) instalados")
+        except Exception as exc:
+            logger.error(f"Falha ao instalar hook registry: {exc}")
+
         return count
 
     def _load_file(self, path: Path) -> PluginManifest:

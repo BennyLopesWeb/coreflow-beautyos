@@ -1,0 +1,33 @@
+{
+  "version": "2.0.0-beta.1",
+  "promotion_order": [
+    "dev",
+    "staging",
+    "prod"
+  ],
+  "remote_state_bucket": "coreflow-terraform-state",
+  "stages": [
+    {
+      "environment": "dev",
+      "require_approval": false,
+      "bucket_name": "coreflow-cdn-dev",
+      "plan_command": "./scripts/terraform-cdn.sh dev plan",
+      "apply_command": "./scripts/terraform-cdn.sh dev apply"
+    },
+    {
+      "environment": "staging",
+      "require_approval": true,
+      "bucket_name": "coreflow-cdn-staging",
+      "plan_command": "./scripts/terraform-cdn.sh staging plan",
+      "apply_command": "./scripts/terraform-cdn.sh staging apply"
+    },
+    {
+      "environment": "prod",
+      "require_approval": true,
+      "bucket_name": "coreflow-cdn-prod",
+      "plan_command": "./scripts/terraform-cdn.sh prod plan",
+      "apply_command": "./scripts/terraform-cdn.sh prod apply"
+    }
+  ],
+  "usage": "./scripts/terraform-pipeline.sh plan-all"
+}

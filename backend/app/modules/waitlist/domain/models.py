@@ -79,7 +79,7 @@ class CoreWaitlist(Base):
         index=True,
     )
     booking_id = Column(Integer, ForeignKey("core_bookings.id"), nullable=True, index=True)
-    notes = Column(String, nullable=True)
+    notes = Column(String(255), nullable=True)
     same_day = Column(Boolean, default=False, nullable=False)
     legacy_fila_id = Column(Integer, nullable=True, index=True)
     legacy_cliente_id = Column(Integer, nullable=True, index=True)

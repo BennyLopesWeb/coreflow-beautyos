@@ -27,7 +27,7 @@ class SatisfactionSurvey(Base):
     
     # Feedback
     comentario = Column(Text, nullable=True)
-    recomendaria = Column(String, nullable=True)  # sim, não, talvez
+    recomendaria = Column(String(255), nullable=True)  # sim, não, talvez
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())

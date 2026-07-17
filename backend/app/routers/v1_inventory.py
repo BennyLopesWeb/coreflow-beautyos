@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.modules.asset.application.legacy_sync_service import AssetLegacySyncService
-from app.modules.inventory.application.inventory_query_service import InventoryQueryService
+from app.modules.inventory.inventory_service import InventoryService
 from app.modules.identity.api.deps import get_tenant_context, get_current_admin_user
 from app.models.user import User
 from app.schemas.coreflow_v1 import InventoryResponse
@@ -34,7 +34,7 @@ def listar_inventory(
         Lista de core_inventory sincronizados.
     """
     AssetLegacySyncService(db).sync_all()
-    return InventoryQueryService(db).list_inventory(
+    return InventoryService(db).list_inventory(
         tenant.company_id,
         asset_id=asset_id,
         low_stock_only=low_stock_only,
@@ -58,6 +58,6 @@ def obter_inventory(
         InventoryResponse.
     """
     try:
-        return InventoryQueryService(db).get_inventory(inventory_id, tenant.company_id)
+        return InventoryService(db).get_inventory(inventory_id, tenant.company_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

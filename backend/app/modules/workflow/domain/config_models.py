@@ -25,7 +25,7 @@ class CoreWorkflowConfig(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
-    workflow_id = Column(String, nullable=False, index=True)
+    workflow_id = Column(String(255), nullable=False, index=True)
     enabled = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

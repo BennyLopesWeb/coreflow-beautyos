@@ -51,7 +51,7 @@ class QueueEntry(Base):
         nullable=False,
         index=True,
     )
-    observacoes = Column(String, nullable=True)
+    observacoes = Column(String(255), nullable=True)
     mesmo_dia = Column(Integer, default=0, nullable=False)  # 0/1 flag urgente
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

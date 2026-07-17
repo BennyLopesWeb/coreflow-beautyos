@@ -17,7 +17,7 @@ from app.modules.scheduling.domain.models import (  # noqa: F401
     CoreScheduleBlock,
     CoreWorker,
 )
-from app.modules.customer.domain.models import CoreCustomer  # noqa: F401
+from app.modules.customer.models import CoreCustomer  # noqa: F401
 from app.shared.events.outbox import CoreEventOutbox  # noqa: F401
 from app.shared.events.kafka_dlq import CoreEventDlq  # noqa: F401
 from app.modules.payments.domain.models import CorePayment  # noqa: F401
@@ -28,7 +28,7 @@ from app.modules.order.domain.models import CoreOrder  # noqa: F401
 from app.modules.invoice.domain.models import CoreInvoice  # noqa: F401
 from app.models.inventory_item import InventoryItem  # noqa: F401
 from app.modules.asset.domain.models import CoreAsset  # noqa: F401
-from app.modules.inventory.domain.models import CoreInventory  # noqa: F401
+from app.modules.inventory.models import CoreInventory  # noqa: F401
 from app.modules.push.domain.models import CoreDeviceToken  # noqa: F401
 from app.modules.mobile.domain.models import CoreCanaryPromotion  # noqa: F401
 from app.shared.idempotency.models import IdempotencyKey  # noqa: F401

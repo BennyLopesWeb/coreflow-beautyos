@@ -49,8 +49,8 @@ class CoreInvoice(Base):
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
     order_id = Column(Integer, ForeignKey("core_orders.id"), nullable=True, index=True)
     booking_id = Column(Integer, ForeignKey("core_bookings.id"), nullable=True, index=True)
-    invoice_number = Column(String, nullable=False, index=True)
-    description = Column(String, nullable=False)
+    invoice_number = Column(String(255), nullable=False, index=True)
+    description = Column(String(255), nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)
     status = Column(
         enum_values(CoreInvoiceStatus),

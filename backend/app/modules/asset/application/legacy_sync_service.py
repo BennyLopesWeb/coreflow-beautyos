@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.logging_config import get_logger
 from app.models.inventory_item import InventoryItem
 from app.modules.asset.domain.models import CoreAsset
-from app.modules.inventory.domain.models import CoreInventory
+from app.modules.inventory.models import CoreInventory
 
 logger = get_logger("asset_sync")
 

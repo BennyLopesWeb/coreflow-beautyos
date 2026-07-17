@@ -38,10 +38,10 @@ class CoreWorkflowRun(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
-    workflow_id = Column(String, nullable=False, index=True)
-    trigger_event_type = Column(String, nullable=False, index=True)
-    trigger_event_id = Column(String, nullable=True, index=True)
-    aggregate_id = Column(String, nullable=True, index=True)
+    workflow_id = Column(String(255), nullable=False, index=True)
+    trigger_event_type = Column(String(255), nullable=False, index=True)
+    trigger_event_id = Column(String(255), nullable=True, index=True)
+    aggregate_id = Column(String(255), nullable=True, index=True)
     status = Column(
         enum_values(WorkflowRunStatus),
         default=WorkflowRunStatus.RUNNING,

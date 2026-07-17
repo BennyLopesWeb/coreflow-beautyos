@@ -16,13 +16,60 @@
 
 ---
 
+## 2026-07-16 — R2-F6 Enforcement narrow + 2.0.0-beta.1
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R2-F6 Enforcement + beta | Block booking legado 409 (ADR-033), release `2.0.0-beta.1` |
+| **Published** | Release notes + migration | [2.0.0-beta.1.md](../releases/2.0.0-beta.1.md) · [legacy-booking-to-v1.md](../migrations/legacy-booking-to-v1.md) |
+| **Assessed** | PMM L2 partial ≥65% | [R2-PMM-L2-Partial.md](../reviews/R2-PMM-L2-Partial.md) |
+
+---
+
+## 2026-07-16 — R2-F5 Hardening (fitness + OTEL + reconciliation)
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R2-F5 Hardening | Fitness CI ERROR, span `booking.create.core`, reconciliation drift, `1.23.0-r2-f5` |
+| **Published** | R2-F5 sprint + gate | [R2-F5.md](../sprints/R2-F5.md) · [R2-F5-Gate.md](../reviews/R2-F5-Gate.md) |
+
+---
+
+## 2026-07-16 — R2-F4 Plugin Engine + BeautyAgent + P10
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R2-F4 Plugin Engine | Typed HookRegistry, BeautyAgent em `app/plugins/beauty/`, P10, `1.22.0-r2-f4` |
+| **Published** | R2-F4 sprint + gate | [R2-F4.md](../sprints/R2-F4.md) · [R2-F4-Gate.md](../reviews/R2-F4-Gate.md) |
+
+---
+
+## 2026-07-16 — R2-F3b Catalog/Customer repos + tiering emend
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **In progress / Implemented** | R2-F3b Catalog + Customer repositories | ADR-030 ports, ACL LegacyCatalog/Customer, TD-R2-F2-002, `1.21.1-r2-f3b` |
+| **Emended** | ModuleTieringPolicy v1.1 | `catalog` + `customer` → CORE-SUPPORT (hexagonal lite); flatten Wave 2 catalog cancelado |
+| **Published** | R2-F3b sprint doc | [R2-F3b.md](../sprints/R2-F3b.md) |
+
+---
+
+## 2026-07-16 — R2-F3 Resource Engine implemented (tech)
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R2-F3 Resource Engine | `modules/resource/`, CRUD `/v1/resources`, flag `resource.engine.enabled`, P11, `1.21.0-r2-f3` |
+| **Accepted** | Sign-off §7 Resource Engine | Platform Lead via aprovação de implementação |
+| **Updated** | R2-F3 Gate | [R2-F3-Gate.md](../reviews/R2-F3-Gate.md) — IMPLEMENTED |
+
+---
+
 ## 2026-07-09 — R2-F3 sprint doc (governança)
 
 | Evento | Artefato | Notas |
 |--------|----------|-------|
-| **Published** | R2-F3 sprint doc | Resource Engine v1 — [R2-F3.md](../sprints/R2-F3.md) — implementation BLOCKED |
+| **Published** | R2-F3 sprint doc | Resource Engine v1 — [R2-F3.md](../sprints/R2-F3.md) |
 | **Published** | R2-F3 Gate v1.0 | [R2-F3-Gate.md](../reviews/R2-F3-Gate.md) |
-| **Pending** | Sign-off §7 Resource Engine | DoR D5–D6 Platform Lead |
 
 ---
 
