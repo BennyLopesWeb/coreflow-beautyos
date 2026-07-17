@@ -36,16 +36,18 @@ def init_db():
     Cria todas as tabelas no banco de dados
     Executa apenas se as tabelas não existirem
     """
-    if settings.DATABASE_URL.startswith("mysql"):
-        from app.db.alembic_runner import run_alembic_upgrade
-        run_alembic_upgrade()
-
+    # Legado (companies/clientes/…) primeiro — migrations CoreFlow FK para essas tabelas.
     Base.metadata.create_all(bind=engine)
 
     # Migrações incrementais SQLite (legado)
     if settings.DATABASE_URL.startswith("sqlite"):
         from app.db.migrate_schema import migrate_schema
         migrate_schema()
+
+    # MySQL: Alembic aplica/idempotenta metamodelo após base legado existir
+    if settings.DATABASE_URL.startswith("mysql"):
+        from app.db.alembic_runner import run_alembic_upgrade
+        run_alembic_upgrade()
 
     bootstrap_tenant()
 
