@@ -121,7 +121,7 @@ def test_core_enforcement_match_legacy_write():
 
 
 def test_core_enforcement_middleware_blocks_when_enabled():
-    """Middleware retorna 403 para escrita legado em modo block."""
+    """Middleware retorna 409 para escrita booking legado em modo block (ADR-033)."""
     from starlette.applications import Starlette
     from starlette.responses import PlainTextResponse
     from starlette.routing import Route
@@ -135,8 +135,9 @@ def test_core_enforcement_middleware_blocks_when_enabled():
 
     with TestClient(app) as client:
         response = client.post("/agenda/agendamentos", json={})
-        assert response.status_code == 403
+        assert response.status_code == 409
         assert response.json()["successor"] == "/v1/bookings"
+        assert response.headers.get("Deprecation") == "true"
 
 
 def test_core_enforcement_warn_mode_allows_request():

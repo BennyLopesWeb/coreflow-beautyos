@@ -27,7 +27,7 @@ class LegacyRouteSunset:
 
     prefix: str
     successor: str
-    sunset_date: str = "Sat, 01 Jul 2027 00:00:00 GMT"
+    sunset_date: str = "Sat, 01 Jan 2028 00:00:00 GMT"
 
 
 # Rotas legado → sucessoras CoreFlow v1 (Strangler Fig)

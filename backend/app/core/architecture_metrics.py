@@ -36,6 +36,7 @@ class ArchitectureMetricsStore:
         self._plugin_requests: Dict[str, int] = defaultdict(int)
         self._acl_invocations: int = 0
         self._booking_drift_count: int = 0
+        self._legacy_write_attempts: int = 0
 
     @classmethod
     def get(cls) -> "ArchitectureMetricsStore":
@@ -120,6 +121,25 @@ class ArchitectureMetricsStore:
         """
         with self._lock:
             self._acl_invocations += 1
+
+    def record_legacy_write_attempt(self, mode: str, path: str) -> None:
+        """
+        Incrementa tentativas de escrita legado (ADR-033 / R2-F6).
+
+        Args:
+            mode: warn | block.
+            path: Path HTTP.
+
+        Returns:
+            None
+        """
+        with self._lock:
+            self._legacy_write_attempts += 1
+            if not hasattr(self, "_legacy_write_by_mode"):
+                self._legacy_write_by_mode = {}
+            self._legacy_write_by_mode[mode] = (
+                self._legacy_write_by_mode.get(mode, 0) + 1
+            )
 
     def record_booking_drift_count(self, count: int) -> None:
         """

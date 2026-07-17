@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # App
     PLATFORM_NAME: str = "CoreFlow Platform"
     APP_NAME: str = "CoreFlow API"
-    APP_VERSION: str = "1.23.0-r2-f5"
+    APP_VERSION: str = "2.0.0-beta.1"
 
     # Feature flags — migração incremental (RFC-002) — default false (R1-F2)
     FEATURE_BOOKING_CORE_ENABLED: bool = False
@@ -171,7 +171,7 @@ class Settings(BaseSettings):
     CDN_CLOUDFRONT_RESPONSE_HEADERS_POLICY_ID: Optional[str] = None
 
     LEGACY_SUNSET_ENABLED: bool = True
-    LEGACY_SUNSET_DATE: str = "Sat, 01 Jul 2027 00:00:00 GMT"
+    LEGACY_SUNSET_DATE: str = "Sat, 01 Jan 2028 00:00:00 GMT"
 
     # OpenTelemetry (opcional)
     OTEL_ENABLED: bool = False
