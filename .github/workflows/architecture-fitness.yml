@@ -1,0 +1,24 @@
+name: Architecture Fitness
+
+on:
+  push:
+    branches: [main, master, develop, "r2-*"]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  fitness-f5:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend deps (for imports)
+        run: pip install -r backend/requirements.txt
+
+      - name: Run F5 fitness ERROR gate
+        run: python scripts/architecture_fitness_check.py --phase f5

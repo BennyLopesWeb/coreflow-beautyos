@@ -18,6 +18,7 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.core.feature_flags import feature_flags
+from app.core.telemetry import booking_create_core_span
 from app.modules.booking.application.booking_query_service import BookingQueryService
 from app.modules.booking.application.booking_response import booking_to_response_dict
 from app.modules.booking.domain.models import CoreBooking
@@ -243,6 +244,25 @@ class CreateBookingHandler:
     def _execute_core_path(self, command: CreateBookingCommand) -> CoreBooking:
         """
         Path domain core (R2-F1) — dual-write TX ADR-025.
+
+        Emite span OTEL ``booking.create.core`` (FF-OBS-001 / R2-F5).
+
+        Args:
+            command: Comando.
+
+        Returns:
+            CoreBooking SoT.
+        """
+        with booking_create_core_span(
+            company_id=command.company_id,
+            catalog_id=command.catalog_id,
+            offering_id=command.offering_id,
+        ):
+            return self._execute_core_path_inner(command)
+
+    def _execute_core_path_inner(self, command: CreateBookingCommand) -> CoreBooking:
+        """
+        Corpo do path core (extraído para span OTEL).
 
         Args:
             command: Comando.

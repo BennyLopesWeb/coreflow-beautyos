@@ -16,6 +16,15 @@
 
 ---
 
+## 2026-07-16 — R2-F5 Hardening (fitness + OTEL + reconciliation)
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R2-F5 Hardening | Fitness CI ERROR, span `booking.create.core`, reconciliation drift, `1.23.0-r2-f5` |
+| **Published** | R2-F5 sprint + gate | [R2-F5.md](../sprints/R2-F5.md) · [R2-F5-Gate.md](../reviews/R2-F5-Gate.md) |
+
+---
+
 ## 2026-07-16 — R2-F4 Plugin Engine + BeautyAgent + P10
 
 | Evento | Artefato | Notas |

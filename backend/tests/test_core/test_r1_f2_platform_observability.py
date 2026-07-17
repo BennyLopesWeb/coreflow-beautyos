@@ -104,10 +104,11 @@ def test_architecture_metrics_store_http():
 
 
 def test_identified_couplings_static_audit():
-    """Acoplamentos conhecidos documentados."""
+    """Acoplamentos conhecidos documentados (FF-CPL-001 ≤3 após F5)."""
     couplings = identified_couplings()
+    assert len(couplings) <= 3
     sources = {c["source"] for c in couplings}
-    assert "booking/commands/*" in sources
+    assert "*/legacy_sync_service.py" in sources
 
 
 def test_acl_adapter_delegates_to_reservation_service(db):

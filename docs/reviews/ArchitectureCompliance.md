@@ -101,7 +101,7 @@ Health check arquitetural recorrente — verifica conformidade com Constituiçã
 |---|----------|------|
 | O1 | Platform health API operacional | ✅ | ☐ |
 | O2 | ACL invocations tracked | ✅ | ☐ |
-| O3 | OTEL spans core booking path (F5) | ☐ |
+| O3 | OTEL spans core booking path (F5) | ✅ |
 
 ---
 

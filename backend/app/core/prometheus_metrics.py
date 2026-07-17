@@ -20,6 +20,7 @@ _dlq_pending_gauge = None
 _dlq_eligible_gauge = None
 _http_requests_total = None
 _http_request_duration = None
+_booking_drift_gauge = None
 
 
 def _init_metrics() -> bool:
@@ -32,6 +33,7 @@ def _init_metrics() -> bool:
     global _metrics_available, _dlq_replay_total, _dlq_replay_duration
     global _dlq_pending_gauge, _dlq_eligible_gauge
     global _http_requests_total, _http_request_duration
+    global _booking_drift_gauge
 
     if _metrics_available:
         return True
@@ -72,11 +74,31 @@ def _init_metrics() -> bool:
             ["layer", "method"],
             buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
         )
+        _booking_drift_gauge = Gauge(
+            "coreflow_booking_legacy_sync_drift_count",
+            "Bookings com drift core↔legado (ADR-024 / R2-F5)",
+        )
         _metrics_available = True
         return True
     except ImportError:
         logger.warning("prometheus_client não instalado — métricas desabilitadas")
         return False
+
+
+def set_booking_drift_count(count: int) -> None:
+    """
+    Atualiza gauge ``coreflow_booking_legacy_sync_drift_count`` (FF-OBS-002).
+
+    Args:
+        count: Quantidade de drifts detectados.
+
+    Returns:
+        None
+    """
+    if not _init_metrics() or _booking_drift_gauge is None:
+        return
+    _booking_drift_gauge.set(int(count))
+
 
 
 def record_dlq_replay(mode: str, status: str, duration_seconds: Optional[float] = None) -> None:

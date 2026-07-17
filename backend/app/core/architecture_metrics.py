@@ -35,6 +35,7 @@ class ArchitectureMetricsStore:
         self._events_consumed: Dict[str, int] = defaultdict(int)
         self._plugin_requests: Dict[str, int] = defaultdict(int)
         self._acl_invocations: int = 0
+        self._booking_drift_count: int = 0
 
     @classmethod
     def get(cls) -> "ArchitectureMetricsStore":
@@ -119,6 +120,29 @@ class ArchitectureMetricsStore:
         """
         with self._lock:
             self._acl_invocations += 1
+
+    def record_booking_drift_count(self, count: int) -> None:
+        """
+        Registra último ``drift_count`` da reconciliação (FF-OBS-002 / ADR-024).
+
+        Args:
+            count: Quantidade de bookings com drift core↔legado.
+
+        Returns:
+            None
+        """
+        with self._lock:
+            self._booking_drift_count = int(count)
+
+    def get_booking_drift_count(self) -> int:
+        """
+        Retorna último drift_count registrado.
+
+        Returns:
+            Inteiro ≥ 0.
+        """
+        with self._lock:
+            return int(getattr(self, "_booking_drift_count", 0))
 
     def record_booking_create_core_path(self) -> None:
         """
@@ -378,13 +402,8 @@ def identified_couplings() -> List[Dict[str, str]]:
     Returns:
         Lista de dicts source, target, severity, remediation.
     """
+    # FF-CPL-001: ≤3 acoplamentos ativos (booking→ReservationService removido — ACL F0.5+)
     return [
-        {
-            "source": "booking/commands/*",
-            "target": "app.services.reservation_service",
-            "severity": "high",
-            "remediation": "ACL LegacyBookingAdapter — Release 2",
-        },
         {
             "source": "scheduling/engine/scheduling_engine.py",
             "target": "app.services.agenda_dia_service",
