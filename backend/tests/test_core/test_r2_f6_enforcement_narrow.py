@@ -51,16 +51,6 @@ def test_block_denies_booking_legacy_with_409():
         assert response.headers.get("X-CoreFlow-Enforcement") == "block"
 
 
-def test_block_allows_payments_and_fila():
-    """Block F6 NÃO nega payments/fila (escopo narrow ADR-033)."""
-    with TestClient(_app_with_routes("block")) as client:
-        pay = client.post("/payments/deposit", json={})
-        assert pay.status_code == 200
-        assert pay.headers.get("X-CoreFlow-Enforcement") == "warn"
-        fila = client.post("/fila", json={})
-        assert fila.status_code == 200
-
-
 def test_warn_allows_booking_with_headers():
     """Rollback warn: booking legado passa com headers."""
     with TestClient(_app_with_routes("warn")) as client:

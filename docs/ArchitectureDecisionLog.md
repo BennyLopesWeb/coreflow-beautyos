@@ -16,13 +16,24 @@
 
 ---
 
+## 2026-07-16 — R3-F1 Enforcement expand + production pilot
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R3-F1 Enforcement expand | Block payments/fila + prod block (ADR-033 emenda), `2.1.0-r3-f1` |
+| **Amended** | ADR-033 | Payments/fila passam a block; financeiro warn only |
+| **Published** | Release + migration | [2.1.0-r3-f1.md](releases/2.1.0-r3-f1.md) · [legacy-payments-fila-to-v1.md](migrations/legacy-payments-fila-to-v1.md) |
+| **Gated** | R3-F1 Gate | [R3-F1-Gate.md](reviews/R3-F1-Gate.md) |
+
+---
+
 ## 2026-07-16 — R2-F6 Enforcement narrow + 2.0.0-beta.1
 
 | Evento | Artefato | Notas |
 |--------|----------|-------|
 | **Implemented (tech)** | R2-F6 Enforcement + beta | Block booking legado 409 (ADR-033), release `2.0.0-beta.1` |
-| **Published** | Release notes + migration | [2.0.0-beta.1.md](../releases/2.0.0-beta.1.md) · [legacy-booking-to-v1.md](../migrations/legacy-booking-to-v1.md) |
-| **Assessed** | PMM L2 partial ≥65% | [R2-PMM-L2-Partial.md](../reviews/R2-PMM-L2-Partial.md) |
+| **Published** | Release notes + migration | [2.0.0-beta.1.md](./releases/2.0.0-beta.1.md) · [legacy-booking-to-v1.md](./migrations/legacy-booking-to-v1.md) |
+| **Assessed** | PMM L2 partial ≥65% | [R2-PMM-L2-Partial.md](./reviews/R2-PMM-L2-Partial.md) |
 
 ---
 

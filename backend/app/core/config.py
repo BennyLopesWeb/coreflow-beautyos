@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # App
     PLATFORM_NAME: str = "CoreFlow Platform"
     APP_NAME: str = "CoreFlow API"
-    APP_VERSION: str = "2.0.0-beta.1"
+    APP_VERSION: str = "2.1.0-r3-f1"
 
     # Feature flags — migração incremental (RFC-002) — default false (R1-F2)
     FEATURE_BOOKING_CORE_ENABLED: bool = False
