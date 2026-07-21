@@ -52,16 +52,26 @@ def test_agenda_disponibilidade_still_works(
 
 
 def test_aprovar_com_horario_cria_booking_core(
-    db, synced_catalog, cliente_exemplo
+    db, synced_catalog, cliente_exemplo, monkeypatch
 ):
     """
     QueueEntryService.aprovar_com_horario usa CreateBookingHandler (R3-F3).
+
+    Dual-write legado ligado explicitamente (R4-F2 default é projeção OFF)
+    para manter a paridade histórica desta asserção — comportamento
+    core-only default é coberto por
+    ``test_r4_f2_dual_write_off.test_queue_aprovar_com_horario_sem_agendamento_id_default``.
 
     Args:
         db: Sessão de teste.
         synced_catalog: Fixture catalog/offering sincronizados.
         cliente_exemplo: Cliente legado.
+        monkeypatch: Fixture pytest.
     """
+    monkeypatch.setattr(
+        "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
+        lambda key: key in ("booking.core.enabled", "booking.legacy.projection.enabled"),
+    )
     catalog, offering = synced_catalog
     horarios = DisponibilidadeService(db).calcular_horarios_disponiveis(
         datetime.now() + timedelta(days=3),

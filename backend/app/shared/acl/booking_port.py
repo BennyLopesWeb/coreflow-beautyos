@@ -10,6 +10,15 @@ removido. Eles apenas registram telemetria ACL, emitem warning e levantam
 ``project_*`` (dual-write outbound), ``resolve_legacy_ids``,
 ``sync_booking_from_agendamento`` e ``get_booking_legacy_id`` permanecem
 inalterados — continuam servindo o path core.
+
+R4-F2 (ADR-024 sunset / RFC-003 M7): ``project_create_booking`` /
+``project_approve_booking`` / ``project_reject_booking`` /
+``project_cancel_booking`` são agora **opcionais** — só chamados pelos
+commands quando ``booking.legacy.projection.enabled`` está ON (default
+``false``). A implementação é mantida integralmente apenas para permitir
+rollback instantâneo (reativar a flag restaura o dual-write outbound sem
+deploy de código); remoção definitiva prevista para R4-F3, após período de
+observação sem uso em produção.
 """
 from typing import Any, Dict, Optional, Protocol, Tuple
 
@@ -306,6 +315,11 @@ class LegacyBookingAdapter:
 
         Não faz commit — participa da transação do handler core.
 
+        .. note:: R4-F2 (ADR-024 sunset)
+            Opcional desde R4-F2 — ``CreateBookingHandler`` só chama este
+            método quando ``booking.legacy.projection.enabled`` está ON.
+            Mantido para rollback (kill-switch); sunset definitivo em R4-F3.
+
         Args:
             company_id: Tenant.
             customer_id: ID cliente legado.
@@ -359,6 +373,12 @@ class LegacyBookingAdapter:
         """
         Projeção outbound approve — atualiza agendamento sem commit (ADR-024/025).
 
+        .. note:: R4-F2 (ADR-024 sunset)
+            Opcional desde R4-F2 — ``ApproveBookingHandler`` só chama este
+            método quando ``booking.legacy.projection.enabled`` está ON **e**
+            o booking tem ``legacy_agendamento_id``. Mantido para rollback;
+            sunset definitivo em R4-F3.
+
         Args:
             legacy_agendamento_id: ID agendamentos.
 
@@ -391,6 +411,12 @@ class LegacyBookingAdapter:
     def project_reject_booking(self, legacy_agendamento_id: int, reason: str) -> None:
         """
         Projeção outbound reject — atualiza agendamento sem commit.
+
+        .. note:: R4-F2 (ADR-024 sunset)
+            Opcional desde R4-F2 — ``RejectBookingHandler`` só chama este
+            método quando ``booking.legacy.projection.enabled`` está ON **e**
+            o booking tem ``legacy_agendamento_id``. Mantido para rollback;
+            sunset definitivo em R4-F3.
 
         Args:
             legacy_agendamento_id: ID agendamentos.
@@ -440,6 +466,12 @@ class LegacyBookingAdapter:
     ) -> None:
         """
         Projeção outbound cancel — flush only (ADR-024/025).
+
+        .. note:: R4-F2 (ADR-024 sunset)
+            Opcional desde R4-F2 — ``CancelBookingHandler`` só chama este
+            método quando ``booking.legacy.projection.enabled`` está ON **e**
+            o booking tem ``legacy_agendamento_id``. Mantido para rollback;
+            sunset definitivo em R4-F3.
 
         Args:
             legacy_agendamento_id: ID agendamentos.

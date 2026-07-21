@@ -101,18 +101,22 @@ def test_booking_approve_invalid_state():
 
 @pytest.fixture
 def enable_booking_core(monkeypatch):
-    """Ativa booking.core.enabled."""
+    """Ativa booking.core.enabled e booking.legacy.projection.enabled (dual-write R4-F2)."""
+    both_flags = lambda key: key in (
+        "booking.core.enabled",
+        "booking.legacy.projection.enabled",
+    )
     monkeypatch.setattr(
         "app.modules.booking.application.commands.approve_booking.feature_flags.is_enabled",
-        lambda key: key == "booking.core.enabled",
+        both_flags,
     )
     monkeypatch.setattr(
         "app.modules.booking.application.commands.reject_booking.feature_flags.is_enabled",
-        lambda key: key == "booking.core.enabled",
+        both_flags,
     )
     monkeypatch.setattr(
         "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
-        lambda key: key == "booking.core.enabled",
+        both_flags,
     )
 
 
@@ -284,21 +288,18 @@ def test_p08_deposit_confirmed_enables_approve_core_path(
     assert approve.json()["status"] in ("approved", "APPROVED")
 
 
-def test_p08_deposit_confirmed_enables_approve_legacy_path(
+def test_p08_deposit_confirmed_enables_approve_core_only_path(
     client, admin_headers, synced_catalog, cliente_exemplo, db, booking_headers
 ):
-    """Paridade P08 — confirmar sinal habilita approve (flag OFF)."""
+    """Paridade P08 — confirmar sinal habilita approve (flag default OFF — R4-F2 core-only)."""
+    from app.services.payment_reservation_service import PaymentReservationService
+
     booking = _create_booking(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=21
     )
-    legacy_id = booking["legacy_agendamento_id"]
+    assert booking["legacy_agendamento_id"] is None
 
-    deposit = client.post(
-        "/payments/deposit/admin",
-        json={"agendamento_id": legacy_id, "transaction_id": "tx-p08-legacy"},
-        headers=admin_headers,
-    )
-    assert deposit.status_code == 200, deposit.text
+    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
 
     approve = client.post(
         f"/v1/bookings/{booking['id']}/approve",

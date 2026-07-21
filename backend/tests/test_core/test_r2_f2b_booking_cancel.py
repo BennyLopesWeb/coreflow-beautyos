@@ -49,13 +49,17 @@ def _slot_for_day(db, catalog, offering, days_ahead: int) -> datetime:
 
 @pytest.fixture
 def enable_booking_core(monkeypatch):
-    """Ativa booking.core.enabled."""
+    """Ativa booking.core.enabled e booking.legacy.projection.enabled (dual-write R4-F2)."""
+    both_flags = lambda key: key in (
+        "booking.core.enabled",
+        "booking.legacy.projection.enabled",
+    )
     for path in (
         "app.modules.booking.application.commands.cancel_booking.feature_flags.is_enabled",
         "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
         "app.modules.booking.application.commands.approve_booking.feature_flags.is_enabled",
     ):
-        monkeypatch.setattr(path, lambda key: key == "booking.core.enabled")
+        monkeypatch.setattr(path, both_flags)
 
 
 def _create_booking_api(client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead):
@@ -177,18 +181,17 @@ def test_p06_cancel_pending_legacy_path(
     assert response.json()["status"] in ("cancelled", "CANCELLED")
 
 
-def test_p07_cancel_approved_legacy_path(
+def test_p07_cancel_approved_core_only_path(
     client, admin_headers, synced_catalog, cliente_exemplo, db, booking_headers
 ):
-    """Paridade P07 — cancel approved permissivo flag OFF."""
+    """Paridade P07 — cancel approved permissivo flag default OFF (R4-F2 core-only)."""
     from app.services.payment_reservation_service import PaymentReservationService
 
     booking = _create_booking_api(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=27
     )
-    PaymentReservationService(db).confirmar_deposito(
-        booking["legacy_agendamento_id"], transaction_id="tx-p07"
-    )
+    assert booking["legacy_agendamento_id"] is None
+    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
     approve = client.post(
         f"/v1/bookings/{booking['id']}/approve",
         headers=admin_headers,

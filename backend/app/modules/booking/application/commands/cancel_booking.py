@@ -4,8 +4,12 @@ Command CancelBooking — CQRS CoreFlow (R2-F2b).
 R2-F0.5: ACL path (flag OFF).
 R2-F2b: BookingDomainService.cancel + dual-write + CancelPolicyPort.
 R3-F2: path core-only — legado (service de reservas via ACL) removido
-(ADR-027/ADR-033/RFC-003 M4). Flag OFF é kill-switch de emergência que
-bloqueia a escrita com ``BusinessRuleError`` (sem fallback legado).
+(ADR-027/ADR-033/RFC-003 M4). Flag ``booking.core.enabled`` OFF é
+kill-switch de emergência que bloqueia a escrita com ``BusinessRuleError``
+(sem fallback legado).
+R4-F2: ``legacy_agendamento_id`` deixou de ser obrigatório. ``project_*``
+só é chamado com ``booking.legacy.projection.enabled`` ON **e** id legado
+presente (ADR-024 sunset / RFC-003 M7).
 """
 from dataclasses import dataclass
 from typing import Optional
@@ -17,7 +21,6 @@ from app.core.exceptions import (
     BusinessRuleError,
     CancelPolicyViolationError,
     NotFoundError,
-    ValidationError,
     VersionConflictError,
 )
 from app.core.feature_flags import feature_flags
@@ -114,8 +117,6 @@ class CancelBookingHandler:
             raise VersionConflictError()
 
         expected_version = booking.version
-        if not booking.legacy.legacy_agendamento_id:
-            raise ValidationError("Booking sem mapeamento legado para projeção")
 
         outbox = OutboxBatch(self.db)
         try:
@@ -135,9 +136,12 @@ class CancelBookingHandler:
             )
             booking = repository.save_with_version(booking, expected_version)
 
-            self.booking_port.project_cancel_booking(
-                booking.legacy.legacy_agendamento_id, command.reason
-            )
+            if booking.legacy.legacy_agendamento_id and feature_flags.is_enabled(
+                "booking.legacy.projection.enabled"
+            ):
+                self.booking_port.project_cancel_booking(
+                    booking.legacy.legacy_agendamento_id, command.reason
+                )
 
             from app.modules.booking.domain.events import booking_cancelled
 

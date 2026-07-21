@@ -127,10 +127,15 @@ def test_invoice_sync_from_financeiro(
 def test_v1_orders_and_invoices_list(
     client, admin_headers, synced_catalog, cliente_exemplo, db,
     tranca_exemplo, service_image_exemplo,
-    booking_headers,
+    booking_headers, monkeypatch,
 ):
-    """GET /v1/orders e /v1/invoices retornam dados sincronizados."""
+    """GET /v1/orders e /v1/invoices retornam dados sincronizados (dual-write legado ON — R4-F2)."""
     from app.services.payment_reservation_service import PaymentReservationService
+
+    monkeypatch.setattr(
+        "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
+        lambda key: key in ("booking.core.enabled", "booking.legacy.projection.enabled"),
+    )
 
     catalog, offering = synced_catalog
     slot = _slot_disponivel(db, tranca_exemplo.id, service_image_exemplo.id)

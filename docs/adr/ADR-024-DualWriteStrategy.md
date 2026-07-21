@@ -99,8 +99,10 @@ Job periódico (5 min):
 |-----------|------|
 | R2-F6 | Block legado writes (staging) |
 | R3-F1 | Block produção; stop projection writes |
-| R3-F2 | Remove projection code |
-| R4 | Drop agendamentos table (separado ADR) |
+| R3-F2 | Remove booking write path legado (`ReservationService`) — `project_*` outbound permanece ativo |
+| R4-F2 | ✅ `FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED` default `false` — `project_*` deixa de ser chamado por padrão (código mantido para rollback) |
+| R4-F3 | Remover código `project_*` / `LegacyBookingAdapter` outbound |
+| R4+ | Drop agendamentos table (separado ADR), após período de observação sem uso da flag |
 
 ## Consequências
 

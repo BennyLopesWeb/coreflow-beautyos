@@ -47,10 +47,10 @@ def test_time_slot_invalid_raises():
 
 @pytest.fixture
 def enable_booking_core(monkeypatch):
-    """Ativa booking.core.enabled para testes do path F1."""
+    """Ativa booking.core.enabled e booking.legacy.projection.enabled (dual-write R4-F2) para testes do path F1."""
     monkeypatch.setattr(
         "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
-        lambda key: key == "booking.core.enabled",
+        lambda key: key in ("booking.core.enabled", "booking.legacy.projection.enabled"),
     )
 
 

@@ -140,10 +140,10 @@ def test_correlation_id_in_outbox_on_create(
 
 @pytest.fixture
 def enable_booking_core(monkeypatch):
-    """Ativa booking.core.enabled."""
+    """Ativa booking.core.enabled e booking.legacy.projection.enabled (dual-write R4-F2)."""
     monkeypatch.setattr(
         "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
-        lambda key: key == "booking.core.enabled",
+        lambda key: key in ("booking.core.enabled", "booking.legacy.projection.enabled"),
     )
 
 

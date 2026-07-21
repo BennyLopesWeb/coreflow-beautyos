@@ -36,6 +36,15 @@
 
 ---
 
+## 2026-07-21 — R4-F2 Disable booking legacy dual-write projection
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F2 M7 | `FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED` default `false` — `project_*` (dual-write outbound ADR-024) deixa de ser chamado por padrão; `2.5.0-r4-f2` |
+| **Published** | Release + gate | [2.5.0-r4-f2.md](releases/2.5.0-r4-f2.md) · [R4-F2-Gate.md](reviews/R4-F2-Gate.md) |
+
+---
+
 ## 2026-07-20 — R3-F3 Remove legacy booking write routers
 
 | Evento | Artefato | Notas |

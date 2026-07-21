@@ -107,6 +107,23 @@ class Booking:
             sync_status=SyncStatus.SYNCED,
         )
 
+    def mark_core_only_synced(self) -> None:
+        """
+        Marca booking como sincronizado sem projeção legado (R4-F2 / ADR-024 sunset).
+
+        Usado no create path quando ``booking.legacy.projection.enabled`` está
+        OFF (default): não há ``agendamentos`` correspondente, então o
+        booking core-only é considerado ``SYNCED`` por definição (nada a
+        conciliar) em vez de ficar ``PENDING`` indefinidamente.
+
+        Returns:
+            None
+        """
+        self.legacy = LegacyReference(
+            legacy_agendamento_id=None,
+            sync_status=SyncStatus.SYNCED,
+        )
+
     def approve(self) -> None:
         """
         Transição pending → approved (ADR-026 SM-1).

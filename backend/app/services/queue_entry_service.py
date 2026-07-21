@@ -300,20 +300,27 @@ class QueueEntryService:
 
     def aprovar_com_horario(self, entry_id: int, data_hora: datetime) -> QueueEntry:
         """
-        Aprova fila urgente criando booking core vinculado (R3-F3).
+        Aprova fila urgente criando booking core vinculado (R3-F3 / R4-F2).
 
         Resolve catalog/offering via ACL e delega a ``CreateBookingHandler``
         (mesmo padrão de ``PromoteWaitlistHandler``).
+
+        R4-F2 (ADR-024 sunset): com ``booking.legacy.projection.enabled``
+        OFF (default), o booking criado é core-only —
+        ``booking.legacy_agendamento_id`` vem ``None`` e ``entry.agendamento_id``
+        é deixado ``None`` (sem levantar erro; não há mais projeção legado
+        obrigatória).
 
         Args:
             entry_id: ID da entrada.
             data_hora: Horário confirmado.
 
         Returns:
-            QueueEntry atualizado com ``agendamento_id`` da projeção legado.
+            QueueEntry atualizado com ``agendamento_id`` da projeção legado
+            quando presente, ou ``None`` para booking core-only.
 
         Raises:
-            BusinessRuleError: Entrada sem modelo ou mapeamento catalog ausente.
+            BusinessRuleError: Entrada sem modelo definido.
             ValidationError: Mapeamento catalog/offering inválido.
         """
         from app.modules.booking.application.commands.create_booking import (
@@ -352,8 +359,6 @@ class QueueEntryService:
             )
         )
         booking = booking_result.booking
-        if not booking.legacy_agendamento_id:
-            raise BusinessRuleError("Booking criado sem projeção legado (agendamento_id)")
 
         # CreateBookingHandler já faz commit — recarrega entry e vincula
         entry = self._obter(entry_id)

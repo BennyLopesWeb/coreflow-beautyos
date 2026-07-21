@@ -18,4 +18,6 @@
 
 ## Próximo
 
-R4-F2 — Remover `project_*` dual-write / `legacy_sync` booking outbound (RFC-003 M7).
+R4-F2 — ✅ Concluído. Desligou o dual-write outbound (`project_*`) por padrão
+via `FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED` (RFC-003 M7). Ver
+[R4-F2-Gate.md](R4-F2-Gate.md).
