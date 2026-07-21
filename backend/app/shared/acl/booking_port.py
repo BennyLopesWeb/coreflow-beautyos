@@ -2,13 +2,21 @@
 ACL — Anti-Corruption Layer entre Core e Legado (RFC-002 / R1-F2).
 
 Ports definem contratos core; adapters encapsulam legado.
+
+R3-F2 (ADR-027/ADR-033/RFC-003 M4): os métodos ``*_via_legacy`` **nunca**
+delegam mais a ``ReservationService`` — o path de escrita legado foi
+removido. Eles apenas registram telemetria ACL, emitem warning e levantam
+``BusinessRuleError`` apontando para ``/v1/bookings``. Os métodos
+``project_*`` (dual-write outbound), ``resolve_legacy_ids``,
+``sync_booking_from_agendamento`` e ``get_booking_legacy_id`` permanecem
+inalterados — continuam servindo o path core.
 """
 from typing import Any, Dict, Optional, Protocol, Tuple
 
 from sqlalchemy.orm import Session
 
 from app.core.architecture_metrics import ArchitectureMetricsStore
-from app.core.feature_flags import feature_flags
+from app.core.exceptions import BusinessRuleError
 from app.core.logging_config import get_logger
 
 logger = get_logger("acl_booking")
@@ -19,6 +27,10 @@ class BookingPort(Protocol):
     Port hexagonal para operações de booking.
 
     Core modules devem depender desta interface — nunca de ``ReservationService`` direto.
+
+    R3-F2: ``*_via_legacy`` são fail-fast (``BusinessRuleError``) — a escrita
+    legada foi removida; apenas ``project_*`` (dual-write outbound) e as
+    operações de leitura/sync permanecem funcionais.
     """
 
     def resolve_legacy_ids(
@@ -58,18 +70,21 @@ class BookingPort(Protocol):
 
         Returns:
             Agendamento legado criado.
+
+        Raises:
+            BusinessRuleError: Sempre — path removido em R3-F2.
         """
         ...
 
     def approve_booking_via_legacy(self, legacy_agendamento_id: int) -> None:
         """
-        Aprova agendamento legado (mesmas regras ReservationService).
+        Aprova agendamento legado (removido em R3-F2).
 
         Args:
             legacy_agendamento_id: ID agendamentos.
 
         Raises:
-            BusinessRuleError: Regra de negócio (ex.: sinal não pago).
+            BusinessRuleError: Sempre — path removido em R3-F2.
         """
         ...
 
@@ -77,14 +92,14 @@ class BookingPort(Protocol):
         self, legacy_agendamento_id: int, reason: str
     ) -> None:
         """
-        Rejeita agendamento legado.
+        Rejeita agendamento legado (removido em R3-F2).
 
         Args:
             legacy_agendamento_id: ID agendamentos.
             reason: Motivo da rejeição.
 
         Raises:
-            BusinessRuleError: Regra de negócio.
+            BusinessRuleError: Sempre — path removido em R3-F2.
         """
         ...
 
@@ -107,7 +122,10 @@ class LegacyBookingAdapter:
     Adapter ACL — delega ao legado através de fronteira explícita.
 
     R1-F2: wiring implementado; commands CQRS migram para adapter em Release 2.
-    Quando ``booking.core.enabled=true``, path core nativo será usado (R2).
+    R2: path core nativo em uso via ``project_*`` (dual-write ADR-024/025).
+    R3-F2: métodos ``*_via_legacy`` (create/approve/reject/cancel) não
+    delegam mais a ``ReservationService`` — sempre levantam
+    ``BusinessRuleError`` apontando para ``/v1/bookings`` (ADR-027/ADR-033).
     """
 
     def __init__(self, db: Session):
@@ -136,7 +154,11 @@ class LegacyBookingAdapter:
         notes: Optional[str] = None,
     ) -> Any:
         """
-        Encapsula criação via ReservationService (mesmas regras de negócio).
+        Path legado de criação — **removido em R3-F2**.
+
+        Antes delegava a ``ReservationService.criar_de_schema``; agora
+        apenas registra telemetria/log e falha explicitamente, já que o
+        booking core-only (ADR-027/ADR-033) é o único caminho de escrita.
 
         Args:
             customer_id: ID cliente.
@@ -147,88 +169,63 @@ class LegacyBookingAdapter:
             notes: Notas.
 
         Returns:
-            Agendamento ORM legado.
+            Nunca retorna — sempre levanta exceção.
 
         Raises:
-            NotImplementedError: Se booking.core.enabled sem path core (R2).
+            BusinessRuleError: Sempre — use ``/v1/bookings``.
         """
         self._track()
-        if feature_flags.is_enabled("booking.core.enabled"):
-            raise NotImplementedError(
-                "Core booking path pendente Release 2 — desative booking.core.enabled"
-            )
-
-        from app.schemas.reservation import ReservationCreate
-        from app.services.reservation_service import ReservationService
-
-        logger.debug("[acl] create_booking_via_legacy → ReservationService")
-        return ReservationService(self._db).criar_de_schema(
-            ReservationCreate(
-                cliente_id=customer_id,
-                tranca_id=tranca_id,
-                service_image_id=service_image_id,
-                data_hora=scheduled_at,
-                observacoes=notes,
-            ),
-            company_id=company_id,
+        logger.warning(
+            "[acl] create_booking_via_legacy chamado — path legado removido (R3-F2)"
+        )
+        raise BusinessRuleError(
+            "Legacy booking write removed (R3-F2) — use /v1/bookings"
         )
 
     def approve_booking_via_legacy(self, legacy_agendamento_id: int) -> None:
         """
-        Encapsula aprovação via ReservationService (mesmas regras de negócio).
+        Path legado de aprovação — **removido em R3-F2**.
+
+        Antes delegava a ``ReservationService.aprovar``; agora apenas
+        registra telemetria/log e falha explicitamente.
 
         Args:
             legacy_agendamento_id: ID do agendamento legado.
 
         Raises:
-            BusinessRuleError: Regra de negócio (ex.: sinal não pago).
+            BusinessRuleError: Sempre — use ``/v1/bookings``.
         """
         self._track()
-        if feature_flags.is_enabled("booking.core.enabled"):
-            raise NotImplementedError(
-                "Use project_approve_booking no core path — flag ON"
-            )
-
-        from app.core.exceptions import BusinessRuleError
-        from app.services.reservation_service import ReservationService
-
-        logger.debug("[acl] approve_booking_via_legacy → ReservationService")
-        try:
-            ReservationService(self._db).aprovar(legacy_agendamento_id)
-        except BusinessRuleError:
-            raise
-        except Exception as exc:
-            raise BusinessRuleError(str(exc)) from exc
+        logger.warning(
+            "[acl] approve_booking_via_legacy chamado — path legado removido (R3-F2)"
+        )
+        raise BusinessRuleError(
+            "Legacy booking write removed (R3-F2) — use /v1/bookings"
+        )
 
     def reject_booking_via_legacy(
         self, legacy_agendamento_id: int, reason: str
     ) -> None:
         """
-        Encapsula rejeição via ReservationService.
+        Path legado de rejeição — **removido em R3-F2**.
+
+        Antes delegava a ``ReservationService.rejeitar``; agora apenas
+        registra telemetria/log e falha explicitamente.
 
         Args:
             legacy_agendamento_id: ID do agendamento legado.
             reason: Motivo da rejeição.
 
         Raises:
-            BusinessRuleError: Regra de negócio.
+            BusinessRuleError: Sempre — use ``/v1/bookings``.
         """
         self._track()
-        if feature_flags.is_enabled("booking.core.enabled"):
-            raise NotImplementedError(
-                "Use project_reject_booking no core path — flag ON"
-            )
-
-        from app.core.exceptions import BusinessRuleError
-        from app.services.reservation_service import ReservationService
-
-        logger.debug("[acl] reject_booking_via_legacy → ReservationService")
-        try:
-            ReservationService(self._db).rejeitar(legacy_agendamento_id, reason)
-        except BusinessRuleError:
-            raise
-        except Exception as exc:
-            raise BusinessRuleError(str(exc)) from exc
+        logger.warning(
+            "[acl] reject_booking_via_legacy chamado — path legado removido (R3-F2)"
+        )
+        raise BusinessRuleError(
+            "Legacy booking write removed (R3-F2) — use /v1/bookings"
+        )
 
     def sync_booking_from_agendamento(self, agendamento_id: int) -> Any:
         """
@@ -418,31 +415,25 @@ class LegacyBookingAdapter:
         self, legacy_agendamento_id: int, reason: Optional[str] = None
     ) -> None:
         """
-        Encapsula cancelamento via ReservationService (flag OFF).
+        Path legado de cancelamento — **removido em R3-F2**.
+
+        Antes delegava a ``ReservationService.cancelar``; agora apenas
+        registra telemetria/log e falha explicitamente.
 
         Args:
             legacy_agendamento_id: ID agendamentos.
             reason: Motivo opcional.
 
         Raises:
-            BusinessRuleError: Regra de negócio.
+            BusinessRuleError: Sempre — use ``/v1/bookings``.
         """
         self._track()
-        if feature_flags.is_enabled("booking.core.enabled"):
-            raise NotImplementedError(
-                "Use project_cancel_booking no core path — flag ON"
-            )
-
-        from app.core.exceptions import BusinessRuleError
-        from app.services.reservation_service import ReservationService
-
-        logger.debug("[acl] cancel_booking_via_legacy → ReservationService")
-        try:
-            ReservationService(self._db).cancelar(legacy_agendamento_id, reason)
-        except BusinessRuleError:
-            raise
-        except Exception as exc:
-            raise BusinessRuleError(str(exc)) from exc
+        logger.warning(
+            "[acl] cancel_booking_via_legacy chamado — path legado removido (R3-F2)"
+        )
+        raise BusinessRuleError(
+            "Legacy booking write removed (R3-F2) — use /v1/bookings"
+        )
 
     def project_cancel_booking(
         self, legacy_agendamento_id: int, reason: Optional[str] = None

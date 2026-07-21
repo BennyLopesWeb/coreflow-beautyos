@@ -100,8 +100,9 @@ def test_p01_create_core_path(
         .first()
     )
     assert booking_evt is not None
-    assert alias_evt is not None
     assert booking_evt.status == OutboxStatus.PROCESSED
+    # R3-F2 (ADR-027 sunset): alias reservation.created não é mais publicado.
+    assert alias_evt is None
 
 
 def test_p02_unavailable_slot_core_path(

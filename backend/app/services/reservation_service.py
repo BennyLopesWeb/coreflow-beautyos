@@ -1,22 +1,28 @@
 """
 Service de Reservas (Reservation).
 Ciclo completo: criar, pagar sinal, aprovar, rejeitar, reagendar, concluir.
+
+R3-F2 (ADR-027/ADR-033/RFC-003 M4): os métodos de **escrita do booking**
+(``criar``, ``criar_de_schema``, ``aprovar``, ``rejeitar``, ``cancelar``)
+foram removidos — sempre levantam ``BusinessRuleError`` apontando para
+``/v1/bookings``. As assinaturas e DocStrings são mantidas por
+compatibilidade de referência/import. Os demais métodos (listagem/leitura,
+``confirmar_deposito``, ``concluir``, reagendamento e pagamentos) continuam
+ativos e são usados pelo path core via dual-write/projeção.
 """
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import List, Optional
 
-from app.models.agendamento import Agendamento, ReservationStatus, StatusPagamento, STATUS_OCUPAM_VAGA
-from app.models.payment import PaymentType
-from app.models.tranca import Tranca
+from app.models.agendamento import Agendamento, ReservationStatus, StatusPagamento
 from app.schemas.reservation import ReservationCreate
-from app.core.exceptions import NotFoundError, ValidationError, BusinessRuleError
+from app.core.exceptions import NotFoundError, BusinessRuleError
 from app.services.disponibilidade_service import DisponibilidadeService
 from app.services.service_image_service import ServiceImageService
 from app.services.schedule_service import ScheduleService
 from app.services.payment_reservation_service import PaymentReservationService
-from app.utils.service_image_precos import resolver_precos_imagem, calcular_sinal
+from app.utils.service_image_precos import resolver_precos_imagem
 from app.core.logging_config import get_logger
 
 logger = get_logger("reservation_service")
@@ -194,7 +200,10 @@ class ReservationService:
         observacoes: Optional[str] = None,
     ) -> Agendamento:
         """
-        Cria reserva com snapshot de preço/duração/sinal do modelo.
+        **Removido em R3-F2** — criação de reserva via legado.
+
+        Delegava a ``criar_de_schema``. Ambos foram removidos (ADR-027/
+        ADR-033/RFC-003 M4): use ``POST /v1/bookings`` (booking core-only).
 
         Args:
             cliente_id: ID do cliente.
@@ -204,7 +213,10 @@ class ReservationService:
             observacoes: Notas opcionais.
 
         Returns:
-            Reserva criada (PENDING_PAYMENT).
+            Nunca retorna — sempre levanta exceção.
+
+        Raises:
+            BusinessRuleError: Sempre — use ``/v1/bookings``.
         """
         return self.criar_de_schema(ReservationCreate(
             cliente_id=cliente_id,
@@ -216,85 +228,28 @@ class ReservationService:
 
     def criar_de_schema(self, data: ReservationCreate, company_id: Optional[int] = None) -> Agendamento:
         """
-        Cria reserva a partir do schema.
+        **Removido em R3-F2** — criação de reserva via legado.
+
+        Antes criava ``Agendamento`` com snapshot de preço/duração/sinal do
+        modelo e publicava ``reservation.created``. O booking write path
+        legado foi removido (ADR-027/ADR-033/RFC-003 M4) — use
+        ``POST /v1/bookings`` (flag ``booking.core.enabled``). Para
+        dual-write outbound a partir do path core, use
+        ``LegacyBookingAdapter.project_create_booking``.
 
         Args:
             data: Dados validados.
             company_id: Tenant BeautyOS (herdado da categoria se omitido).
 
         Returns:
-            Reserva persistida.
+            Nunca retorna — sempre levanta exceção.
+
+        Raises:
+            BusinessRuleError: Sempre — use ``/v1/bookings``.
         """
-        if data.data_hora < datetime.now():
-            raise ValidationError("Não é possível reservar no passado")
-
-        tranca = self.db.query(Tranca).filter(Tranca.id == data.tranca_id).first()
-        if not tranca or not tranca.ativo:
-            raise BusinessRuleError("Categoria inválida ou inativa")
-
-        resolved_company_id = company_id or tranca.company_id
-
-        self.images.validar_imagem_da_tranca(data.tranca_id, data.service_image_id)
-        img = self.images.obter_imagem(data.service_image_id)
-        precos = resolver_precos_imagem(img)
-
-        horarios = self.disponibilidade.calcular_horarios_disponiveis(
-            data.data_hora, data.tranca_id, data.service_image_id
+        raise BusinessRuleError(
+            "Legacy booking write removed (R3-F2) — use /v1/bookings"
         )
-        if not any(h.horario == data.data_hora and h.disponivel for h in horarios):
-            raise BusinessRuleError("Horário não disponível")
-
-        duracao = precos["duracao_minutos"]
-        fim = data.data_hora + timedelta(minutes=duracao)
-        if self.schedule.tem_conflito(data.data_hora, fim):
-            raise BusinessRuleError("Conflito de horário na agenda")
-
-        pct = Decimal(str(img.percentual_sinal or "0.30"))
-        valor_total = Decimal(str(precos["valor_total"]))
-        valor_sinal = Decimal(str(precos["valor_sinal"]))
-        valor_restante = Decimal(str(precos["valor_restante"]))
-
-        ag = Agendamento(
-            company_id=resolved_company_id,
-            cliente_id=data.cliente_id,
-            tranca_id=data.tranca_id,
-            service_image_id=data.service_image_id,
-            data_hora=data.data_hora,
-            valor_total=valor_total,
-            percentual_sinal=pct,
-            valor_sinal=valor_sinal,
-            valor_restante=valor_restante,
-            observacoes=data.observacoes,
-            status=ReservationStatus.PENDING_PAYMENT,
-            status_pagamento=StatusPagamento.PENDING_PAYMENT,
-            sinal_pago=False,
-        )
-        self.db.add(ag)
-        self.db.flush()
-        self.db.refresh(ag)
-
-        self.payments.criar_pendente(ag.id, PaymentType.DEPOSIT, valor_sinal)
-
-        from app.modules.booking.domain.events import reservation_created
-        from app.shared.events.outbox import OutboxService
-
-        if resolved_company_id:
-            OutboxService(self.db).record_and_publish(
-                reservation_created(
-                    company_id=resolved_company_id,
-                    reservation_id=ag.id,
-                    cliente_id=ag.cliente_id,
-                    valor_sinal=str(valor_sinal),
-                )
-            )
-
-        from app.services.notification_service import NotificationService
-        NotificationService(self.db).notificar_nova_reserva(ag.id)
-
-        self.db.commit()
-        self.db.refresh(ag)
-
-        return self.obter(ag.id)
 
     def confirmar_deposito(
         self,
@@ -322,53 +277,43 @@ class ReservationService:
 
     def aprovar(self, reservation_id: int) -> Agendamento:
         """
-        Admin aprova reserva → APPROVED + Schedule.
+        **Removido em R3-F2** — aprovação de reserva via legado.
+
+        Antes fazia ``PENDING_APPROVAL → APPROVED`` + criava ``Schedule``.
+        Use ``POST /v1/bookings/{id}/approve`` (ADR-027/ADR-033/RFC-003 M4).
 
         Args:
             reservation_id: ID da reserva.
 
         Returns:
-            Reserva aprovada.
+            Nunca retorna — sempre levanta exceção.
+
+        Raises:
+            BusinessRuleError: Sempre — use ``/v1/bookings``.
         """
-        ag = self.obter(reservation_id)
-        if not ag.sinal_pago:
-            raise BusinessRuleError("Sinal não pago")
-        if ag.status not in (
-            ReservationStatus.PENDING_APPROVAL,
-            ReservationStatus.WAITING_TIME_CONFIRMATION,
-        ):
-            raise BusinessRuleError("Reserva não está aguardando aprovação")
-
-        ag.status = ReservationStatus.APPROVED
-        ag.horario_aprovado = ag.horario_sugerido or ag.data_hora
-        self.db.commit()
-
-        self.schedule.criar_para_reserva(ag)
-
-        from app.services.notification_service import NotificationService
-        NotificationService(self.db).notificar_reserva_aprovada(reservation_id)
-        return self.obter(reservation_id)
+        raise BusinessRuleError(
+            "Legacy booking write removed (R3-F2) — use /v1/bookings"
+        )
 
     def rejeitar(self, reservation_id: int, motivo: str) -> Agendamento:
         """
-        Admin rejeita reserva.
+        **Removido em R3-F2** — rejeição de reserva via legado.
+
+        Use ``POST /v1/bookings/{id}/reject`` (ADR-027/ADR-033/RFC-003 M4).
 
         Args:
             reservation_id: ID da reserva.
             motivo: Motivo da rejeição.
 
         Returns:
-            Reserva rejeitada.
-        """
-        ag = self.obter(reservation_id)
-        ag.status = ReservationStatus.REJECTED
-        ag.motivo_rejeicao = motivo
-        self.schedule.cancelar(reservation_id)
-        self.db.commit()
+            Nunca retorna — sempre levanta exceção.
 
-        from app.services.notification_service import NotificationService
-        NotificationService(self.db).notificar_reserva_rejeitada(reservation_id, motivo)
-        return self.obter(reservation_id)
+        Raises:
+            BusinessRuleError: Sempre — use ``/v1/bookings``.
+        """
+        raise BusinessRuleError(
+            "Legacy booking write removed (R3-F2) — use /v1/bookings"
+        )
 
     def solicitar_reagendamento(
         self,
@@ -423,25 +368,24 @@ class ReservationService:
 
     def cancelar(self, reservation_id: int, motivo: Optional[str] = None) -> Agendamento:
         """
-        Cancela reserva e libera schedule.
+        **Removido em R3-F2** — cancelamento de reserva via legado.
+
+        Antes cancelava a reserva e liberava o ``Schedule`` associado. Use
+        ``POST /v1/bookings/{id}/cancel`` (ADR-027/ADR-033/RFC-003 M4).
 
         Args:
             reservation_id: ID da reserva.
             motivo: Motivo opcional.
 
         Returns:
-            Reserva cancelada.
+            Nunca retorna — sempre levanta exceção.
+
+        Raises:
+            BusinessRuleError: Sempre — use ``/v1/bookings``.
         """
-        ag = self.obter(reservation_id)
-        ag.status = ReservationStatus.CANCELLED
-        ag.status_pagamento = StatusPagamento.CANCELLED
-        ag.deleted_at = datetime.utcnow()
-        if motivo:
-            ag.observacoes = (ag.observacoes or "") + f" | {motivo}"
-        self.schedule.cancelar(reservation_id)
-        self.db.commit()
-        self.db.refresh(ag)
-        return ag
+        raise BusinessRuleError(
+            "Legacy booking write removed (R3-F2) — use /v1/bookings"
+        )
 
     def concluir(self, reservation_id: int) -> Agendamento:
         """

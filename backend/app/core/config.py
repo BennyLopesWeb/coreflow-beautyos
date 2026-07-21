@@ -18,10 +18,12 @@ class Settings(BaseSettings):
     # App
     PLATFORM_NAME: str = "CoreFlow Platform"
     APP_NAME: str = "CoreFlow API"
-    APP_VERSION: str = "2.1.0-r3-f1"
+    APP_VERSION: str = "2.2.0-r3-f2"
 
     # Feature flags — migração incremental (RFC-002) — default false (R1-F2)
-    FEATURE_BOOKING_CORE_ENABLED: bool = False
+    # R3-F2: booking.core.enabled default TRUE — path legado ACL/ReservationService
+    # removido (ADR-027/ADR-033); manter flag apenas por compatibilidade de rollback.
+    FEATURE_BOOKING_CORE_ENABLED: bool = True
     FEATURE_RESOURCE_ENGINE_ENABLED: bool = False
     FEATURE_AI_CORE_ENABLED: bool = False
     FEATURE_WORKFLOW_ENABLED: bool = False
