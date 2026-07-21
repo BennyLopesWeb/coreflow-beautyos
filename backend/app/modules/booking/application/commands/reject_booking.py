@@ -8,8 +8,10 @@ R3-F2: path core-only — legado (service de reservas via ACL) removido
 kill-switch de emergência que bloqueia a escrita com ``BusinessRuleError``
 (sem fallback legado).
 R4-F2: ``legacy_agendamento_id`` deixou de ser obrigatório. ``project_*``
-só é chamado com ``booking.legacy.projection.enabled`` ON **e** id legado
-presente (ADR-024 sunset / RFC-003 M7).
+só era chamado com ``booking.legacy.projection.enabled`` ON **e** id
+legado presente (ADR-024 sunset / RFC-003 M7).
+R4-F3: dual-write outbound removido definitivamente — reject é sempre
+core-only, sem qualquer chamada de projeção legado.
 """
 from dataclasses import dataclass
 from typing import Optional
@@ -33,7 +35,6 @@ from app.modules.booking.domain.value_objects.booking_types import SyncStatus
 from app.modules.booking.infrastructure.repositories.core_booking_repository import (
     SqlAlchemyCoreBookingRepository,
 )
-from app.shared.acl.booking_port import LegacyBookingAdapter
 from app.shared.events.outbox import OutboxBatch
 
 
@@ -67,7 +68,6 @@ class RejectBookingHandler:
 
     def __init__(self, db: Session):
         self.db = db
-        self.booking_port = LegacyBookingAdapter(db)
 
     def execute(self, command: RejectBookingCommand) -> CoreBooking:
         """
@@ -117,13 +117,6 @@ class RejectBookingHandler:
                 sync_status=SyncStatus.SYNCED,
             )
             booking = repository.save_with_version(booking, expected_version)
-
-            if booking.legacy.legacy_agendamento_id and feature_flags.is_enabled(
-                "booking.legacy.projection.enabled"
-            ):
-                self.booking_port.project_reject_booking(
-                    booking.legacy.legacy_agendamento_id, command.reason
-                )
 
             from app.modules.booking.domain.events import booking_rejected
 

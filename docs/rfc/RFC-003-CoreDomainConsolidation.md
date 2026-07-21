@@ -224,9 +224,14 @@ Registro completo: `docs/reviews/R2-ArchitectureRiskRegister.md`.
 | M4 | Remover `ReservationService` booking paths | R3-F2 ✅ Implemented |
 | M5 | Remover routers `/agendamentos` write | R3-F3 ✅ (`2.3.0-r3-f3`) |
 | M6 | `410 Gone` rotas legado booking | R4-F1 ✅ (`2.4.0-r4-f1`) |
-| M7 | Desligar dual-write outbound (`project_*`) por padrão | R4-F2 ✅ (`2.5.0-r4-f2`) |
+| M7 | Desligar (R4-F2) e remover definitivamente (R4-F3) o dual-write outbound (`project_*`) | R4-F2 ✅ (`2.5.0-r4-f2`) · R4-F3 ✅ **completo** (`2.6.0-r4-f3`) |
 
 **Nomenclatura eventos:** `reservation.*` alias até R3-F2; sunset ADR-027.
+
+**M7 completo (R4-F3):** código `project_*`/feature flag removidos de
+`LegacyBookingAdapter`; bookings sempre core-only. Próximo gate após R4-F3
+avalia o drop físico da tabela `agendamentos` (fora do escopo de RFC-003,
+tratado em ADR futuro — ver `docs/reviews/R4-F3-Gate.md`).
 
 ---
 

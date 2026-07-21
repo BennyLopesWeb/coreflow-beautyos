@@ -3,7 +3,7 @@
   "version": "1.20.1-r2-f2b",
   "environment": "staging-simulated",
   "app_env": "staging",
-  "executed_at": "2026-07-17T02:27:21.406313+00:00",
+  "executed_at": "2026-07-21T22:38:54.907712+00:00",
   "scenarios": [
     {
       "id": "PRE-1",
@@ -51,7 +51,7 @@
       "passed": true,
       "detail": "outbox booking.cancelled \u2014 alias sunset R3-F2",
       "extra": {
-        "correlation_id": "934c2a26-f1ee-4782-bac1-00ea52185db3"
+        "correlation_id": "43ecb1c8-f9f2-4b71-944d-9ffaea9b35a1"
       }
     },
     {
@@ -62,10 +62,7 @@
     {
       "id": "S7",
       "passed": true,
-      "detail": "legacy projection ok",
-      "extra": {
-        "legacy_id": 1
-      }
+      "detail": "core-only cancel sem proje\u00e7\u00e3o legado (R4-F3)"
     },
     {
       "id": "S8",

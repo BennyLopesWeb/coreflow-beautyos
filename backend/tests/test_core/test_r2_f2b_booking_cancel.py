@@ -49,17 +49,14 @@ def _slot_for_day(db, catalog, offering, days_ahead: int) -> datetime:
 
 @pytest.fixture
 def enable_booking_core(monkeypatch):
-    """Ativa booking.core.enabled e booking.legacy.projection.enabled (dual-write R4-F2)."""
-    both_flags = lambda key: key in (
-        "booking.core.enabled",
-        "booking.legacy.projection.enabled",
-    )
+    """Ativa booking.core.enabled (sempre core-only desde R4-F3)."""
+    core_flag = lambda key: key in ("booking.core.enabled",)
     for path in (
         "app.modules.booking.application.commands.cancel_booking.feature_flags.is_enabled",
         "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
         "app.modules.booking.application.commands.approve_booking.feature_flags.is_enabled",
     ):
-        monkeypatch.setattr(path, both_flags)
+        monkeypatch.setattr(path, core_flag)
 
 
 def _create_booking_api(client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead):
@@ -139,7 +136,7 @@ def test_cancel_policy_24h_boundary():
 def test_p06_cancel_pending_core_path(
     client, admin_headers, synced_catalog, cliente_exemplo, db, booking_headers, enable_booking_core
 ):
-    """Paridade P06 — cancel pending flag ON."""
+    """Paridade P06 — cancel pending (core-only, R4-F3)."""
     booking_id = _create_booking_api(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=25
     )["id"]
@@ -167,7 +164,7 @@ def test_p06_cancel_pending_core_path(
 def test_p06_cancel_pending_legacy_path(
     client, admin_headers, synced_catalog, cliente_exemplo, db, booking_headers
 ):
-    """Paridade P06 — cancel pending flag OFF."""
+    """Paridade P06 — cancel pending (sem override de flag; comportamento default)."""
     booking_id = _create_booking_api(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=26
     )["id"]
@@ -184,7 +181,7 @@ def test_p06_cancel_pending_legacy_path(
 def test_p07_cancel_approved_core_only_path(
     client, admin_headers, synced_catalog, cliente_exemplo, db, booking_headers
 ):
-    """Paridade P07 — cancel approved permissivo flag default OFF (R4-F2 core-only)."""
+    """Paridade P07 — cancel approved permissivo (core-only, R4-F3)."""
     from app.services.payment_reservation_service import PaymentReservationService
 
     booking = _create_booking_api(
@@ -210,15 +207,13 @@ def test_p07_cancel_approved_core_only_path(
 def test_p07_cancel_approved_core_path_far_slot(
     client, admin_headers, synced_catalog, cliente_exemplo, db, booking_headers, enable_booking_core
 ):
-    """Paridade P07 — cancel approved flag ON com slot >24h."""
+    """Paridade P07 — cancel approved com slot >24h (core-only, R4-F3)."""
     from app.services.payment_reservation_service import PaymentReservationService
 
     booking = _create_booking_api(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=28
     )
-    PaymentReservationService(db).confirmar_deposito(
-        booking["legacy_agendamento_id"], transaction_id="tx-p07-core"
-    )
+    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
     approve = client.post(
         f"/v1/bookings/{booking['id']}/approve",
         headers=admin_headers,
@@ -236,15 +231,13 @@ def test_p07_cancel_approved_core_path_far_slot(
 def test_p07_cancel_approved_within_24h_core_path(
     client, admin_headers, synced_catalog, cliente_exemplo, db, booking_headers, enable_booking_core, monkeypatch
 ):
-    """Paridade P07 — cancel approved <24h retorna 409 flag ON."""
+    """Paridade P07 — cancel approved <24h retorna 409 (core-only, R4-F3)."""
     from app.services.payment_reservation_service import PaymentReservationService
 
     booking = _create_booking_api(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=29
     )
-    PaymentReservationService(db).confirmar_deposito(
-        booking["legacy_agendamento_id"], transaction_id="tx-p07-block"
-    )
+    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
     approve = client.post(
         f"/v1/bookings/{booking['id']}/approve",
         headers=admin_headers,
@@ -266,10 +259,15 @@ def test_p07_cancel_approved_within_24h_core_path(
     assert "cancel_policy_violation" in cancel.text
 
 
-def test_defer_commit_rollback_on_cancel_projection_failure(
+def test_defer_commit_rollback_on_cancel_outbox_failure(
     db, synced_catalog, cliente_exemplo, default_company, monkeypatch, enable_booking_core, booking_headers, client
 ):
-    """Rollback TX cancel — falha projeção não persiste outbox processed."""
+    """Rollback TX cancel — falha no path core (outbox) não persiste outbox processed.
+
+    R4-F3: o cenário anterior de rollback por falha de projeção legado
+    (``project_cancel_booking``) deixou de existir junto com o dual-write.
+    Este teste cobre o equivalente core-only.
+    """
     from app.modules.booking.domain.models import CoreBooking
 
     booking_id = _create_booking_api(
@@ -278,9 +276,8 @@ def test_defer_commit_rollback_on_cancel_projection_failure(
 
     handler = CancelBookingHandler(db)
     monkeypatch.setattr(
-        handler.booking_port,
-        "project_cancel_booking",
-        MagicMock(side_effect=RuntimeError("projection failed")),
+        "app.modules.booking.application.commands.cancel_booking.OutboxBatch",
+        MagicMock(side_effect=RuntimeError("outbox failed")),
     )
 
     with pytest.raises(RuntimeError):

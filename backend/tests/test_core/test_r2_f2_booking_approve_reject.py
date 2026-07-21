@@ -101,35 +101,30 @@ def test_booking_approve_invalid_state():
 
 @pytest.fixture
 def enable_booking_core(monkeypatch):
-    """Ativa booking.core.enabled e booking.legacy.projection.enabled (dual-write R4-F2)."""
-    both_flags = lambda key: key in (
-        "booking.core.enabled",
-        "booking.legacy.projection.enabled",
-    )
+    """Ativa booking.core.enabled (path core, sempre core-only desde R4-F3)."""
+    core_flag = lambda key: key in ("booking.core.enabled",)
     monkeypatch.setattr(
         "app.modules.booking.application.commands.approve_booking.feature_flags.is_enabled",
-        both_flags,
+        core_flag,
     )
     monkeypatch.setattr(
         "app.modules.booking.application.commands.reject_booking.feature_flags.is_enabled",
-        both_flags,
+        core_flag,
     )
     monkeypatch.setattr(
         "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
-        both_flags,
+        core_flag,
     )
 
 
 def _create_booking_with_deposit(client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=14):
-    """Helper — create + confirm deposit."""
+    """Helper — create + confirm deposit (core-only, sem Agendamento — R4-F3)."""
     from app.services.payment_reservation_service import PaymentReservationService
 
     booking = _create_booking(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead
     )
-    PaymentReservationService(db).confirmar_deposito(
-        booking["legacy_agendamento_id"], transaction_id="tx-f2"
-    )
+    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
     return booking
 
 
@@ -250,48 +245,10 @@ def test_p05_reject_legacy_path(
     assert response.json()["status"] in ("rejected", "REJECTED")
 
 
-def test_p08_deposit_confirmed_enables_approve_core_path(
-    client, admin_headers, synced_catalog, cliente_exemplo, db, booking_headers, enable_booking_core
-):
-    """Paridade P08 — confirmar sinal habilita approve (flag ON)."""
-    booking = _create_booking(
-        client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=20
-    )
-    legacy_id = booking["legacy_agendamento_id"]
-
-    blocked = client.post(
-        f"/v1/bookings/{booking['id']}/approve",
-        headers=admin_headers,
-    )
-    assert blocked.status_code == 409
-
-    deposit = client.post(
-        "/payments/deposit/admin",
-        json={"agendamento_id": legacy_id, "transaction_id": "tx-p08"},
-        headers=admin_headers,
-    )
-    assert deposit.status_code == 200, deposit.text
-
-    evt = (
-        db.query(CoreEventOutbox)
-        .filter(CoreEventOutbox.event_type == "payment.deposit.confirmed")
-        .order_by(CoreEventOutbox.id.desc())
-        .first()
-    )
-    assert evt is not None
-
-    approve = client.post(
-        f"/v1/bookings/{booking['id']}/approve",
-        headers=admin_headers,
-    )
-    assert approve.status_code == 200, approve.text
-    assert approve.json()["status"] in ("approved", "APPROVED")
-
-
 def test_p08_deposit_confirmed_enables_approve_core_only_path(
     client, admin_headers, synced_catalog, cliente_exemplo, db, booking_headers
 ):
-    """Paridade P08 — confirmar sinal habilita approve (flag default OFF — R4-F2 core-only)."""
+    """Paridade P08 — confirmar sinal habilita approve (core-only, sem Agendamento — R4-F3)."""
     from app.services.payment_reservation_service import PaymentReservationService
 
     booking = _create_booking(
@@ -341,10 +298,15 @@ def test_if_match_invalid_precondition(
     assert "precondition_failed" in response.text
 
 
-def test_defer_commit_rollback_on_approve_projection_failure(
+def test_defer_commit_rollback_on_approve_outbox_failure(
     db, synced_catalog, cliente_exemplo, default_company, monkeypatch, enable_booking_core, booking_headers, client
 ):
-    """Integration — falha projeção approve faz rollback (status pending, sem outbox processed)."""
+    """Integration — falha no path core (outbox) faz rollback (status pending, sem outbox processed).
+
+    R4-F3: o cenário anterior de rollback por falha de projeção legado
+    (``project_approve_booking``) deixou de existir junto com o dual-write.
+    Este teste cobre o equivalente core-only.
+    """
     booking = _create_booking_with_deposit(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=24
     )
@@ -352,9 +314,8 @@ def test_defer_commit_rollback_on_approve_projection_failure(
 
     handler = ApproveBookingHandler(db)
     monkeypatch.setattr(
-        handler.booking_port,
-        "project_approve_booking",
-        MagicMock(side_effect=RuntimeError("projection failed")),
+        "app.modules.booking.application.commands.approve_booking.OutboxBatch",
+        MagicMock(side_effect=RuntimeError("outbox failed")),
     )
 
     with pytest.raises(RuntimeError):

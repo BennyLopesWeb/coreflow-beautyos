@@ -69,18 +69,15 @@ def staging_env(monkeypatch):
 
 @pytest.fixture
 def enable_booking_core(monkeypatch):
-    """Ativa booking.core.enabled e booking.legacy.projection.enabled (dual-write R4-F2) nos handlers."""
-    both_flags = lambda key: key in (
-        "booking.core.enabled",
-        "booking.legacy.projection.enabled",
-    )
+    """Ativa booking.core.enabled nos handlers (sempre core-only desde R4-F3)."""
+    core_flag = lambda key: key in ("booking.core.enabled",)
     for path in (
         "app.modules.booking.application.commands.cancel_booking.feature_flags.is_enabled",
         "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
         "app.modules.booking.application.commands.approve_booking.feature_flags.is_enabled",
         "app.modules.booking.application.commands.reject_booking.feature_flags.is_enabled",
     ):
-        monkeypatch.setattr(path, both_flags)
+        monkeypatch.setattr(path, core_flag)
 
 
 def _slot(db, catalog, offering, days_ahead: int) -> datetime:
@@ -138,14 +135,9 @@ def _approve_booking(client, db, admin_headers, booking_id: int) -> None:
         admin_headers: JWT admin.
         booking_id: ID core_bookings.
     """
-    from app.modules.booking.domain.models import CoreBooking
     from app.services.payment_reservation_service import PaymentReservationService
 
-    core = db.query(CoreBooking).filter(CoreBooking.id == booking_id).first()
-    PaymentReservationService(db).confirmar_deposito(
-        core.legacy_agendamento_id, transaction_id=f"tx-d6-{booking_id}"
-    )
-    db.commit()
+    PaymentReservationService(db).confirmar_deposito_por_booking(booking_id)
     resp = client.post(f"/v1/bookings/{booking_id}/approve", headers=admin_headers)
     assert resp.status_code == 200, resp.text
 
@@ -349,30 +341,32 @@ class TestD6FlagOn:
         _record("S6", True, "outbox booking.cancelled — alias sunset R3-F2", {"correlation_id": corr})
         _record("O3", True, "correlation_id nos eventos")
 
-    def test_s7_legacy_projection(
+    def test_s7_core_only_no_legacy_projection(
         self, client, db, admin_headers, synced_catalog, cliente_exemplo, booking_headers, enable_booking_core
     ):
-        """S7 — projeção legacy soft-delete."""
+        """S7 (R4-F3) — cancel core-only não cria/atualiza nenhum agendamento legado.
+
+        Substitui o cenário original "projeção legacy soft-delete": o
+        dual-write outbound foi removido definitivamente em R4-F3, então o
+        comportamento esperado agora é a ausência total de projeção.
+        """
         from app.models.agendamento import Agendamento
 
         catalog, offering = synced_catalog
         booking = _create_booking(
             client, db, catalog, offering, cliente_exemplo, booking_headers, days_ahead=36
         )
+        assert booking["legacy_agendamento_id"] is None
+        before_agendamentos = db.query(Agendamento).count()
+
         resp = client.post(
             f"/v1/bookings/{booking['id']}/cancel",
             headers=admin_headers,
-            json={"reason": "D6 S7 legacy"},
+            json={"reason": "D6 S7 core-only"},
         )
         assert resp.status_code == 200, resp.text
-        ag = (
-            db.query(Agendamento)
-            .filter(Agendamento.id == booking["legacy_agendamento_id"])
-            .first()
-        )
-        assert ag is not None
-        assert ag.deleted_at is not None or str(ag.status).lower() in ("cancelled", "cancelado")
-        _record("S7", True, "legacy projection ok", {"legacy_id": booking["legacy_agendamento_id"]})
+        assert db.query(Agendamento).count() == before_agendamentos
+        _record("S7", True, "core-only cancel sem projeção legado (R4-F3)")
 
     def test_s8_if_match_stale(
         self, client, db, admin_headers, synced_catalog, cliente_exemplo, booking_headers, enable_booking_core

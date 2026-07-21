@@ -10,8 +10,12 @@ apenas kill-switch de emergência que bloqueia a escrita com
 ``BusinessRuleError`` (sem fallback).
 R4-F2: dual-write outbound (``project_create_booking``) desligado por
 padrão — gated por ``booking.legacy.projection.enabled`` (ADR-024 sunset /
-RFC-003 M7). Com a flag OFF, o booking é core-only
-(``legacy_agendamento_id=None``, ``mark_core_only_synced()``).
+RFC-003 M7).
+R4-F3 (ADR-024 sunset / RFC-003 M7 completo): o dual-write outbound foi
+removido definitivamente do código. O booking é sempre core-only
+(``legacy_agendamento_id=None``, ``mark_core_only_synced()``); o modelo
+``Agendamento`` permanece apenas para dados históricos até um drop futuro
+(R4-F4+).
 """
 from dataclasses import dataclass
 from datetime import datetime
@@ -41,7 +45,6 @@ from app.modules.booking.infrastructure.repositories.core_booking_repository imp
 from app.modules.customer.infrastructure.adapters.customer_query_adapter import (
     SqlAlchemyCustomerQueryAdapter,
 )
-from app.shared.acl.booking_port import LegacyBookingAdapter
 from app.shared.acl.scheduling_port import LegacySchedulingPortAdapter
 from app.shared.events.outbox import OutboxBatch
 from app.shared.idempotency.idempotency_store import (
@@ -104,7 +107,6 @@ class CreateBookingHandler:
 
     def __init__(self, db: Session):
         self.db = db
-        self.booking_port = LegacyBookingAdapter(db)
 
     def execute(self, command: CreateBookingCommand) -> CreateBookingResult:
         """
@@ -206,7 +208,7 @@ class CreateBookingHandler:
 
     def _execute_core_path(self, command: CreateBookingCommand) -> CoreBooking:
         """
-        Path domain core (R2-F1) — dual-write TX ADR-025.
+        Path domain core (R2-F1) — core-only, sem dual-write (R4-F3).
 
         Emite span OTEL ``booking.create.core`` (FF-OBS-001 / R2-F5).
 
@@ -264,26 +266,7 @@ class CreateBookingHandler:
             )
             booking = repository.save(booking)
 
-            legacy_id = None
-            if feature_flags.is_enabled("booking.legacy.projection.enabled"):
-                tranca_id, service_image_id = self.booking_port.resolve_legacy_ids(
-                    command.catalog_id, command.offering_id
-                )
-                legacy_id = self.booking_port.project_create_booking(
-                    company_id=command.company_id,
-                    customer_id=command.customer_id,
-                    tranca_id=tranca_id,
-                    service_image_id=service_image_id,
-                    scheduled_at=command.scheduled_at,
-                    pricing_total=booking.pricing.price_total,
-                    deposit_pct=booking.pricing.deposit_pct,
-                    deposit_amount=booking.pricing.deposit_amount,
-                    remaining_amount=booking.pricing.remaining_amount,
-                    notes=command.notes,
-                )
-                booking.mark_legacy_synced(legacy_id)
-            else:
-                booking.mark_core_only_synced()
+            booking.mark_core_only_synced()
             booking = repository.save(booking)
 
             from app.modules.booking.domain.events import booking_created
@@ -296,7 +279,7 @@ class CreateBookingHandler:
                     customer_id=command.customer_id,
                     catalog_id=command.catalog_id,
                     offering_id=command.offering_id,
-                    legacy_agendamento_id=legacy_id,
+                    legacy_agendamento_id=None,
                     correlation_id=command.correlation_id,
                 )
             )

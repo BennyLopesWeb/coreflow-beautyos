@@ -19,7 +19,8 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 | R3-F3 | 2.3.0-r3-f3 | Remove legacy write routers + fila→core — ✅ |
 | R4-F1 | 2.4.0-r4-f1 | 410 Gone booking legado + catalog alias gone — ✅ |
 | R4-F2 | 2.5.0-r4-f2 | Desligar dual-write outbound `project_*` por padrão (M7) — ✅ |
+| R4-F3 | 2.6.0-r4-f3 | Remover código do dual-write outbound `project_*` (M7 completo) — ✅ |
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos: R4-F3 (remover código `project_*` / avaliar drop de `agendamentos`)
+Próximos: R4-F4+ (avaliar drop físico da tabela `agendamentos`)

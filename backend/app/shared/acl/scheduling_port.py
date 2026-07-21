@@ -8,7 +8,11 @@ padrão, bookings core-only não geram mais linha em ``agendamentos`` — logo
 ``DisponibilidadeService`` (que consulta ``agendamentos``) não vê essas
 reservas. ``check_availability`` passa a consultar ``core_bookings``
 diretamente para preservar a paridade P02/P09 (slot indisponível /
-double-booking) independente do estado da flag de projeção.
+double-booking).
+
+R4-F3: dual-write outbound removido definitivamente — todo booking é
+core-only, então a consulta direta a ``core_bookings`` descrita acima
+deixa de ser condicional e passa a ser o único comportamento.
 """
 from datetime import datetime, timedelta
 from typing import Optional

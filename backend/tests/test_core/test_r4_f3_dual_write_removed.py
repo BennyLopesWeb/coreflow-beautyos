@@ -1,11 +1,17 @@
 """
-R4-F2 — Dual-write outbound (project_*) desligado por padrão (ADR-024 sunset / RFC-003 M7).
+R4-F3 — Dual-write outbound (project_*) removido definitivamente (ADR-024 sunset / RFC-003 M7).
 
-Prova o path default (``booking.legacy.projection.enabled=False``):
-- create não gera ``legacy_agendamento_id`` nem linha em ``agendamentos``.
-- approve/reject/cancel funcionam sem mapeamento legado.
-- reconciliation não trata booking core-only como drift.
-- APP_VERSION == 2.5.0-r4-f2.
+Sucede ``test_r4_f2_dual_write_off.py`` (R4-F2 apenas desligava o dual-write
+por padrão via feature flag, mantendo o código para rollback). Prova que:
+
+- A feature flag ``FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED`` /
+  ``booking.legacy.projection.enabled`` não existe mais — não há kill-switch
+  porque não há mais código de dual-write para reativar.
+- ``LegacyBookingAdapter`` não expõe mais nenhum método ``project_*``.
+- create/approve/reject/cancel continuam funcionando 100% core-only, sem
+  ``legacy_agendamento_id`` nem linha em ``agendamentos``.
+- Reconciliation não trata booking core-only como drift.
+- APP_VERSION == 2.6.0-r4-f3.
 """
 from datetime import datetime, timedelta
 
@@ -18,6 +24,7 @@ from app.modules.booking.domain.models import CoreBooking
 from app.modules.booking.domain.value_objects.booking_types import SyncStatus
 from app.services.disponibilidade_service import DisponibilidadeService
 from app.services.payment_reservation_service import PaymentReservationService
+from app.shared.acl.booking_port import LegacyBookingAdapter
 from app.workers.booking_reconciliation_worker import detect_drift
 
 
@@ -44,7 +51,7 @@ def _slot_for_day(db, catalog, offering, days_ahead: int) -> datetime:
 
 def _create_booking(client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead: int) -> dict:
     """
-    Cria booking via ``POST /v1/bookings`` com flags default (projeção OFF).
+    Cria booking via ``POST /v1/bookings`` — sempre core-only (R4-F3).
 
     Args:
         client: TestClient FastAPI.
@@ -73,21 +80,33 @@ def _create_booking(client, db, synced_catalog, cliente_exemplo, booking_headers
     return response.json()
 
 
-def test_app_version_r4_f2():
-    """APP_VERSION marca a release R4-F2."""
-    assert settings.APP_VERSION == "2.5.0-r4-f2"
+def test_app_version_r4_f3():
+    """APP_VERSION marca a release R4-F3."""
+    assert settings.APP_VERSION == "2.6.0-r4-f3"
 
 
-def test_booking_legacy_projection_flag_default_off():
-    """Feature flag booking.legacy.projection.enabled é False por padrão."""
-    assert settings.FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED is False
-    assert feature_flags.is_enabled("booking.legacy.projection.enabled") is False
+def test_legacy_projection_flag_removed():
+    """R4-F3 — a flag de dual-write outbound foi removida definitivamente."""
+    assert not hasattr(settings, "FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED")
+    with pytest.raises(KeyError):
+        feature_flags.is_enabled("booking.legacy.projection.enabled")
+
+
+def test_legacy_booking_adapter_has_no_project_methods():
+    """R4-F3 — LegacyBookingAdapter não expõe mais nenhum método project_*."""
+    for name in (
+        "project_create_booking",
+        "project_approve_booking",
+        "project_reject_booking",
+        "project_cancel_booking",
+    ):
+        assert not hasattr(LegacyBookingAdapter, name), f"{name} deveria ter sido removido em R4-F3"
 
 
 def test_create_booking_default_no_legacy_projection(
     client, synced_catalog, cliente_exemplo, db, booking_headers
 ):
-    """Create com flag default (OFF) não gera legacy_agendamento_id nem Agendamento."""
+    """Create não gera legacy_agendamento_id nem Agendamento (sem dual-write)."""
     before_agendamentos = db.query(Agendamento).count()
 
     booking = _create_booking(
@@ -168,7 +187,7 @@ def test_cancel_core_only_booking_without_legacy(
 def test_reconciliation_core_only_booking_not_drift(
     db, default_company, cliente_exemplo, synced_catalog
 ):
-    """Reconciliation não marca booking sem legacy_agendamento_id como drift (R4-F2)."""
+    """Reconciliation não marca booking sem legacy_agendamento_id como drift."""
     from decimal import Decimal
 
     catalog, offering = synced_catalog
@@ -198,7 +217,11 @@ def test_reconciliation_core_only_booking_not_drift(
 def test_reconciliation_still_flags_orphan_legacy_reference(
     db, default_company, cliente_exemplo, synced_catalog
 ):
-    """Reconciliation continua detectando drift quando legacy_agendamento_id existe e está órfão."""
+    """Reconciliation continua detectando drift quando legacy_agendamento_id existe e está órfão.
+
+    Cobre bookings históricos criados antes de R4-F3 (quando o dual-write
+    ainda existia) que possam ter ficado com referência legado órfã.
+    """
     from decimal import Decimal
 
     catalog, offering = synced_catalog
@@ -225,27 +248,10 @@ def test_reconciliation_still_flags_orphan_legacy_reference(
     assert row.sync_status == SyncStatus.DRIFT.value
 
 
-def test_legacy_projection_flag_on_restores_dual_write(
-    client, synced_catalog, cliente_exemplo, db, booking_headers, monkeypatch
-):
-    """Kill-switch de rollback — flag ON restaura dual-write outbound (create)."""
-    monkeypatch.setattr(
-        "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
-        lambda key: True,
-    )
-    booking = _create_booking(
-        client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=56
-    )
-    assert booking["legacy_agendamento_id"] is not None
-
-    ag = db.query(Agendamento).filter(Agendamento.id == booking["legacy_agendamento_id"]).first()
-    assert ag is not None
-
-
-def test_queue_aprovar_com_horario_sem_agendamento_id_default(
+def test_queue_aprovar_com_horario_sem_agendamento_id(
     db, synced_catalog, cliente_exemplo
 ):
-    """QueueEntryService.aprovar_com_horario não levanta erro com projeção OFF (R4-F2)."""
+    """QueueEntryService.aprovar_com_horario não levanta erro sem dual-write (R4-F3)."""
     from app.models.queue_entry import QueueEntry, QueueEntryStatus
     from app.services.queue_entry_service import QueueEntryService
 
@@ -266,7 +272,7 @@ def test_queue_aprovar_com_horario_sem_agendamento_id_default(
         data=slot.horario.date(),
         horario_entrada=datetime.now().time(),
         status=QueueEntryStatus.WAITING,
-        observacoes="fila r4-f2",
+        observacoes="fila r4-f3",
         mesmo_dia=0,
     )
     db.add(entry)
