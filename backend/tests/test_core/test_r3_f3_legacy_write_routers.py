@@ -52,26 +52,21 @@ def test_agenda_disponibilidade_still_works(
 
 
 def test_aprovar_com_horario_cria_booking_core(
-    db, synced_catalog, cliente_exemplo, monkeypatch
+    db, synced_catalog, cliente_exemplo
 ):
     """
     QueueEntryService.aprovar_com_horario usa CreateBookingHandler (R3-F3).
 
-    Dual-write legado ligado explicitamente (R4-F2 default é projeção OFF)
-    para manter a paridade histórica desta asserção — comportamento
-    core-only default é coberto por
-    ``test_r4_f2_dual_write_off.test_queue_aprovar_com_horario_sem_agendamento_id_default``.
+    R4-F3: dual-write outbound removido definitivamente — o booking criado
+    é sempre core-only (sem ``Agendamento`` legado). Comportamento
+    equivalente também coberto por
+    ``test_r4_f3_dual_write_removed.test_queue_aprovar_com_horario_sem_agendamento_id``.
 
     Args:
         db: Sessão de teste.
         synced_catalog: Fixture catalog/offering sincronizados.
         cliente_exemplo: Cliente legado.
-        monkeypatch: Fixture pytest.
     """
-    monkeypatch.setattr(
-        "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
-        lambda key: key in ("booking.core.enabled", "booking.legacy.projection.enabled"),
-    )
     catalog, offering = synced_catalog
     horarios = DisponibilidadeService(db).calcular_horarios_disponiveis(
         datetime.now() + timedelta(days=3),
@@ -97,17 +92,20 @@ def test_aprovar_com_horario_cria_booking_core(
     db.refresh(entry)
 
     updated = QueueEntryService(db).aprovar_com_horario(entry.id, slot.horario)
-    assert updated.agendamento_id is not None
+    assert updated.agendamento_id is None
     assert updated.status == QueueEntryStatus.WAITING
 
     booking = (
         db.query(CoreBooking)
-        .filter(CoreBooking.legacy_agendamento_id == updated.agendamento_id)
+        .filter(
+            CoreBooking.customer_id == cliente_exemplo.id,
+            CoreBooking.catalog_id == catalog.id,
+        )
+        .order_by(CoreBooking.id.desc())
         .first()
     )
     assert booking is not None
-    assert booking.customer_id == cliente_exemplo.id
-    assert booking.catalog_id == catalog.id
+    assert booking.legacy_agendamento_id is None
 
 
 def test_aprovar_com_horario_sem_catalog_raise(

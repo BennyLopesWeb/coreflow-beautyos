@@ -233,9 +233,10 @@ class ReservationService:
         Antes criava ``Agendamento`` com snapshot de preço/duração/sinal do
         modelo e publicava ``reservation.created``. O booking write path
         legado foi removido (ADR-027/ADR-033/RFC-003 M4) — use
-        ``POST /v1/bookings`` (flag ``booking.core.enabled``). Para
-        dual-write outbound a partir do path core, use
-        ``LegacyBookingAdapter.project_create_booking``.
+        ``POST /v1/bookings`` (flag ``booking.core.enabled``). O dual-write
+        outbound que existia a partir do path core (``project_create_booking``)
+        foi removido definitivamente em R4-F3 — bookings são sempre
+        core-only.
 
         Args:
             data: Dados validados.

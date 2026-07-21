@@ -305,11 +305,10 @@ class QueueEntryService:
         Resolve catalog/offering via ACL e delega a ``CreateBookingHandler``
         (mesmo padrão de ``PromoteWaitlistHandler``).
 
-        R4-F2 (ADR-024 sunset): com ``booking.legacy.projection.enabled``
-        OFF (default), o booking criado é core-only —
-        ``booking.legacy_agendamento_id`` vem ``None`` e ``entry.agendamento_id``
-        é deixado ``None`` (sem levantar erro; não há mais projeção legado
-        obrigatória).
+        R4-F3 (ADR-024 sunset / dual-write outbound removido definitivamente):
+        o booking criado é sempre core-only — ``booking.legacy_agendamento_id``
+        vem ``None`` e ``entry.agendamento_id`` é deixado ``None`` (sem
+        levantar erro; não há mais projeção legado).
 
         Args:
             entry_id: ID da entrada.

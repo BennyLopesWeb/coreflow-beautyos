@@ -168,11 +168,11 @@ class PaymentReservationService:
 
     def confirmar_deposito_por_booking(self, booking_id: int) -> "CoreBooking":
         """
-        Confirma sinal diretamente em booking core-only, sem ``Agendamento`` (R4-F2).
+        Confirma sinal diretamente em booking core-only, sem ``Agendamento`` (R4-F2/R4-F3).
 
-        Path usado quando ``booking.legacy.projection.enabled`` está OFF
-        (default): não existe projeção legado (``agendamentos``/``payments``)
-        para o booking, então a confirmação do sinal atualiza
+        Path usado sempre desde R4-F3 (dual-write outbound removido
+        definitivamente): não existe projeção legado (``agendamentos``/
+        ``payments``) para o booking, então a confirmação do sinal atualiza
         ``CoreBooking.deposit_paid`` diretamente — é isso que
         ``PaymentQueryPort.is_deposit_confirmed`` consulta para liberar o
         approve (ADR-028).

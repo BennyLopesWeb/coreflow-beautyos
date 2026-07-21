@@ -36,6 +36,16 @@
 
 ---
 
+## 2026-07-21 — R4-F3 Remove booking legacy dual-write code
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F3 M7 completo | `FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED` e `project_*` removidos definitivamente de `LegacyBookingAdapter`/`booking_port.py` (ADR-024 sunset); bookings sempre core-only; `Agendamento` mantido para dados históricos; `2.6.0-r4-f3` |
+| **Sunset (código)** | ADR-024 dual-write outbound | Não há mais kill-switch de rollback via flag — reversão requer `git revert` |
+| **Published** | Release + gate | [2.6.0-r4-f3.md](releases/2.6.0-r4-f3.md) · [R4-F3-Gate.md](reviews/R4-F3-Gate.md) |
+
+---
+
 ## 2026-07-21 — R4-F2 Disable booking legacy dual-write projection
 
 | Evento | Artefato | Notas |

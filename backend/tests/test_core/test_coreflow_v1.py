@@ -35,14 +35,9 @@ def test_v1_catalog_offerings(client, synced_catalog):
     assert any(o["id"] == offering.id for o in data)
 
 
-def test_v1_create_booking(client, synced_catalog, cliente_exemplo, db, booking_headers, monkeypatch):
-    """POST /v1/bookings cria via CQRS e sincroniza core_bookings (dual-write legado ON — R4-F2)."""
+def test_v1_create_booking(client, synced_catalog, cliente_exemplo, db, booking_headers):
+    """POST /v1/bookings cria via CQRS e sincroniza core_bookings (core-only, sem dual-write — R4-F3)."""
     from app.services.disponibilidade_service import DisponibilidadeService
-
-    monkeypatch.setattr(
-        "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
-        lambda key: key in ("booking.core.enabled", "booking.legacy.projection.enabled"),
-    )
 
     catalog, offering = synced_catalog
     tranca_id = catalog.legacy_tranca_id
@@ -63,5 +58,5 @@ def test_v1_create_booking(client, synced_catalog, cliente_exemplo, db, booking_
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["catalog_id"] == catalog.id
-    assert body["legacy_agendamento_id"] is not None
+    assert body["legacy_agendamento_id"] is None
     assert body["status"] == "pending_payment"

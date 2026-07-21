@@ -101,8 +101,8 @@ Job periódico (5 min):
 | R3-F1 | Block produção; stop projection writes |
 | R3-F2 | Remove booking write path legado (`ReservationService`) — `project_*` outbound permanece ativo |
 | R4-F2 | ✅ `FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED` default `false` — `project_*` deixa de ser chamado por padrão (código mantido para rollback) |
-| R4-F3 | Remover código `project_*` / `LegacyBookingAdapter` outbound |
-| R4+ | Drop agendamentos table (separado ADR), após período de observação sem uso da flag |
+| R4-F3 | ✅ Código `project_*` / feature flag removidos definitivamente de `LegacyBookingAdapter`/`booking_port.py`; bookings sempre core-only. Modelo `Agendamento` mantido para dados históricos; `2.6.0-r4-f3` |
+| R4-F4+ | Drop `agendamentos` table (separado ADR), após confirmação de que não há mais consumidores lendo dados legado |
 
 ## Consequências
 

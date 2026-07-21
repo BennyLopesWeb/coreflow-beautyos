@@ -47,17 +47,17 @@ def test_time_slot_invalid_raises():
 
 @pytest.fixture
 def enable_booking_core(monkeypatch):
-    """Ativa booking.core.enabled e booking.legacy.projection.enabled (dual-write R4-F2) para testes do path F1."""
+    """Ativa booking.core.enabled (path core) para testes do path F1."""
     monkeypatch.setattr(
         "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
-        lambda key: key in ("booking.core.enabled", "booking.legacy.projection.enabled"),
+        lambda key: key in ("booking.core.enabled",),
     )
 
 
 def test_p01_create_core_path(
     client, synced_catalog, cliente_exemplo, db, enable_booking_core, booking_headers
 ):
-    """Paridade P01 — create básico flag ON."""
+    """Paridade P01 — create básico core-only (R4-F3, sem dual-write)."""
     from app.services.disponibilidade_service import DisponibilidadeService
 
     catalog, offering = synced_catalog
@@ -80,7 +80,7 @@ def test_p01_create_core_path(
     )
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["legacy_agendamento_id"] is not None
+    assert body["legacy_agendamento_id"] is None
     assert body["status"] == "pending_payment"
 
     booking_evt = (
@@ -195,10 +195,17 @@ def test_p09_double_booking_conflict_legacy_path(
     assert second.status_code == 409
 
 
-def test_core_path_dual_write_rollback_on_projection_failure(
+def test_core_path_rollback_on_scheduling_conflict(
     db, synced_catalog, cliente_exemplo, default_company, monkeypatch, enable_booking_core
 ):
-    """Integration — falha projeção faz rollback (zero core row)."""
+    """Integration — falha no path core (conflito de slot) faz rollback (zero core row).
+
+    R4-F3: o antigo cenário de rollback por falha de projeção legado
+    (``project_create_booking``) deixou de existir junto com o dual-write.
+    Este teste cobre o equivalente core-only: uma falha durante o create
+    (ex.: alocação de resource) também não deve deixar linha órfã em
+    ``core_bookings``.
+    """
     from app.modules.booking.domain.models import CoreBooking
     from app.services.disponibilidade_service import DisponibilidadeService
 
@@ -212,9 +219,8 @@ def test_core_path_dual_write_rollback_on_projection_failure(
 
     handler = CreateBookingHandler(db)
     monkeypatch.setattr(
-        handler.booking_port,
-        "project_create_booking",
-        MagicMock(side_effect=RuntimeError("projection failed")),
+        "app.modules.booking.application.commands.create_booking.OutboxBatch",
+        MagicMock(side_effect=RuntimeError("outbox failed")),
     )
 
     before = db.query(CoreBooking).count()

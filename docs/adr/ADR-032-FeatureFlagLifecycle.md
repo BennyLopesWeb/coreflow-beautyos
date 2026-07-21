@@ -24,7 +24,7 @@ Cada flag R2 **deve** ter entrada nesta tabela (atualizar em sprint docs):
 | `FEATURE_PLUGIN_ENGINE_ENABLED` | Platform Lead | R2-F4 | Typed plugin dispatch | BeautyAgent migrated + tests | R3-F4 | ARB |
 | `EXPO_PUBLIC_USE_SDK_BOOKINGS` | Frontend Lead | R3 | SDK admin tab | Tab legado removed | R3-F5 | Product + ARB |
 | `CORE_ENFORCEMENT_MODE` | Platform Lead | R1 | warn/block legado | All routes migrated or 410 | R4 | ARB |
-| `FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED` | Platform Lead | R4-F2 | Kill-switch dual-write outbound (`project_*`, ADR-024 sunset) | Zero uso da flag em produção por período de observação | R4-F3 | ARB |
+| `FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED` | Platform Lead | R4-F2 | Kill-switch dual-write outbound (`project_*`, ADR-024 sunset) | Zero uso da flag em produção por período de observação | R4-F3 ✅ **removida** | ARB |
 
 ### Lifecycle phases
 

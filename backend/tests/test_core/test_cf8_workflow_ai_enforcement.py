@@ -41,15 +41,9 @@ def test_v1_approve_booking(
     service_image_exemplo,
     db,
     booking_headers,
-    monkeypatch,
 ):
-    """POST /v1/bookings/{id}/approve aprova reserva com sinal pago (dual-write legado ON — R4-F2)."""
+    """POST /v1/bookings/{id}/approve aprova reserva com sinal pago (core-only, sem dual-write — R4-F3)."""
     from app.services.payment_reservation_service import PaymentReservationService
-
-    monkeypatch.setattr(
-        "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
-        lambda key: key in ("booking.core.enabled", "booking.legacy.projection.enabled"),
-    )
 
     catalog, offering = synced_catalog
     slot = _slot_disponivel(db, tranca_exemplo.id, service_image_exemplo.id)
@@ -66,10 +60,9 @@ def test_v1_approve_booking(
     )
     assert create_resp.status_code == 201, create_resp.text
     booking = create_resp.json()
-    legacy_id = booking["legacy_agendamento_id"]
-    assert legacy_id is not None
+    assert booking["legacy_agendamento_id"] is None
 
-    PaymentReservationService(db).confirmar_deposito(legacy_id, transaction_id="test-tx")
+    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
 
     approve_resp = client.post(
         f"/v1/bookings/{booking['id']}/approve",

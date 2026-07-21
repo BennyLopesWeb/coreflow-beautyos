@@ -69,13 +69,13 @@ def detect_drift(db: Session) -> Tuple[int, List[int]]:
     """
     Compara ``core_bookings`` com ``agendamentos`` e marca sync_status=drift.
 
-    Regras (ADR-024 / R4-F2 sunset):
-    - ``legacy_agendamento_id is None`` → **não é drift**. Com
-      ``booking.legacy.projection.enabled`` OFF (default), bookings
-      core-only nunca tiveram projeção legado — não há nada para
+    Regras (ADR-024 / R4-F2 sunset / R4-F3 remoção definitiva do dual-write):
+    - ``legacy_agendamento_id is None`` → **não é drift**. Desde R4-F3, o
+      dual-write outbound foi removido do código — todo booking novo é
+      core-only e nunca terá projeção legado — não há nada para
       reconciliar, então ``SYNCED`` é o estado correto.
-    - ``legacy_agendamento_id`` presente mas ``Agendamento`` órfão
-      (inexistente) → drift.
+    - ``legacy_agendamento_id`` presente (bookings antigos de antes de
+      R4-F2/R4-F3) mas ``Agendamento`` órfão (inexistente) → drift.
     - ``legacy_agendamento_id`` presente e status canônico divergente → drift.
 
     Args:

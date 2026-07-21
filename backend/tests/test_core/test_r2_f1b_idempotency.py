@@ -101,7 +101,7 @@ def test_idempotency_key_reused_different_body_409(
 def test_correlation_id_in_outbox_on_create(
     client, synced_catalog, cliente_exemplo, db, booking_headers, enable_booking_core
 ):
-    """Eventos HTTP-originated incluem correlation_id no payload outbox (flag ON)."""
+    """Eventos HTTP-originated incluem correlation_id no payload outbox."""
     from app.services.disponibilidade_service import DisponibilidadeService
 
     catalog, offering = synced_catalog
@@ -140,10 +140,10 @@ def test_correlation_id_in_outbox_on_create(
 
 @pytest.fixture
 def enable_booking_core(monkeypatch):
-    """Ativa booking.core.enabled e booking.legacy.projection.enabled (dual-write R4-F2)."""
+    """Ativa booking.core.enabled (sempre core-only desde R4-F3)."""
     monkeypatch.setattr(
         "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
-        lambda key: key in ("booking.core.enabled", "booking.legacy.projection.enabled"),
+        lambda key: key in ("booking.core.enabled",),
     )
 
 
@@ -153,10 +153,15 @@ def test_compute_request_hash_stable():
     assert compute_request_hash(body) == compute_request_hash({"b": 2, "a": 1})
 
 
-def test_idempotency_not_saved_on_projection_failure(
+def test_idempotency_not_saved_on_core_path_failure(
     db, synced_catalog, cliente_exemplo, default_company, monkeypatch, enable_booking_core
 ):
-    """Falha projeção não persiste idempotency key."""
+    """Falha no path core (outbox) não persiste idempotency key.
+
+    R4-F3: o cenário anterior de falha de projeção legado
+    (``project_create_booking``) deixou de existir junto com o dual-write.
+    Este teste cobre o equivalente core-only.
+    """
     from unittest.mock import MagicMock
 
     from app.modules.booking.application.commands.create_booking import (
@@ -182,9 +187,8 @@ def test_idempotency_not_saved_on_projection_failure(
 
     handler = CreateBookingHandler(db)
     monkeypatch.setattr(
-        handler.booking_port,
-        "project_create_booking",
-        MagicMock(side_effect=RuntimeError("projection failed")),
+        "app.modules.booking.application.commands.create_booking.OutboxBatch",
+        MagicMock(side_effect=RuntimeError("outbox failed")),
     )
 
     with pytest.raises(RuntimeError):
