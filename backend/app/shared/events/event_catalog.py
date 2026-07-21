@@ -32,11 +32,12 @@ def event_catalog_entries() -> List[Dict[str, Any]]:
         },
         {
             "event_type": "reservation.created",
-            "status": "implemented",
+            "status": "gone",
             "schema": "schemas/events/reservation.created.json",
             "avro": "reservation.created.v1.avsc",
-            "publishers": ["LegacyReservationService", "BookingHandlers"],
-            "consumers": ["WorkflowEngine", "PushHandlers"],
+            "publishers": [],
+            "consumers": [],
+            "notes": "R4-F1 / ADR-027 — alias sunset; use booking.created",
         },
         {
             "event_type": "booking.created",

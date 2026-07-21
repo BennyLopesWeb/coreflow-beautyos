@@ -11,6 +11,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.core.logging_config import get_logger
 from app.core.legacy_sunset import LegacySunsetMiddleware
+from app.core.legacy_gone import LegacyGoneMiddleware
 from app.core.core_enforcement import CoreEnforcementMiddleware, resolve_enforcement_mode
 from app.core.error_handler import (
     trancapro_exception_handler,
@@ -54,6 +55,9 @@ app.add_middleware(
 
 # Telemetria HTTP por camada API (R1-F1)
 app.add_middleware(LegacyTelemetryMiddleware)
+
+# R4-F1 — 410 Gone em rotas legado de booking (RFC-003 M6); outermost
+app.add_middleware(LegacyGoneMiddleware, enabled=True)
 
 # OpenTelemetry (opcional)
 setup_telemetry(app)

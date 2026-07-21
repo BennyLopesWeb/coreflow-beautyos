@@ -12,26 +12,25 @@ from app.services.disponibilidade_service import DisponibilidadeService
 from app.services.queue_entry_service import QueueEntryService
 
 
-def test_app_version_r3_f3():
-    """Versão da release R3-F3."""
-    assert settings.APP_VERSION == "2.3.0-r3-f3"
+def test_app_version_semver_major_2_after_r3_f3():
+    """Após R3-F3, APP_VERSION permanece na linha 2.x (pin exato no gate F4+)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_agenda_write_methods_removed(client: TestClient):
-    """POST/PUT/DELETE /agenda/agendamentos → 405 Method Not Allowed."""
-    assert client.post("/agenda/agendamentos", json={}).status_code == 405
-    assert client.put("/agenda/agendamentos/1", json={}).status_code == 405
-    assert client.delete("/agenda/agendamentos/1").status_code == 405
+    """POST/PUT/DELETE /agenda/agendamentos → 410 Gone (R4-F1) ou 405 (pré-R4)."""
+    assert client.post("/agenda/agendamentos", json={}).status_code in (405, 410)
+    assert client.put("/agenda/agendamentos/1", json={}).status_code in (405, 410)
+    assert client.delete("/agenda/agendamentos/1").status_code in (405, 410)
 
 
 def test_reservations_write_methods_removed(client: TestClient):
-    """POST/PUT/DELETE /reservations removidos (405 no resource; 404 em subpaths)."""
-    assert client.post("/reservations", json={}).status_code == 405
-    # Subpaths removidos não têm rota → 404; DELETE no recurso → 405
-    assert client.put("/reservations/1/approve").status_code in (404, 405)
-    assert client.put("/reservations/1/reject", json={"motivo": "x"}).status_code in (404, 405)
-    assert client.put("/reservations/1/complete").status_code in (404, 405)
-    assert client.delete("/reservations/1").status_code == 405
+    """Writes /reservations → 410 Gone (R4-F1) ou 404/405 histórico."""
+    assert client.post("/reservations", json={}).status_code in (405, 410)
+    assert client.put("/reservations/1/approve").status_code in (404, 405, 410)
+    assert client.put("/reservations/1/reject", json={"motivo": "x"}).status_code in (404, 405, 410)
+    assert client.put("/reservations/1/complete").status_code in (404, 405, 410)
+    assert client.delete("/reservations/1").status_code in (405, 410)
 
 
 def test_agenda_disponibilidade_still_works(

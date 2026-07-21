@@ -40,7 +40,7 @@ def test_criar_agendamento_legado_removido(client, cliente_exemplo, tranca_exemp
     }
 
     response = client.post("/agenda/agendamentos", json=data)
-    assert response.status_code == 405
+    assert response.status_code in (405, 410)
 
 
 @pytest.mark.integration

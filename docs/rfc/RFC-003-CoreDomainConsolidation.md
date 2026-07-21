@@ -223,7 +223,7 @@ Registro completo: `docs/reviews/R2-ArchitectureRiskRegister.md`.
 | M3 | Block produção piloto booking writes legado | R3-F1 |
 | M4 | Remover `ReservationService` booking paths | R3-F2 ✅ Implemented |
 | M5 | Remover routers `/agendamentos` write | R3-F3 ✅ (`2.3.0-r3-f3`) |
-| M6 | `410 Gone` rotas legado booking | R4 |
+| M6 | `410 Gone` rotas legado booking | R4-F1 ✅ (`2.4.0-r4-f1`) |
 | M7 | Remover `legacy_sync` booking outbound | R4 |
 
 **Nomenclatura eventos:** `reservation.*` alias até R3-F2; sunset ADR-027.

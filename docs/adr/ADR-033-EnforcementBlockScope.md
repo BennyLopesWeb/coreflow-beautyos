@@ -63,7 +63,7 @@ Default all environments until F6. Production stays `warn` until production bloc
 
 | Milestone | Routes |
 |-----------|--------|
-| R4 | All legado booking routes |
+| R4-F1 ✅ | All legado booking routes (`LegacyGoneMiddleware` → 410) |
 | R5 | Remaining legado writes |
 | Never R2 | — |
 

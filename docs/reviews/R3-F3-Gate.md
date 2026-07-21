@@ -26,4 +26,4 @@
 
 ## Próximo
 
-R4 — `410 Gone` rotas legado booking + sunset catálogo `reservation.*` + remoção gradual `legacy_sync` outbound.
+R4-F1 — ✅ Implementado — 410 Gone + catalog alias. Ver [R4-F1.md](../sprints/R4-F1.md). Próximo: R4-F2 (M7 dual-write).
