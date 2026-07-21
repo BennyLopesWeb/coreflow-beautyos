@@ -112,6 +112,8 @@ class PaymentReservationService:
             agendamento_id=ag.id,
         )
 
+        self._sync_core_booking_deposit(ag.id)
+
         from app.modules.booking.domain.events import DEPOSIT_CONFIRMED
         from app.modules.payments.application.legacy_sync_service import PaymentLegacySyncService
         from app.shared.events.outbox import OutboxService
@@ -136,6 +138,66 @@ class PaymentReservationService:
             self.db.commit()
 
         return pag
+
+    def _sync_core_booking_deposit(self, agendamento_id: int) -> None:
+        """
+        Sincroniza ``CoreBooking.deposit_paid`` a partir do sinal legado (R4-F2).
+
+        Nice-to-have de paridade: quando o booking core está vinculado a um
+        ``Agendamento`` via ``legacy_agendamento_id`` (flag de projeção ON),
+        confirmar o sinal legado também deve refletir no core, para que
+        ``PaymentQueryPort.is_deposit_confirmed`` (que lê ``deposit_paid``
+        direto do core) fique consistente independente do caminho usado.
+
+        Args:
+            agendamento_id: ID ``agendamentos.id`` cujo sinal foi confirmado.
+
+        Returns:
+            None
+        """
+        from app.modules.booking.domain.models import CoreBooking
+
+        core = (
+            self.db.query(CoreBooking)
+            .filter(CoreBooking.legacy_agendamento_id == agendamento_id)
+            .first()
+        )
+        if core and not core.deposit_paid:
+            core.deposit_paid = True
+            self.db.commit()
+
+    def confirmar_deposito_por_booking(self, booking_id: int) -> "CoreBooking":
+        """
+        Confirma sinal diretamente em booking core-only, sem ``Agendamento`` (R4-F2).
+
+        Path usado quando ``booking.legacy.projection.enabled`` está OFF
+        (default): não existe projeção legado (``agendamentos``/``payments``)
+        para o booking, então a confirmação do sinal atualiza
+        ``CoreBooking.deposit_paid`` diretamente — é isso que
+        ``PaymentQueryPort.is_deposit_confirmed`` consulta para liberar o
+        approve (ADR-028).
+
+        Args:
+            booking_id: ID ``core_bookings.id``.
+
+        Returns:
+            CoreBooking atualizado com ``deposit_paid=True``.
+
+        Raises:
+            NotFoundError: Booking não encontrado.
+        """
+        from app.modules.booking.domain.models import CoreBooking
+        from app.models.agendamento import StatusPagamento as _StatusPagamento
+
+        row = self.db.query(CoreBooking).filter(CoreBooking.id == booking_id).first()
+        if not row:
+            raise NotFoundError("Booking", str(booking_id))
+
+        row.deposit_paid = True
+        row.payment_status = _StatusPagamento.PARTIALLY_PAID
+        self.db.commit()
+        self.db.refresh(row)
+        return row
 
     def confirmar_pagamento_final(
         self,

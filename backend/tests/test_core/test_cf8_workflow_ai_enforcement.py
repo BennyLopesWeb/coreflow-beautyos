@@ -41,9 +41,15 @@ def test_v1_approve_booking(
     service_image_exemplo,
     db,
     booking_headers,
+    monkeypatch,
 ):
-    """POST /v1/bookings/{id}/approve aprova reserva com sinal pago."""
+    """POST /v1/bookings/{id}/approve aprova reserva com sinal pago (dual-write legado ON — R4-F2)."""
     from app.services.payment_reservation_service import PaymentReservationService
+
+    monkeypatch.setattr(
+        "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
+        lambda key: key in ("booking.core.enabled", "booking.legacy.projection.enabled"),
+    )
 
     catalog, offering = synced_catalog
     slot = _slot_disponivel(db, tranca_exemplo.id, service_image_exemplo.id)

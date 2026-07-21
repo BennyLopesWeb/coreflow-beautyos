@@ -69,9 +69,14 @@ def detect_drift(db: Session) -> Tuple[int, List[int]]:
     """
     Compara ``core_bookings`` com ``agendamentos`` e marca sync_status=drift.
 
-    Regras (ADR-024):
-    - legacy_agendamento_id ausente ou inexistente → drift
-    - status canônico divergente → drift
+    Regras (ADR-024 / R4-F2 sunset):
+    - ``legacy_agendamento_id is None`` → **não é drift**. Com
+      ``booking.legacy.projection.enabled`` OFF (default), bookings
+      core-only nunca tiveram projeção legado — não há nada para
+      reconciliar, então ``SYNCED`` é o estado correto.
+    - ``legacy_agendamento_id`` presente mas ``Agendamento`` órfão
+      (inexistente) → drift.
+    - ``legacy_agendamento_id`` presente e status canônico divergente → drift.
 
     Args:
         db: Sessão SQLAlchemy.
@@ -87,9 +92,7 @@ def detect_drift(db: Session) -> Tuple[int, List[int]]:
     drifted: List[int] = []
     for row in rows:
         is_drift = False
-        if not row.legacy_agendamento_id:
-            is_drift = True
-        else:
+        if row.legacy_agendamento_id:
             legacy = (
                 db.query(Agendamento)
                 .filter(Agendamento.id == row.legacy_agendamento_id)

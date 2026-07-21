@@ -69,14 +69,18 @@ def staging_env(monkeypatch):
 
 @pytest.fixture
 def enable_booking_core(monkeypatch):
-    """Ativa booking.core.enabled nos handlers."""
+    """Ativa booking.core.enabled e booking.legacy.projection.enabled (dual-write R4-F2) nos handlers."""
+    both_flags = lambda key: key in (
+        "booking.core.enabled",
+        "booking.legacy.projection.enabled",
+    )
     for path in (
         "app.modules.booking.application.commands.cancel_booking.feature_flags.is_enabled",
         "app.modules.booking.application.commands.create_booking.feature_flags.is_enabled",
         "app.modules.booking.application.commands.approve_booking.feature_flags.is_enabled",
         "app.modules.booking.application.commands.reject_booking.feature_flags.is_enabled",
     ):
-        monkeypatch.setattr(path, lambda key: key == "booking.core.enabled")
+        monkeypatch.setattr(path, both_flags)
 
 
 def _slot(db, catalog, offering, days_ahead: int) -> datetime:

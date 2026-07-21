@@ -18,6 +18,7 @@ class FeatureFlagService:
 
     _FLAG_MAP: Dict[str, str] = {
         "booking.core.enabled": "FEATURE_BOOKING_CORE_ENABLED",
+        "booking.legacy.projection.enabled": "FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED",
         "resource.engine.enabled": "FEATURE_RESOURCE_ENGINE_ENABLED",
         "ai.core.enabled": "FEATURE_AI_CORE_ENABLED",
         "workflow.enabled": "FEATURE_WORKFLOW_ENABLED",

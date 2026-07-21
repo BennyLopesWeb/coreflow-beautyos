@@ -9,8 +9,8 @@ from app.shared.events.event_catalog import event_catalog_entries
 
 
 def test_app_version_r4_f1():
-    """Versão da release R4-F1."""
-    assert settings.APP_VERSION == "2.4.0-r4-f1"
+    """Versão da release R4-F1 (pin exato relaxado em R4-F2+; ver test_app_version_r4_f2)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_match_booking_legacy_gone_prefixes():
