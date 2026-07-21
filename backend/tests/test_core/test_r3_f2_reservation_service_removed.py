@@ -30,9 +30,9 @@ def test_feature_booking_core_enabled_default_true():
     assert feature_flags.all_flags()["booking.core.enabled"]["enabled"] is True
 
 
-def test_app_version_r3_f2():
-    """R3-F2 — APP_VERSION reflete o release ``2.2.0-r3-f2``."""
-    assert settings.APP_VERSION == "2.2.0-r3-f2"
+def test_app_version_semver_major_2():
+    """APP_VERSION permanece na linha 2.x após R3-F2 (release pin fica no gate F3+)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 class TestReservationServiceWritesRemoved:

@@ -27,6 +27,15 @@
 
 ---
 
+## 2026-07-20 — R3-F3 Remove legacy booking write routers
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R3-F3 M5 | Strip writes `/agenda` + `/reservations`; fila → CreateBookingHandler; `2.3.0-r3-f3` |
+| **Published** | Release + gate | [2.3.0-r3-f3.md](releases/2.3.0-r3-f3.md) · [R3-F3-Gate.md](reviews/R3-F3-Gate.md) |
+
+---
+
 ## 2026-07-16 — R3-F1 Enforcement expand + production pilot
 
 | Evento | Artefato | Notas |

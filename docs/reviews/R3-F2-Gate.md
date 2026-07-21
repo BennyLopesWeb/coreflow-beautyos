@@ -67,4 +67,4 @@ Rollback de código real: `git revert <merge-commit-r3-f2>`.
 
 ## Próximo
 
-R3-F3 — Remover routers write `/agendamentos` (M5 RFC-003); migrar `QueueEntryService` para booking core.
+R3-F3 — ✅ Implementado — Remover routers write + migrar `QueueEntryService`. Ver [R3-F3.md](../sprints/R3-F3.md).
