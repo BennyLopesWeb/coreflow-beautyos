@@ -11,8 +11,7 @@ from app.models.cliente import Cliente
 from app.models.tranca import Tranca
 from app.models.service_image import ServiceImage
 from app.schemas.queue_entry import QueueJoinRequest, QueueEntryResponse
-from app.core.exceptions import NotFoundError, BusinessRuleError
-from app.services.reservation_service import ReservationService
+from app.core.exceptions import NotFoundError, BusinessRuleError, ValidationError
 
 
 class QueueEntryService:
@@ -94,7 +93,9 @@ class QueueEntryService:
         """
         hoje = date.today()
         posicao = self._proxima_posicao(hoje)
+        company_id = getattr(dados, "company_id", None) or 1
         entry = QueueEntry(
+            company_id=company_id,
             cliente_id=dados.cliente_id,
             tranca_id=dados.tranca_id,
             service_image_id=dados.service_image_id,
@@ -299,27 +300,64 @@ class QueueEntryService:
 
     def aprovar_com_horario(self, entry_id: int, data_hora: datetime) -> QueueEntry:
         """
-        Aprova fila urgente criando reserva vinculada.
+        Aprova fila urgente criando booking core vinculado (R3-F3).
+
+        Resolve catalog/offering via ACL e delega a ``CreateBookingHandler``
+        (mesmo padrão de ``PromoteWaitlistHandler``).
 
         Args:
             entry_id: ID da entrada.
             data_hora: Horário confirmado.
 
         Returns:
-            QueueEntry atualizado.
+            QueueEntry atualizado com ``agendamento_id`` da projeção legado.
+
+        Raises:
+            BusinessRuleError: Entrada sem modelo ou mapeamento catalog ausente.
+            ValidationError: Mapeamento catalog/offering inválido.
         """
+        from app.modules.booking.application.commands.create_booking import (
+            CreateBookingCommand,
+            CreateBookingHandler,
+        )
+        from app.shared.acl.catalog_port import LegacyCatalogAdapter
+
         entry = self._obter(entry_id)
         if not entry.tranca_id or not entry.service_image_id:
             raise BusinessRuleError("Entrada sem modelo definido")
 
-        ag = ReservationService(self.db).criar(
-            cliente_id=entry.cliente_id,
-            tranca_id=entry.tranca_id,
-            service_image_id=entry.service_image_id,
-            data_hora=data_hora,
-            observacoes=entry.observacoes,
+        company_id = entry.company_id or 1
+        catalog_acl = LegacyCatalogAdapter(self.db)
+        catalog = catalog_acl.resolve_catalog_by_legacy_tranca(
+            entry.tranca_id, company_id
         )
-        entry.agendamento_id = ag.id
+        offering = catalog_acl.resolve_offering_by_legacy_image(
+            entry.service_image_id, company_id
+        )
+        if not catalog or not offering:
+            raise ValidationError(
+                "Catalog/offering não sincronizados para tranca/modelo da fila — "
+                "execute sync catalog antes de aprovar"
+            )
+
+        scheduled_at = data_hora.replace(tzinfo=None) if data_hora.tzinfo else data_hora
+        booking_result = CreateBookingHandler(self.db).execute(
+            CreateBookingCommand(
+                customer_id=entry.cliente_id,
+                catalog_id=catalog.id,
+                offering_id=offering.id,
+                scheduled_at=scheduled_at,
+                company_id=company_id,
+                notes=entry.observacoes,
+            )
+        )
+        booking = booking_result.booking
+        if not booking.legacy_agendamento_id:
+            raise BusinessRuleError("Booking criado sem projeção legado (agendamento_id)")
+
+        # CreateBookingHandler já faz commit — recarrega entry e vincula
+        entry = self._obter(entry_id)
+        entry.agendamento_id = booking.legacy_agendamento_id
         entry.status = QueueEntryStatus.WAITING
         self.db.commit()
         self.db.refresh(entry)

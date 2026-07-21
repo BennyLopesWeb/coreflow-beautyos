@@ -26,25 +26,21 @@ def test_consultar_disponibilidade(client, tranca_exemplo, service_image_exemplo
 
 
 @pytest.mark.integration
-def test_criar_agendamento(client, cliente_exemplo, tranca_exemplo, service_image_exemplo):
-    """Testa POST /agenda/agendamentos"""
+def test_criar_agendamento_legado_removido(client, cliente_exemplo, tranca_exemplo, service_image_exemplo):
+    """R3-F3 — POST /agenda/agendamentos removido (use /v1/bookings)."""
     data_hora = datetime.now() + timedelta(days=1)
     data_hora = data_hora.replace(hour=10, minute=0, second=0, microsecond=0)
-    
+
     data = {
         "cliente_id": cliente_exemplo.id,
         "tranca_id": tranca_exemplo.id,
         "service_image_id": service_image_exemplo.id,
         "data_hora": data_hora.isoformat(),
-        "observacoes": "Teste"
+        "observacoes": "Teste",
     }
-    
+
     response = client.post("/agenda/agendamentos", json=data)
-    
-    assert response.status_code == 201
-    assert response.json()["cliente_id"] == cliente_exemplo.id
-    assert response.json()["service_image_id"] == service_image_exemplo.id
-    assert response.json()["sinal_pago"] is False
+    assert response.status_code == 405
 
 
 @pytest.mark.integration

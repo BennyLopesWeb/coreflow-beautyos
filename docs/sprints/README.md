@@ -16,7 +16,8 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 | R2-F6 | 2.0.0-beta.1 | Enforcement narrow booking |
 | R3-F1 | 2.1.0-r3-f1 | Enforcement payments/fila + prod pilot — ✅ |
 | R3-F2 | 2.2.0-r3-f2 | Remove booking write path legado (service de reservas) — ✅ |
+| R3-F3 | 2.3.0-r3-f3 | Remove legacy write routers + fila→core — ✅ |
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos sprints: R3-F3 (remover routers write `/agendamentos`) · [R2-ExecutionPlan](../R2-ExecutionPlan.md)
+Próximos: R4 (410 Gone + sunset `reservation.*` / dual-write) · [R2-ExecutionPlan](../R2-ExecutionPlan.md)
