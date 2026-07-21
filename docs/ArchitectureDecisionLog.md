@@ -27,6 +27,15 @@
 
 ---
 
+## 2026-07-20 — R4-F1 Legacy booking 410 Gone
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F1 M6 | `LegacyGoneMiddleware` 410 + `reservation.created` catalog gone; `2.4.0-r4-f1` |
+| **Published** | Release + gate | [2.4.0-r4-f1.md](releases/2.4.0-r4-f1.md) · [R4-F1-Gate.md](reviews/R4-F1-Gate.md) |
+
+---
+
 ## 2026-07-20 — R3-F3 Remove legacy booking write routers
 
 | Evento | Artefato | Notas |

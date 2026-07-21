@@ -68,7 +68,8 @@ Alias `reservation.created` includes header `canonical_type: booking.created`.
 | R2-F1b | Dual-publish begins |
 | R3-F1 | WARN log on reservation.* consumption |
 | R3-F2 | ✅ Implemented (`2.2.0-r3-f2`) — Stop alias publish |
-| R4 | Remove reservation.* from catalog; 410 on subscribe |
+| R4-F1 | ✅ Implemented (`2.4.0-r4-f1`) — catalog `reservation.created` = `gone`; HTTP 410 em rotas booking legado |
+| R4-F2+ | Remover schemas Avro/JSON alias; 410 on subscribe Kafka |
 
 ### Flag OFF path
 

@@ -17,7 +17,8 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 | R3-F1 | 2.1.0-r3-f1 | Enforcement payments/fila + prod pilot — ✅ |
 | R3-F2 | 2.2.0-r3-f2 | Remove booking write path legado (service de reservas) — ✅ |
 | R3-F3 | 2.3.0-r3-f3 | Remove legacy write routers + fila→core — ✅ |
+| R4-F1 | 2.4.0-r4-f1 | 410 Gone booking legado + catalog alias gone — ✅ |
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos: R4 (410 Gone + sunset `reservation.*` / dual-write) · [R2-ExecutionPlan](../R2-ExecutionPlan.md)
+Próximos: R4-F2 (remover dual-write `project_*` / M7) · [R2-ExecutionPlan](../R2-ExecutionPlan.md)
