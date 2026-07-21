@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # App
     PLATFORM_NAME: str = "CoreFlow Platform"
     APP_NAME: str = "CoreFlow API"
-    APP_VERSION: str = "2.6.0-r4-f3"
+    APP_VERSION: str = "2.7.0-r4-f4"
 
     # Feature flags — migração incremental (RFC-002) — default false (R1-F2)
     # R3-F2: booking.core.enabled default TRUE — path legado ACL/ReservationService
@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     # R4-F2 introduziu FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED como kill-switch do
     # dual-write outbound (project_*). R4-F3 (ADR-024 sunset / RFC-003 M7) removeu
     # definitivamente o código do dual-write — a flag não existe mais.
+    # R4-F4 (ADR-024 sunset / RFC-003 M8 — hard sunset): novos paths de escrita
+    # (FilaService.aprovar_fila, QueueEntryService.aprovar_com_horario) e
+    # disponibilidade/fila-do-dia passam a usar ``core_bookings`` como SoT;
+    # ``AgendamentoService.criar_agendamento`` agora falha (ver docstring do
+    # método). ``agendamentos`` permanece somente leitura para histórico até
+    # o DROP físico planejado em R4-F5.
     FEATURE_RESOURCE_ENGINE_ENABLED: bool = False
     FEATURE_AI_CORE_ENABLED: bool = False
     FEATURE_WORKFLOW_ENABLED: bool = False

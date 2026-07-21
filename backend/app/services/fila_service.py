@@ -16,7 +16,7 @@ from app.schemas.fila import (
     FilaAprovarRequest,
     VagaSugeridaResponse,
 )
-from app.core.exceptions import NotFoundError, BusinessRuleError
+from app.core.exceptions import NotFoundError, BusinessRuleError, ValidationError
 from app.services.service_image_service import ServiceImageService
 
 
@@ -200,34 +200,68 @@ class FilaService:
 
     def aprovar_fila(self, fila_id: int, body: FilaAprovarRequest) -> Fila:
         """
-        Aprova item da fila, cria reserva e solicita pagamento do sinal.
+        Aprova item da fila criando booking core vinculado (R4-F4 hard sunset).
+
+        Resolve catalog/offering via ACL e delega a ``CreateBookingHandler``
+        (mesmo padrão de ``QueueEntryService.aprovar_com_horario`` desde
+        R4-F3). Não chama mais ``AgendamentoService.criar_agendamento`` —
+        nenhuma linha nova é inserida em ``agendamentos``; o booking criado
+        é sempre core-only (``legacy_agendamento_id=None``) e
+        ``fila.agendamento_id`` é deixado ``None``.
 
         Args:
             fila_id: ID do item na fila.
-            body: Horário confirmado.
+            body: Horário confirmado para a reserva.
 
         Returns:
-            Fila aprovada com agendamento vinculado.
+            Fila aprovada. ``agendamento_id`` permanece ``None`` para
+            bookings core-only (comportamento esperado desde R4-F3/R4-F4).
+
+        Raises:
+            NotFoundError: Item da fila não encontrado.
+            BusinessRuleError: Item não está aguardando aprovação.
+            ValidationError: Mapeamento catalog/offering inválido (execute
+                sync catalog antes de aprovar).
         """
+        from app.modules.booking.application.commands.create_booking import (
+            CreateBookingCommand,
+            CreateBookingHandler,
+        )
+        from app.shared.acl.catalog_port import LegacyCatalogAdapter
+
         fila = self.db.query(Fila).filter(Fila.id == fila_id).first()
         if not fila:
             raise NotFoundError("Fila", str(fila_id))
         if fila.status not in STATUS_FILA_ATIVOS:
             raise BusinessRuleError("Item não está aguardando aprovação")
 
-        from app.schemas.agendamento import AgendamentoCreate
-        from app.services.agendamento_service import AgendamentoService
+        company_id = fila.company_id or 1
+        catalog_acl = LegacyCatalogAdapter(self.db)
+        catalog = catalog_acl.resolve_catalog_by_legacy_tranca(fila.tranca_id, company_id)
+        offering = catalog_acl.resolve_offering_by_legacy_image(fila.service_image_id, company_id)
+        if not catalog or not offering:
+            raise ValidationError(
+                "Catalog/offering não sincronizados para tranca/modelo da fila — "
+                "execute sync catalog antes de aprovar"
+            )
 
-        agendamento = AgendamentoService(self.db).criar_agendamento(AgendamentoCreate(
-            cliente_id=fila.cliente_id,
-            tranca_id=fila.tranca_id,
-            service_image_id=fila.service_image_id,
-            data_hora=body.data_hora,
-            observacoes=fila.observacoes,
-        ))
+        scheduled_at = body.data_hora.replace(tzinfo=None) if body.data_hora.tzinfo else body.data_hora
+        booking_result = CreateBookingHandler(self.db).execute(
+            CreateBookingCommand(
+                customer_id=fila.cliente_id,
+                catalog_id=catalog.id,
+                offering_id=offering.id,
+                scheduled_at=scheduled_at,
+                company_id=company_id,
+                notes=fila.observacoes,
+            )
+        )
+        booking = booking_result.booking
 
+        # CreateBookingHandler já faz commit — recarrega fila e vincula
+        fila = self.db.query(Fila).filter(Fila.id == fila_id).first()
         fila.status = StatusFila.APPROVED
-        fila.agendamento_id = agendamento.id
+        fila.agendamento_id = booking.legacy_agendamento_id
         self.db.commit()
         self.db.refresh(fila)
 

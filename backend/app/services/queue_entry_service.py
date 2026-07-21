@@ -118,13 +118,42 @@ class QueueEntryService:
         """
         Rotina diária: reservas APPROVED de hoje → IN_QUEUE + QueueEntry.
 
+        R4-F4 (hard sunset / ADR-024 / RFC-003 M8): ``core_bookings`` é a
+        fonte primária — a maioria das reservas aprovadas desde R3-F2/R4-F3
+        não tem mais linha em ``agendamentos``. Processa ambas as fontes
+        (``core_bookings`` primário + ``agendamentos`` histórico) sem
+        duplicar quando um booking core ainda possui ``legacy_agendamento_id``
+        (histórico dual-write anterior a R4-F3).
+
         Returns:
-            Quantidade processada.
+            Quantidade total processada (core + histórico).
         """
         hoje = date.today()
         inicio = datetime.combine(hoje, time.min)
         fim = datetime.combine(hoje, time.max)
 
+        count = self._processar_agendamentos_legado_do_dia(hoje, inicio, fim)
+        count += self._processar_core_bookings_do_dia(hoje, inicio, fim)
+        return count
+
+    def _processar_agendamentos_legado_do_dia(
+        self, hoje: date, inicio: datetime, fim: datetime
+    ) -> int:
+        """
+        Processa reservas legado (``agendamentos``) aprovadas para hoje.
+
+        Mantido para reservas históricas criadas antes de R3-F2/R4-F3 (dados
+        antigos com dual-write ainda ativo); nenhum caminho de escrita atual
+        cria novas linhas em ``agendamentos``.
+
+        Args:
+            hoje: Data de referência (hoje).
+            inicio: Início do dia.
+            fim: Fim do dia.
+
+        Returns:
+            Quantidade de ``QueueEntry`` criadas a partir de ``agendamentos``.
+        """
         reservas = self.db.query(Agendamento).filter(
             Agendamento.data_hora >= inicio,
             Agendamento.data_hora <= fim,
@@ -155,6 +184,88 @@ class QueueEntryService:
                 mesmo_dia=0,
             )
             ag.status = ReservationStatus.IN_QUEUE
+            self.db.add(entry)
+            count += 1
+
+        if count:
+            self.db.commit()
+        return count
+
+    def _processar_core_bookings_do_dia(
+        self, hoje: date, inicio: datetime, fim: datetime
+    ) -> int:
+        """
+        Processa ``core_bookings`` APPROVED de hoje → IN_QUEUE + QueueEntry (R4-F4).
+
+        Path primário desde R4-F4: bookings core-only (sem
+        ``legacy_agendamento_id``, criados via ``CreateBookingHandler``) não
+        aparecem na consulta legado acima, então precisam ser processados
+        aqui para entrar na fila operacional do dia. Bookings que ainda têm
+        ``legacy_agendamento_id`` preenchido (histórico de dual-write
+        anterior a R4-F3) são ignorados aqui — já foram cobertos pela
+        consulta a ``agendamentos``.
+
+        Resolve ``tranca_id``/``service_image_id`` legado via
+        ``catalog_id``/``offering_id`` (ACL) apenas para preencher os campos
+        de exibição da fila — não é necessária nova linha em
+        ``agendamentos`` para o vínculo (``QueueEntry.agendamento_id``
+        permanece ``None`` para bookings core-only).
+
+        Args:
+            hoje: Data de referência (hoje).
+            inicio: Início do dia.
+            fim: Fim do dia.
+
+        Returns:
+            Quantidade de ``QueueEntry`` criadas a partir de ``core_bookings``.
+        """
+        from app.modules.booking.domain.models import CoreBooking
+
+        bookings = self.db.query(CoreBooking).filter(
+            CoreBooking.scheduled_at >= inicio,
+            CoreBooking.scheduled_at <= fim,
+            CoreBooking.status == ReservationStatus.APPROVED,
+            CoreBooking.deleted_at.is_(None),
+        ).all()
+
+        count = 0
+        for booking in bookings:
+            if booking.legacy_agendamento_id:
+                # Já coberto por _processar_agendamentos_legado_do_dia.
+                continue
+
+            tranca_id = booking.catalog.legacy_tranca_id if booking.catalog else None
+            service_image_id = booking.offering.legacy_service_image_id if booking.offering else None
+            horario_entrada = booking.scheduled_at.time() if booking.scheduled_at else None
+
+            existente = (
+                self.db.query(QueueEntry)
+                .filter(
+                    QueueEntry.cliente_id == booking.customer_id,
+                    QueueEntry.data == hoje,
+                    QueueEntry.tranca_id == tranca_id,
+                    QueueEntry.service_image_id == service_image_id,
+                    QueueEntry.horario_entrada == horario_entrada,
+                )
+                .first()
+            )
+            if existente:
+                continue
+
+            posicao = self._proxima_posicao(hoje)
+            entry = QueueEntry(
+                agendamento_id=None,
+                cliente_id=booking.customer_id,
+                tranca_id=tranca_id,
+                service_image_id=service_image_id,
+                posicao=posicao,
+                data=hoje,
+                horario_entrada=horario_entrada,
+                status=QueueEntryStatus.WAITING,
+                observacoes=booking.notes,
+                mesmo_dia=0,
+            )
+            booking.status = ReservationStatus.IN_QUEUE
             self.db.add(entry)
             count += 1
 

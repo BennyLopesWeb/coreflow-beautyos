@@ -57,20 +57,15 @@ export const agendamentoService = {
   },
 
   /**
-   * Cria um novo agendamento.
-   * Prefere CoreFlow v1 (`POST /v1/bookings`) com fallback legado.
+   * Cria um novo agendamento via CoreFlow v1 (`POST /v1/bookings`).
+   *
+   * R4-F4 (hard sunset): não há mais fallback para `POST /agenda/agendamentos` —
+   * a rota legado retorna `410 Gone` desde R4-F1 e `AgendamentoService.criar_agendamento`
+   * levanta erro no backend desde R4-F4. `core_bookings` é a única fonte de
+   * verdade para criação de reservas.
    */
   criar: async (data: AgendamentoCreate): Promise<Agendamento> => {
-    if (coreflowService.useCoreflowV1()) {
-      try {
-        return await coreflowService.criarBookingV1(data);
-      } catch (error) {
-        console.warn('[CoreFlow v1] fallback para POST /agenda/agendamentos', error);
-      }
-    }
-
-    const response = await api.post<Agendamento>('/agenda/agendamentos', data);
-    return response.data;
+    return await coreflowService.criarBookingV1(data);
   },
 
   /**

@@ -5,8 +5,7 @@ Lógica de negócio para gerenciamento de agendamentos
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta
 from typing import List, Optional
-from decimal import Decimal
-from app.models.agendamento import Agendamento, ReservationStatus, StatusAgendamento, StatusPagamento, STATUS_OCUPAM_VAGA
+from app.models.agendamento import Agendamento, ReservationStatus, StatusAgendamento, StatusPagamento
 from app.models.cliente import Cliente
 from app.models.tranca import Tranca
 from app.schemas.agendamento import AgendamentoCreate, AgendamentoUpdate
@@ -88,141 +87,31 @@ class AgendamentoService:
     
     def criar_agendamento(self, agendamento_data: AgendamentoCreate) -> Agendamento:
         """
-        Cria novo agendamento
-        Valida todas as regras de negócio antes de criar
-        """
-        # Validações básicas
-        cliente = self.db.query(Cliente).filter(Cliente.id == agendamento_data.cliente_id).first()
-        if not cliente:
-            raise NotFoundError("Cliente", str(agendamento_data.cliente_id))
-        
-        tranca = self.db.query(Tranca).filter(Tranca.id == agendamento_data.tranca_id).first()
-        if not tranca:
-            raise NotFoundError("Trança", str(agendamento_data.tranca_id))
-        
-        if not tranca.ativo:
-            raise BusinessRuleError("Trança não está ativa")
-        
-        # Validação: não permite agendamentos no passado
-        if agendamento_data.data_hora < datetime.now():
-            raise ValidationError("Não é possível agendar no passado")
-        
-        # Validação: verifica se horário está disponível (duração do modelo selecionado)
-        horarios = self.disponibilidade_service.calcular_horarios_disponiveis(
-            agendamento_data.data_hora,
-            agendamento_data.tranca_id,
-            agendamento_data.service_image_id,
-        )
-        
-        chave_solicitada = _chave_slot(agendamento_data.data_hora)
-        horario_valido = any(
-            _chave_slot(h.horario) == chave_solicitada and h.disponivel
-            for h in horarios
-        )
-        
-        if not horario_valido:
-            raise BusinessRuleError("Horário não está disponível")
+        [DESATIVADO — R4-F4 hard sunset] Bloqueia criação de novas linhas em ``agendamentos``.
 
-        if self._tem_conflito_intervalo(
-            agendamento_data.data_hora,
-            agendamento_data.tranca_id,
-            agendamento_data.service_image_id,
-        ):
-            raise BusinessRuleError("Horário já está ocupado")
-
-        from app.services.service_image_service import ServiceImageService
-        image_service = ServiceImageService(self.db)
-        imagens = image_service.listar_por_tranca(agendamento_data.tranca_id)
-        if not imagens:
-            image_service.sincronizar_da_tranca(agendamento_data.tranca_id)
-            imagens = image_service.listar_por_tranca(agendamento_data.tranca_id)
-        if not imagens:
-            raise ValidationError("Trança não possui fotos cadastradas")
-        image_service.validar_imagem_da_tranca(
-            agendamento_data.tranca_id,
-            agendamento_data.service_image_id,
-        )
-        service_img = image_service.obter_imagem(agendamento_data.service_image_id)
-
-        from app.utils.service_image_precos import resolver_precos_imagem
-        try:
-            precos = resolver_precos_imagem(service_img, tranca)
-        except ValueError as e:
-            raise ValidationError(str(e))
-
-        agendamento = Agendamento(
-            cliente_id=agendamento_data.cliente_id,
-            tranca_id=agendamento_data.tranca_id,
-            service_image_id=agendamento_data.service_image_id,
-            data_hora=agendamento_data.data_hora,
-            observacoes=agendamento_data.observacoes,
-            status=ReservationStatus.PENDING_PAYMENT,
-            sinal_pago=False,
-            valor_total=precos["valor_total"],
-            percentual_sinal=service_img.percentual_sinal or Decimal("0.30"),
-            valor_sinal=precos["valor_sinal"],
-            valor_restante=precos["valor_restante"],
-            status_pagamento=StatusPagamento.PENDING_PAYMENT,
-        )
-        
-        self.db.add(agendamento)
-        self.db.commit()
-        self.db.refresh(agendamento)
-        agendamento.service_image = service_img
-        agendamento.tranca = tranca
-
-        from app.models.payment import PaymentType
-        from app.services.payment_reservation_service import PaymentReservationService
-        PaymentReservationService(self.db).criar_pendente(
-            agendamento.id,
-            PaymentType.DEPOSIT,
-            precos["valor_sinal"],
-        )
-
-        from app.services.notification_service import NotificationService
-        NotificationService(self.db).notificar_nova_reserva(agendamento.id)
-
-        return agendamento
-
-    def _tem_conflito_intervalo(
-        self,
-        data_hora: datetime,
-        tranca_id: int,
-        service_image_id: int,
-        excluir_id: Optional[int] = None,
-    ) -> bool:
-        """
-        Verifica sobreposição de intervalo com reservas ativas (capacidade única).
+        Até R4-F3 este método era o path de escrita usado por ``FilaService.aprovar_fila``
+        e por chamadas administrativas diretas. A partir de R4-F4 (ADR-024 sunset /
+        RFC-003 M8) nenhum caminho de produção deve mais inserir em ``agendamentos`` —
+        toda escrita de reserva passa por ``CreateBookingHandler`` (``POST /v1/bookings``),
+        que persiste em ``core_bookings`` (SoT). A tabela ``agendamentos`` permanece
+        somente para leitura histórica (``listar_agendamentos``/``buscar_por_id``/
+        ``obter_agendamento``) até o DROP físico planejado em R4-F5.
 
         Args:
-            data_hora: Início do novo atendimento.
-            tranca_id: Categoria (para duração do modelo).
-            service_image_id: Modelo selecionado.
-            excluir_id: ID a ignorar (atualização).
+            agendamento_data: Dados que seriam usados para criar a reserva (ignorados).
 
         Returns:
-            True se houver conflito.
+            Nunca retorna — sempre levanta ``BusinessRuleError``.
+
+        Raises:
+            BusinessRuleError: Sempre. Aponta o chamador para ``POST /v1/bookings``.
         """
-        tranca = self.db.query(Tranca).filter(Tranca.id == tranca_id).first()
-        if not tranca:
-            return True
-        duracao_nova = self.disponibilidade_service._duracao_minutos(tranca, service_image_id)
-        fim_nova = data_hora + timedelta(minutes=duracao_nova)
-
-        query = self.db.query(Agendamento).filter(
-            Agendamento.status.in_(STATUS_OCUPAM_VAGA),
-            Agendamento.deleted_at.is_(None),
+        raise BusinessRuleError(
+            "Criação de agendamento legado foi desativada em R4-F4 (hard sunset). "
+            "Use POST /v1/bookings (CreateBookingHandler) — core_bookings é a "
+            "fonte da verdade para novas reservas."
         )
-        if excluir_id:
-            query = query.filter(Agendamento.id != excluir_id)
 
-        for ag in query.all():
-            duracao = self.disponibilidade_service._duracao_agendamento(ag)
-            fim_existente = ag.data_hora + timedelta(minutes=duracao)
-            if data_hora < fim_existente and fim_nova > ag.data_hora:
-                return True
-        return False
-    
     def confirmar_sinal(self, agendamento_id: int) -> Agendamento:
         """
         Registra pagamento do sinal e move reserva para pending_approval.

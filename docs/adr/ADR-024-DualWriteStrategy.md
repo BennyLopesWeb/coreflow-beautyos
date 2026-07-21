@@ -102,7 +102,8 @@ Job periódico (5 min):
 | R3-F2 | Remove booking write path legado (`ReservationService`) — `project_*` outbound permanece ativo |
 | R4-F2 | ✅ `FEATURE_BOOKING_LEGACY_PROJECTION_ENABLED` default `false` — `project_*` deixa de ser chamado por padrão (código mantido para rollback) |
 | R4-F3 | ✅ Código `project_*` / feature flag removidos definitivamente de `LegacyBookingAdapter`/`booking_port.py`; bookings sempre core-only. Modelo `Agendamento` mantido para dados históricos; `2.6.0-r4-f3` |
-| R4-F4+ | Drop `agendamentos` table (separado ADR), após confirmação de que não há mais consumidores lendo dados legado |
+| R4-F4 | ✅ **Hard sunset (Option A, sem DROP)** — `FilaService.aprovar_fila` migrado para `CreateBookingHandler`; `AgendamentoService.criar_agendamento` desativado; `DisponibilidadeService`/`QueueEntryService.processar_reservas_do_dia` usam `core_bookings` como fonte primária. Nenhum caminho de escrita de produção insere mais em `agendamentos`; `2.7.0-r4-f4` |
+| R4-F5+ | Drop físico de `agendamentos`/`payments`/`schedules` legado (separado ADR), após confirmação de que não há mais consumidores lendo dados legado (sync services, reconciliation, relatórios) |
 
 ## Consequências
 
