@@ -1,10 +1,14 @@
 """
-Command RescheduleBooking — CQRS CoreFlow (R4-F11 / ADR-026).
+Command RescheduleBooking — CQRS CoreFlow (R4-F11 / R4-F12 / ADR-026).
 
 Fecha o booking approved como ``rescheduled`` e cria um novo booking no
 horário solicitado (mesmo customer/catalog/offering). Transfere
 ``deposit_paid`` / ``payment_status`` do booking antigo; se o sinal já
 estava pago, o novo booking nasce ``approved``.
+
+R4-F12: além dos flags ORM, reatribui linhas ``payments`` e
+``core_payments`` (``booking_id``) do booking antigo para o novo —
+paridade contábil/auditoria para ``GET /v1/payments?booking_id=``.
 """
 from dataclasses import dataclass
 from datetime import datetime
@@ -187,6 +191,10 @@ class RescheduleBookingHandler:
                 deposit_paid=deposit_paid,
                 payment_status=payment_status,
             )
+            self._transfer_payment_rows(
+                from_booking_id=command.booking_id,
+                to_booking_id=new_row.id,
+            )
 
             from app.modules.booking.domain.events import (
                 booking_created,
@@ -294,6 +302,44 @@ class RescheduleBookingHandler:
             row.approved_at = datetime.utcnow()
         self.db.flush()
         return row
+
+    def _transfer_payment_rows(
+        self, *, from_booking_id: int, to_booking_id: int
+    ) -> int:
+        """
+        Reatribui ``payments`` e ``core_payments`` do booking antigo ao novo (R4-F12).
+
+        Garante que o sinal confirmado no booking substituído continue
+        visível em ``GET /v1/payments?booking_id={novo}`` e na ponte
+        ``Payment.booking_id`` — sem duplicar linhas nem criar Financeiro
+        de novo (o movimento contábil histórico permanece).
+
+        Args:
+            from_booking_id: ID do booking ``rescheduled``.
+            to_booking_id: ID do booking substituto.
+
+        Returns:
+            Quantidade de linhas ``payments`` reatribuídas.
+        """
+        from app.models.payment import Payment
+        from app.modules.payments.domain.models import CorePayment
+
+        moved = (
+            self.db.query(Payment)
+            .filter(
+                Payment.booking_id == from_booking_id,
+                Payment.deleted_at.is_(None),
+            )
+            .update({Payment.booking_id: to_booking_id}, synchronize_session=False)
+        )
+        self.db.query(CorePayment).filter(
+            CorePayment.booking_id == from_booking_id,
+        ).update(
+            {CorePayment.booking_id: to_booking_id},
+            synchronize_session=False,
+        )
+        self.db.flush()
+        return int(moved or 0)
 
     def _load_core_row(self, booking_id: int, company_id: int) -> CoreBooking:
         """

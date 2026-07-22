@@ -27,8 +27,8 @@ from app.shared.events.outbox import CoreEventOutbox
 
 
 def test_app_version_r4_f11():
-    """APP_VERSION marca a release R4-F11 (reagendamento core-only)."""
-    assert settings.APP_VERSION == "2.14.0-r4-f11"
+    """APP_VERSION avançou de R4-F11 (pin exato relaxado em R4-F12+; ver test_app_version_r4_f12)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_booking_reschedule_invalid_state():
