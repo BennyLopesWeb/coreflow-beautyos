@@ -69,8 +69,8 @@ def _slot_for_day(db, catalog, offering, days_ahead: int) -> datetime:
 
 
 def test_app_version_r4_f8():
-    """APP_VERSION marca a release R4-F8 (DROP físico de agendamentos)."""
-    assert settings.APP_VERSION == "2.11.0-r4-f8"
+    """APP_VERSION avançou de R4-F8 (pin exato relaxado em R4-F9+; ver test_app_version_r4_f9)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_tabela_agendamentos_nao_existe_no_schema(db):

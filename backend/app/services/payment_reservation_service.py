@@ -116,6 +116,10 @@ class PaymentReservationService:
         auditoria/relatórios com o path legado, sem exigir
         ``agendamento_id``.
 
+        R4-F9: na primeira confirmação, registra entrada em ``Financeiro``
+        via ``FinanceiroService.registrar_entrada_automatica`` (best-effort;
+        falha não reverte ``deposit_paid``).
+
         Args:
             booking_id: ID ``core_bookings.id``.
 
@@ -132,12 +136,29 @@ class PaymentReservationService:
         if not row:
             raise NotFoundError("Booking", str(booking_id))
 
+        ja_pago = bool(row.deposit_paid)
         row.deposit_paid = True
         row.payment_status = _StatusPagamento.PARTIALLY_PAID
 
         self._upsert_payment_por_booking(row)
 
         self.db.commit()
+        self.db.refresh(row)
+
+        # R4-F9 — paridade contábil: entrada Financeiro na 1ª confirmação
+        if not ja_pago:
+            try:
+                self.financeiro.registrar_entrada_automatica(
+                    descricao=f"Sinal - Booking #{booking_id}",
+                    valor=Decimal(str(row.deposit_amount or 0)),
+                    agendamento_id=row.legacy_agendamento_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Falha ao registrar entrada Financeiro para booking_id=%s (best-effort)",
+                    booking_id,
+                )
+
         self.db.refresh(row)
         return row
 

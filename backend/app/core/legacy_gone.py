@@ -1,7 +1,7 @@
 """
-Legacy Gone — HTTP 410 para rotas legado de booking (R4-F1 / RFC-003 M6 / ADR-033).
+Legacy Gone — HTTP 410 para rotas legado removidas (R4-F1 / R4-F9 / ADR-033).
 
-Substitui 405/409 por ``410 Gone`` com Link para ``/v1/bookings``.
+Substitui 405/409 por ``410 Gone`` com Link para a API CoreFlow v1.
 ``/agenda/disponibilidade`` permanece (só Sunset) até migração scheduling UX.
 """
 from dataclasses import dataclass
@@ -28,17 +28,29 @@ class LegacyGoneRoute:
     successor: str
 
 
-# Rotas de booking legado — todos os métodos (RFC-003 M6)
+# Rotas de booking legado — todos os métodos (RFC-003 M6 / R4-F1)
 BOOKING_LEGACY_GONE_ROUTES: Tuple[LegacyGoneRoute, ...] = (
     LegacyGoneRoute("/agenda/agendamentos", "/v1/bookings"),
     LegacyGoneRoute("/agendamentos", "/v1/bookings"),
     LegacyGoneRoute("/reservations", "/v1/bookings"),
 )
 
+# Rotas de pagamento legado — R4-F9 (após DROP agendamentos)
+# Prefixo ``/pagamentos/sinal`` cobre ``/sinal`` e ``/sinal/gerar``.
+# ``/pagamentos/comprovante`` também depende de agendamento_id legado.
+PAYMENT_LEGACY_GONE_ROUTES: Tuple[LegacyGoneRoute, ...] = (
+    LegacyGoneRoute("/pagamentos/sinal", "/v1/payments"),
+    LegacyGoneRoute("/pagamentos/comprovante", "/v1/payments"),
+)
+
+LEGACY_GONE_ROUTES: Tuple[LegacyGoneRoute, ...] = (
+    BOOKING_LEGACY_GONE_ROUTES + PAYMENT_LEGACY_GONE_ROUTES
+)
+
 
 def match_booking_legacy_gone(path: str) -> Optional[LegacyGoneRoute]:
     """
-    Encontra regra 410 para path de booking legado.
+    Encontra regra 410 para path de booking legado (compat R4-F1).
 
     Args:
         path: Path da URL.
@@ -46,7 +58,24 @@ def match_booking_legacy_gone(path: str) -> Optional[LegacyGoneRoute]:
     Returns:
         LegacyGoneRoute ou None.
     """
-    ordered = sorted(BOOKING_LEGACY_GONE_ROUTES, key=lambda r: len(r.prefix), reverse=True)
+    return match_legacy_gone(path, BOOKING_LEGACY_GONE_ROUTES)
+
+
+def match_legacy_gone(
+    path: str,
+    routes: Optional[Tuple[LegacyGoneRoute, ...]] = None,
+) -> Optional[LegacyGoneRoute]:
+    """
+    Encontra regra 410 para path legado (booking + payments).
+
+    Args:
+        path: Path da URL.
+        routes: Conjunto de rotas (default: mapa completo R4-F9).
+
+    Returns:
+        LegacyGoneRoute ou None.
+    """
+    ordered = sorted(routes or LEGACY_GONE_ROUTES, key=lambda r: len(r.prefix), reverse=True)
     for rule in ordered:
         if path == rule.prefix or path.startswith(f"{rule.prefix}/"):
             return rule
@@ -64,7 +93,7 @@ def _gone_response(rule: LegacyGoneRoute) -> JSONResponse:
         JSONResponse 410.
     """
     detail = (
-        f"Rota legado removida (R4-F1) — use API CoreFlow v1 ({rule.successor})"
+        f"Rota legado removida — use API CoreFlow v1 ({rule.successor})"
     )
     return JSONResponse(
         status_code=410,
@@ -88,7 +117,7 @@ def _gone_response(rule: LegacyGoneRoute) -> JSONResponse:
 
 class LegacyGoneMiddleware(BaseHTTPMiddleware):
     """
-    Middleware que responde 410 Gone em rotas legado de booking (R4-F1).
+    Middleware que responde 410 Gone em rotas legado (R4-F1 booking + R4-F9 payments).
 
     Args:
         app: Aplicação ASGI.
@@ -101,7 +130,7 @@ class LegacyGoneMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """
-        Bloqueia paths de booking legado com 410.
+        Bloqueia paths legado (booking + pagamentos/sinal*) com 410.
 
         Args:
             request: Requisição HTTP.
@@ -113,7 +142,7 @@ class LegacyGoneMiddleware(BaseHTTPMiddleware):
         if not self.enabled:
             return await call_next(request)
 
-        rule = match_booking_legacy_gone(request.url.path)
+        rule = match_legacy_gone(request.url.path)
         if rule:
             return _gone_response(rule)
         return await call_next(request)

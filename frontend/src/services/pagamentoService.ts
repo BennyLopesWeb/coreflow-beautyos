@@ -1,5 +1,9 @@
 /**
- * Service para gerenciar Pagamentos
+ * Service para gerenciar Pagamentos.
+ *
+ * @deprecated R4-F9 — rotas `/pagamentos/sinal*` e `/pagamentos/comprovante*`
+ * respondem HTTP 410 Gone. Preferir
+ * `POST /admin/pagamentos/booking/{bookingId}/confirmar-sinal` (core-only).
  */
 import { Platform } from 'react-native';
 import api from '../config/api';
@@ -10,7 +14,8 @@ export const pagamentoService = {
   /**
    * Gera cobrança Pix para o sinal.
    *
-   * @param {number} agendamento_id - ID do agendamento.
+   * @deprecated R4-F9 — endpoint retorna 410 Gone.
+   * @param {number} agendamento_id - ID do agendamento (legado).
    * @returns {Promise<PixCobranca>} Dados da cobrança Pix.
    */
   gerarCobrancaPix: async (agendamento_id: number): Promise<PixCobranca> => {
@@ -23,7 +28,9 @@ export const pagamentoService = {
   /**
    * Confirma pagamento do sinal.
    *
-   * @param {number} agendamento_id - ID do agendamento.
+   * @deprecated R4-F9 — endpoint retorna 410 Gone. Use
+   * `POST /admin/pagamentos/booking/{bookingId}/confirmar-sinal`.
+   * @param {number} agendamento_id - ID do agendamento (legado).
    * @returns {Promise<void>} Promise resolvida após confirmação.
    */
   confirmarSinal: async (agendamento_id: number): Promise<void> => {
