@@ -16,6 +16,15 @@
 
 ---
 
+## 2026-07-22 — R4-F12 Transfer Payment no reschedule
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F12 | `RescheduleBookingHandler._transfer_payment_rows` reatribui `payments` e `core_payments` para o booking novo; `2.15.0-r4-f12` |
+| **Published** | Release + sprint + gate | [2.15.0-r4-f12.md](releases/2.15.0-r4-f12.md) · [R4-F12.md](sprints/R4-F12.md) · [R4-F12-Gate.md](reviews/R4-F12-Gate.md) |
+
+---
+
 ## 2026-07-22 — R4-F11 Reagendamento core-only
 
 | Evento | Artefato | Notas |
