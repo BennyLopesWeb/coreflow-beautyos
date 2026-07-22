@@ -35,12 +35,15 @@ BOOKING_LEGACY_GONE_ROUTES: Tuple[LegacyGoneRoute, ...] = (
     LegacyGoneRoute("/reservations", "/v1/bookings"),
 )
 
-# Rotas de pagamento legado — R4-F9 (após DROP agendamentos)
+# Rotas de pagamento legado — R4-F9 / R4-F10 (após DROP agendamentos)
 # Prefixo ``/pagamentos/sinal`` cobre ``/sinal`` e ``/sinal/gerar``.
 # ``/pagamentos/comprovante`` também depende de agendamento_id legado.
+# ``/payments/deposit`` e ``/payments/final`` (router payments.py) → 410 (R4-F10).
 PAYMENT_LEGACY_GONE_ROUTES: Tuple[LegacyGoneRoute, ...] = (
     LegacyGoneRoute("/pagamentos/sinal", "/v1/payments"),
     LegacyGoneRoute("/pagamentos/comprovante", "/v1/payments"),
+    LegacyGoneRoute("/payments/deposit", "/v1/payments"),
+    LegacyGoneRoute("/payments/final", "/v1/payments"),
 )
 
 LEGACY_GONE_ROUTES: Tuple[LegacyGoneRoute, ...] = (

@@ -220,9 +220,8 @@ class PaymentReservationService:
 
         .. deprecated:: 2.11.0-r4-f8
             A tabela ``agendamentos`` foi removida (DROP físico — ADR-024
-            sunset / RFC-003 M11+). Sempre levanta ``NotFoundError``. Não
-            há ainda endpoint core-only equivalente para pagamento final
-            (débito residual — ver ``docs/sprints/R4-F8.md``).
+            sunset / RFC-003 M11+). Sempre levanta ``NotFoundError``.
+            Use ``confirmar_pagamento_final_por_booking`` (R4-F10).
 
         Args:
             agendamento_id: ID da reserva legado.
@@ -233,12 +232,110 @@ class PaymentReservationService:
         """
         raise NotFoundError("Reserva", str(agendamento_id))
 
-    def listar_por_reserva(self, agendamento_id: int) -> List[Payment]:
+    def confirmar_pagamento_final_por_booking(self, booking_id: int) -> "CoreBooking":
         """
-        Lista pagamentos de uma reserva.
+        Confirma pagamento final (remaining) em booking core-only (R4-F10).
+
+        Path único de escrita de pagamento final pós-DROP ``agendamentos``:
+        atualiza ``CoreBooking.payment_status`` para ``PAID``, cria/atualiza
+        ``Payment`` tipo ``FINAL_PAYMENT`` vinculado por ``booking_id`` e
+        registra entrada ``Financeiro`` na primeira confirmação (best-effort,
+        espelhando R4-F9 no deposit).
 
         Args:
-            agendamento_id: ID da reserva.
+            booking_id: ID ``core_bookings.id``.
+
+        Returns:
+            CoreBooking atualizado com ``payment_status=PAID``.
+
+        Raises:
+            NotFoundError: Booking não encontrado.
+            BusinessRuleError: Sinal ainda não confirmado (``deposit_paid``).
+        """
+        from app.modules.booking.domain.models import CoreBooking
+        from app.models.agendamento import StatusPagamento as _StatusPagamento
+
+        row = self.db.query(CoreBooking).filter(CoreBooking.id == booking_id).first()
+        if not row:
+            raise NotFoundError("Booking", str(booking_id))
+        if not row.deposit_paid:
+            raise BusinessRuleError(
+                "Confirme o sinal antes do pagamento final "
+                f"(booking_id={booking_id})"
+            )
+
+        ja_pago = row.payment_status == _StatusPagamento.PAID
+        row.payment_status = _StatusPagamento.PAID
+        self._upsert_payment_final_por_booking(row)
+
+        self.db.commit()
+        self.db.refresh(row)
+
+        if not ja_pago:
+            try:
+                self.financeiro.registrar_entrada_automatica(
+                    descricao=f"Pagamento final - Booking #{booking_id}",
+                    valor=Decimal(str(row.remaining_amount or 0)),
+                    agendamento_id=row.legacy_agendamento_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Falha ao registrar Financeiro (final) booking_id=%s (best-effort)",
+                    booking_id,
+                )
+
+        self.db.refresh(row)
+        return row
+
+    def _upsert_payment_final_por_booking(self, booking) -> Optional[Payment]:
+        """
+        Cria ou atualiza ``Payment`` FINAL_PAYMENT vinculado a ``CoreBooking``.
+
+        Best-effort de auditoria (R4-F10): erros não interrompem a
+        confirmação — a fonte de verdade é ``CoreBooking.payment_status``.
+
+        Args:
+            booking: ``CoreBooking`` com ``payment_status`` já marcado ``PAID``.
+
+        Returns:
+            Payment persistido, ou ``None`` se falha ser não fatal.
+        """
+        try:
+            pag = (
+                self.db.query(Payment)
+                .filter(
+                    Payment.booking_id == booking.id,
+                    Payment.tipo.in_([PaymentType.FINAL_PAYMENT, PaymentType.FINAL]),
+                )
+                .first()
+            )
+            if not pag:
+                pag = Payment(
+                    booking_id=booking.id,
+                    agendamento_id=booking.legacy_agendamento_id,
+                    tipo=PaymentType.FINAL_PAYMENT,
+                    valor=booking.remaining_amount,
+                    status=PaymentStatus.PENDING,
+                )
+                self.db.add(pag)
+
+            pag.status = PaymentStatus.PAID
+            pag.paid_at = datetime.utcnow()
+            return pag
+        except Exception:
+            logger.warning(
+                "Falha não fatal ao sincronizar Payment FINAL booking_id=%s (R4-F10)",
+                booking.id,
+                exc_info=True,
+            )
+            return None
+
+    def listar_por_reserva(self, agendamento_id: int) -> List[Payment]:
+        """
+        Lista pagamentos de uma reserva legado (coluna histórica).
+
+        Args:
+            agendamento_id: ID legado em ``payments.agendamento_id``.
 
         Returns:
             Lista de Payment.
@@ -246,6 +343,23 @@ class PaymentReservationService:
         return (
             self.db.query(Payment)
             .filter(Payment.agendamento_id == agendamento_id, Payment.deleted_at.is_(None))
+            .order_by(Payment.created_at)
+            .all()
+        )
+
+    def listar_por_booking(self, booking_id: int) -> List[Payment]:
+        """
+        Lista pagamentos vinculados a um ``core_bookings.id`` (R4-F10).
+
+        Args:
+            booking_id: ID ``core_bookings.id``.
+
+        Returns:
+            Lista de Payment ordenada por criação.
+        """
+        return (
+            self.db.query(Payment)
+            .filter(Payment.booking_id == booking_id, Payment.deleted_at.is_(None))
             .order_by(Payment.created_at)
             .all()
         )

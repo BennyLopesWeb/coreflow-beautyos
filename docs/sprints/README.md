@@ -26,7 +26,8 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 | R4-F7 | 2.10.0-r4-f7 | Decouple físico das últimas FKs para `agendamentos` (M11) — ✅ |
 | R4-F8 | 2.11.0-r4-f8 | DROP físico de `agendamentos`; `Agendamento` deixa de ser model mapeado (M11+) — ✅ |
 | R4-F9 | 2.12.0-r4-f9 | Financeiro em deposit core-only + 410 `/pagamentos/sinal*` — ✅ |
+| R4-F10 | 2.13.0-r4-f10 | Pagamento final core-only + 410 `/payments/deposit\|final` — ✅ |
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos: endpoint core de reagendamento / pagamento final; limpeza do router `pagamentos.py`
+Próximos: reagendamento core-only (ADR-026 / R4-F11); limpeza routers `pagamentos.py`/`payments.py`
