@@ -1,15 +1,23 @@
 """
 ACL adapter — PaymentQueryPort via legado (ADR-028).
+
+.. deprecated:: 2.11.0-r4-f8
+    A verificação via ``Agendamento.sinal_pago``/``Agendamento.status``
+    (fallback para bookings com ``legacy_agendamento_id`` preenchido,
+    histórico de dual-write anterior a R4-F3) foi removida junto com o
+    DROP físico da tabela ``agendamentos`` (ADR-024 sunset / RFC-003
+    M11+) — ``CoreBooking.deposit_paid`` (atualizado diretamente por
+    ``PaymentReservationService.confirmar_deposito_por_booking``) já é a
+    fonte da verdade única desde R4-F6.
 """
 from sqlalchemy.orm import Session
 
 from app.modules.booking.domain.models import CoreBooking
-from app.models.agendamento import Agendamento, ReservationStatus
 
 
 class LegacyPaymentQueryAdapter:
     """
-    Implementa PaymentQueryPort consultando agendamento legado via FK.
+    Implementa PaymentQueryPort consultando ``CoreBooking.deposit_paid``.
 
     Args:
         db: Sessão SQLAlchemy.
@@ -20,14 +28,18 @@ class LegacyPaymentQueryAdapter:
 
     def is_deposit_confirmed(self, booking_id: int, company_id: int) -> bool:
         """
-        Verifica sinal pago no agendamento projetado.
+        Verifica sinal pago no booking.
+
+        .. deprecated:: 2.11.0-r4-f8
+            Não há mais fallback a ``Agendamento`` legado (tabela
+            removida) — consulta exclusivamente ``CoreBooking.deposit_paid``.
 
         Args:
             booking_id: ID core_bookings.
             company_id: Tenant.
 
         Returns:
-            True se sinal confirmado ou status aguardando aprovação.
+            True se ``CoreBooking.deposit_paid`` estiver marcado.
         """
         row = (
             self.db.query(CoreBooking)
@@ -40,20 +52,4 @@ class LegacyPaymentQueryAdapter:
         )
         if not row:
             return False
-        if row.deposit_paid:
-            return True
-        if not row.legacy_agendamento_id:
-            return False
-        ag = (
-            self.db.query(Agendamento)
-            .filter(Agendamento.id == row.legacy_agendamento_id)
-            .first()
-        )
-        if not ag:
-            return False
-        if ag.sinal_pago:
-            return True
-        return ag.status in (
-            ReservationStatus.PENDING_APPROVAL,
-            ReservationStatus.WAITING_TIME_CONFIRMATION,
-        )
+        return bool(row.deposit_paid)

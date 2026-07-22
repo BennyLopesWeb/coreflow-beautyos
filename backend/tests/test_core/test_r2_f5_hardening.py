@@ -1,10 +1,21 @@
-"""R2-F5 — OTEL span, reconciliation drift, fitness gates."""
+"""
+R2-F5 — OTEL span, reconciliation drift, fitness gates.
+
+.. deprecated:: 2.11.0-r4-f8
+    ``detect_drift``/``run_once`` tornaram-se no-ops — a tabela
+    ``agendamentos`` foi removida (DROP físico — ADR-024 sunset / RFC-003
+    M11+), então não há mais projeção legado para comparar contra
+    ``core_bookings``. Os testes que exercitavam a detecção de drift
+    (órfão/divergente) foram reescritos para refletir o novo
+    comportamento (sempre ``0`` drift; qualquer ``sync_status=DRIFT``
+    residual é normalizado para ``SYNCED``).
+"""
 from datetime import datetime, timedelta
 from decimal import Decimal
 
 from app.core.architecture_metrics import ArchitectureMetricsStore, identified_couplings
 from app.core.telemetry import booking_create_core_span, get_tracer
-from app.models.agendamento import Agendamento, ReservationStatus
+from app.models.agendamento import ReservationStatus
 from app.modules.booking.domain.models import CoreBooking
 from app.modules.booking.domain.value_objects.booking_types import SyncStatus
 from app.workers.booking_reconciliation_worker import detect_drift, run_once
@@ -24,11 +35,12 @@ def test_otel_booking_create_core_span_helper():
         span.set_attribute("test", "ok")
 
 
-def test_reconciliation_detects_orphan_legacy(
+def test_reconciliation_normaliza_drift_residual_para_synced(
     db, default_company, cliente_exemplo, synced_catalog
 ):
     """
-    FF-OBS-002: drift quando legacy_agendamento_id aponta para inexistente.
+    FF-OBS-002 (R4-F8): sem tabela legado, detect_drift normaliza qualquer
+    ``sync_status=DRIFT`` residual para ``SYNCED`` e sempre reporta 0.
 
     Args:
         db: Sessão.
@@ -48,8 +60,8 @@ def test_reconciliation_detects_orphan_legacy(
         deposit_pct=Decimal("0.30"),
         deposit_amount=Decimal("30.00"),
         remaining_amount=Decimal("70.00"),
-        legacy_agendamento_id=999999,
-        sync_status=SyncStatus.SYNCED.value,
+        legacy_agendamento_id=None,
+        sync_status=SyncStatus.DRIFT.value,
         version=1,
     )
     db.add(row)
@@ -57,62 +69,45 @@ def test_reconciliation_detects_orphan_legacy(
 
     ArchitectureMetricsStore.reset()
     count = run_once(db)
-    assert count >= 1
-    assert ArchitectureMetricsStore.get().get_booking_drift_count() >= 1
+    assert count == 0
+    assert ArchitectureMetricsStore.get().get_booking_drift_count() == 0
     db.refresh(row)
-    assert row.sync_status == SyncStatus.DRIFT.value
+    assert row.sync_status == SyncStatus.SYNCED.value
 
 
 def test_reconciliation_zero_drift_when_synced(
-    db, default_company, cliente_exemplo, synced_catalog, tranca_exemplo, service_image_exemplo
+    db, default_company, cliente_exemplo, synced_catalog
 ):
     """
-    Reconciliação retorna 0 quando core e legado batem.
+    Reconciliação retorna 0 quando o booking já está SYNCED (sem tabela legado).
 
     Args:
         db: Sessão.
         default_company: Tenant.
         cliente_exemplo: Cliente.
         synced_catalog: Catalog.
-        tranca_exemplo: Tranca.
-        service_image_exemplo: Modelo.
     """
     catalog, offering = synced_catalog
-    ag = Agendamento(
-        company_id=default_company.id,
-        cliente_id=cliente_exemplo.id,
-        tranca_id=tranca_exemplo.id,
-        service_image_id=service_image_exemplo.id,
-        data_hora=datetime.utcnow() + timedelta(days=3),
-        status=ReservationStatus.PENDING_PAYMENT,
-        valor_total=Decimal("150.00"),
-        valor_sinal=Decimal("45.00"),
-        valor_restante=Decimal("105.00"),
-    )
-    db.add(ag)
-    db.flush()
     row = CoreBooking(
         company_id=default_company.id,
         customer_id=cliente_exemplo.id,
         catalog_id=catalog.id,
         offering_id=offering.id,
-        scheduled_at=ag.data_hora,
+        scheduled_at=datetime.utcnow() + timedelta(days=3),
         status=ReservationStatus.PENDING_PAYMENT,
         price_total=Decimal("150.00"),
         deposit_pct=Decimal("0.30"),
         deposit_amount=Decimal("45.00"),
         remaining_amount=Decimal("105.00"),
-        legacy_agendamento_id=ag.id,
+        legacy_agendamento_id=None,
         sync_status=SyncStatus.SYNCED.value,
         version=1,
     )
     db.add(row)
     db.commit()
 
-    # Isola: só este booking com legacy válido — outros fixtures podem existir
     count, ids = detect_drift(db)
-    assert row.id not in ids or count == 0 or row.sync_status == SyncStatus.SYNCED.value
-    db.refresh(row)
-    assert row.sync_status != SyncStatus.DRIFT.value or row.legacy_agendamento_id == ag.id
-    # O booking sincronizado não deve estar em drift
+    assert count == 0
     assert row.id not in ids
+    db.refresh(row)
+    assert row.sync_status == SyncStatus.SYNCED.value

@@ -35,6 +35,15 @@ O DROP fisico de ``agendamentos``/``payments``/``schedules`` continua
 fora de escopo - explicitamente adiado para **R4-F7** (``Schedule``/
 ``SatisfactionSurvey`` ainda referenciam ``agendamentos``; ver
 docs/sprints/R4-F6.md).
+
+.. deprecated:: 2.11.0-r4-f8
+    R4-F8 executou o DROP físico adiado acima — a tabela ``agendamentos``
+    não existe mais e ``Agendamento`` deixou de ser um model SQLAlchemy
+    mapeado. Testes que instanciavam ``Agendamento`` via ORM ou faziam
+    ``db.query(Agendamento)`` foram removidos/ajustados: ``ReservationService``
+    tornou-se totalmente no-op (``aceitar_reagendamento`` agora sempre
+    levanta ``NotFoundError``), e a rota legado de confirmação de sinal
+    responde 410 Gone independente de qualquer dado existir.
 """
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -42,10 +51,9 @@ from decimal import Decimal
 import pytest
 
 from app.core.config import settings
-from app.core.exceptions import BusinessRuleError
-from app.models.agendamento import Agendamento, ReservationStatus, StatusPagamento
+from app.core.exceptions import BusinessRuleError, NotFoundError
+from app.models.agendamento import ReservationStatus
 from app.models.payment import Payment, PaymentStatus, PaymentType
-from app.models.schedule import Schedule
 from app.modules.booking.domain.models import CoreBooking
 from app.modules.booking.domain.value_objects.booking_types import SyncStatus
 from app.services.disponibilidade_service import DisponibilidadeService
@@ -175,8 +183,6 @@ def test_confirmar_deposito_por_booking_cria_payment_ponte(
     db.commit()
     db.refresh(booking)
 
-    assert db.query(Agendamento).count() == 0
-
     atualizado = PaymentReservationService(db).confirmar_deposito_por_booking(booking.id)
 
     assert atualizado.deposit_paid is True
@@ -185,7 +191,6 @@ def test_confirmar_deposito_por_booking_cria_payment_ponte(
     assert pag is not None
     assert pag.agendamento_id is None
     assert pag.status == PaymentStatus.PAID
-    assert db.query(Agendamento).count() == 0
 
 
 def test_disponibilidade_marca_slot_ocupado_por_core_booking_sem_agendamento(
@@ -194,8 +199,6 @@ def test_disponibilidade_marca_slot_ocupado_por_core_booking_sem_agendamento(
     """DisponibilidadeService core-only marca slot ocupado com banco 100% sem Agendamento."""
     catalog, offering = synced_catalog
     slot = _slot_for_day(db, catalog, offering, days_ahead=82)
-
-    assert db.query(Agendamento).count() == 0
 
     response = client.post(
         "/v1/bookings",
@@ -208,9 +211,6 @@ def test_disponibilidade_marca_slot_ocupado_por_core_booking_sem_agendamento(
         headers=booking_headers(),
     )
     assert response.status_code == 201, response.text
-
-    # Nenhuma linha em agendamentos foi criada — cutover core-only completo.
-    assert db.query(Agendamento).count() == 0
 
     horarios = DisponibilidadeService(db).calcular_horarios_disponiveis(
         slot, catalog.legacy_tranca_id, offering.legacy_service_image_id
@@ -269,70 +269,19 @@ def test_expirar_nao_cancela_core_booking_recente_ou_com_sinal(
     assert ainda_ativo.status != ReservationStatus.CANCELLED
 
 
-def test_aceitar_reagendamento_nao_cria_schedule(
-    db, cliente_exemplo, tranca_exemplo, service_image_exemplo
-):
-    """aceitar_reagendamento transita status sem criar Schedule (R4-F6 — parada de escrita legado)."""
-    from app.utils.service_image_precos import resolver_precos_imagem
-
-    precos = resolver_precos_imagem(service_image_exemplo, tranca_exemplo)
-    horario_sugerido = datetime.now() + timedelta(days=85)
-    agendamento = Agendamento(
-        cliente_id=cliente_exemplo.id,
-        tranca_id=tranca_exemplo.id,
-        service_image_id=service_image_exemplo.id,
-        data_hora=datetime.now() + timedelta(days=86),
-        status=ReservationStatus.WAITING_TIME_CONFIRMATION,
-        horario_sugerido=horario_sugerido,
-        sinal_pago=True,
-        valor_total=precos["valor_total"],
-        percentual_sinal=service_image_exemplo.percentual_sinal or Decimal("0.30"),
-        valor_sinal=precos["valor_sinal"],
-        valor_restante=precos["valor_restante"],
-        status_pagamento=StatusPagamento.PARTIALLY_PAID,
-    )
-    db.add(agendamento)
-    db.commit()
-    db.refresh(agendamento)
-
-    atualizado = ReservationService(db).aceitar_reagendamento(agendamento.id)
-
-    assert atualizado.status == ReservationStatus.APPROVED
-    assert atualizado.horario_aprovado == horario_sugerido
-
-    schedule = (
-        db.query(Schedule).filter(Schedule.agendamento_id == agendamento.id).first()
-    )
-    assert schedule is None
+def test_aceitar_reagendamento_sempre_not_found(db):
+    """
+    aceitar_reagendamento sempre levanta NotFoundError (R4-F8 — tabela
+    ``agendamentos`` removida; ``ReservationService`` é totalmente no-op).
+    """
+    with pytest.raises(NotFoundError):
+        ReservationService(db).aceitar_reagendamento(1)
 
 
-def test_admin_confirmar_sinal_legado_retorna_410(
-    client, admin_headers, cliente_exemplo, tranca_exemplo, service_image_exemplo, default_company, db
-):
+def test_admin_confirmar_sinal_legado_retorna_410(client, admin_headers):
     """POST /admin/pagamentos/{agendamento_id}/confirmar-sinal responde 410 Gone (R4-F6)."""
-    from app.utils.service_image_precos import resolver_precos_imagem
-
-    precos = resolver_precos_imagem(service_image_exemplo, tranca_exemplo)
-    agendamento = Agendamento(
-        company_id=default_company.id,
-        cliente_id=cliente_exemplo.id,
-        tranca_id=tranca_exemplo.id,
-        service_image_id=service_image_exemplo.id,
-        data_hora=datetime.now() + timedelta(days=87),
-        status=ReservationStatus.PENDING_PAYMENT,
-        sinal_pago=False,
-        valor_total=precos["valor_total"],
-        percentual_sinal=service_image_exemplo.percentual_sinal or Decimal("0.30"),
-        valor_sinal=precos["valor_sinal"],
-        valor_restante=precos["valor_restante"],
-        status_pagamento=StatusPagamento.PENDING_PAYMENT,
-    )
-    db.add(agendamento)
-    db.commit()
-    db.refresh(agendamento)
-
     response = client.post(
-        f"/admin/pagamentos/{agendamento.id}/confirmar-sinal",
+        "/admin/pagamentos/999999/confirmar-sinal",
         headers=admin_headers,
     )
 
@@ -340,10 +289,6 @@ def test_admin_confirmar_sinal_legado_retorna_410(
     body = response.json()
     assert body["status"] == 410
     assert "booking" in body["successor"]
-
-    # Confirma que a rota removida não altera o agendamento legado.
-    db.refresh(agendamento)
-    assert agendamento.sinal_pago is False
 
 
 def test_admin_confirmar_sinal_booking_continua_funcional(

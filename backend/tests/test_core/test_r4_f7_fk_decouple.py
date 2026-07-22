@@ -37,6 +37,17 @@ Prova que:
 
 O DROP fisico de `agendamentos`/`payments`/`schedules` continua fora de
 escopo - explicitamente adiado para **R4-F8** (ver docs/sprints/R4-F7.md).
+
+.. deprecated:: 2.11.0-r4-f8
+    R4-F8 executou o DROP físico adiado acima — a tabela ``agendamentos``
+    não existe mais e ``Agendamento`` deixou de ser um model SQLAlchemy
+    mapeado (ver ``app/models/agendamento.py``). Os testes que
+    dependiam de instanciar/consultar ``Agendamento`` via ORM (incluindo
+    ``test_agendamentos_table_nao_foi_removida``, que documentava
+    exatamente o oposto do que passou a ser verdade) foram removidos ou
+    ajustados — ver ``test_r4_f8_drop_agendamentos.py`` para a cobertura
+    completa do DROP. As garantias de FK física desta sprint (R4-F7)
+    continuam válidas e cobertas abaixo.
 """
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -44,7 +55,7 @@ from decimal import Decimal
 import sqlalchemy as sa
 
 from app.core.config import settings
-from app.models.agendamento import Agendamento, ReservationStatus, StatusPagamento
+from app.models.agendamento import ReservationStatus
 from app.models.financeiro import Financeiro, TipoMovimento
 from app.models.fila import Fila, StatusFila
 from app.models.notification_log import NotificationLog, NotificationStatus, NotificationType
@@ -127,8 +138,8 @@ def _criar_core_booking(db, default_company, cliente_exemplo, synced_catalog, da
 
 
 def test_app_version_r4_f7():
-    """APP_VERSION marca a release R4-F7 (decouple físico das FKs restantes)."""
-    assert settings.APP_VERSION == "2.10.0-r4-f7"
+    """APP_VERSION avançou de R4-F7 (pin exato relaxado em R4-F8+; ver test_app_version_r4_f8)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_nenhuma_tabela_tem_fk_fisica_para_agendamentos(db):
@@ -258,10 +269,9 @@ def test_disponibilidade_core_only_sem_leitura_de_agendamento(
     DisponibilidadeService continua marcando slot ocupado por CoreBooking
     com banco 100% sem Agendamento — confirma que o cutover core-only
     (iniciado no R4-F6) não depende de nenhuma leitura sobre
-    ``agendamentos`` após a remoção da consulta legado em R4-F7.
+    ``agendamentos`` após a remoção da consulta legado em R4-F7 (tabela
+    removida via DROP físico em R4-F8 — não há mais como consultá-la).
     """
-    assert db.query(Agendamento).count() == 0
-
     booking = _criar_core_booking(db, default_company, cliente_exemplo, synced_catalog, days_ahead=95)
 
     catalog, offering = synced_catalog
@@ -270,37 +280,3 @@ def test_disponibilidade_core_only_sem_leitura_de_agendamento(
     )
     ocupado = next(h for h in horarios if h.horario == booking.scheduled_at)
     assert ocupado.disponivel is False
-
-    assert db.query(Agendamento).count() == 0
-
-
-def test_agendamentos_table_nao_foi_removida(db, cliente_exemplo, tranca_exemplo, service_image_exemplo):
-    """
-    Tabela ``agendamentos`` permanece disponível para fixtures/histórico —
-    CF6/CF9 continuam podendo criar ``Agendamento`` diretamente via ORM
-    sem erro (DROP físico explicitamente fora de escopo, adiado para
-    R4-F8).
-    """
-    from app.utils.service_image_precos import resolver_precos_imagem
-
-    precos = resolver_precos_imagem(service_image_exemplo, tranca_exemplo)
-    agendamento = Agendamento(
-        cliente_id=cliente_exemplo.id,
-        tranca_id=tranca_exemplo.id,
-        service_image_id=service_image_exemplo.id,
-        data_hora=datetime.now() + timedelta(days=96),
-        status=ReservationStatus.PENDING_PAYMENT,
-        sinal_pago=False,
-        valor_total=precos["valor_total"],
-        percentual_sinal=service_image_exemplo.percentual_sinal or Decimal("0.30"),
-        valor_sinal=precos["valor_sinal"],
-        valor_restante=precos["valor_restante"],
-        status_pagamento=StatusPagamento.PENDING_PAYMENT,
-    )
-    db.add(agendamento)
-    db.commit()
-    db.refresh(agendamento)
-
-    assert agendamento.id is not None
-    reloaded = db.query(Agendamento).filter(Agendamento.id == agendamento.id).first()
-    assert reloaded is not None

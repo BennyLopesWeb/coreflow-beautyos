@@ -86,21 +86,26 @@ def atualizar_status_agenda(
     Atualiza o status de um agendamento (confirmar, cancelar, concluir).
     """
     service = AdminService(db)
-    ag = service.atualizar_status_agendamento(agendamento_id, body.status)
-    items = service.listar_agendamentos(data_ref=ag.data_hora.date())
+    booking = service.atualizar_status_agendamento(agendamento_id, body.status)
+    items = service.listar_agendamentos(data_ref=booking.scheduled_at.date())
     for item in items:
         if item.id == agendamento_id:
             return item
-    return items[0] if items else AgendamentoAdminItem(
-        id=ag.id,
-        cliente_id=ag.cliente_id,
+    if items:
+        return items[0]
+
+    from app.modules.catalog.domain.models import CoreCatalog
+    catalog = db.query(CoreCatalog).filter(CoreCatalog.id == booking.catalog_id).first()
+    return AgendamentoAdminItem(
+        id=booking.id,
+        cliente_id=booking.customer_id,
         cliente_nome="",
         cliente_telefone="",
-        tranca_id=ag.tranca_id,
+        tranca_id=(catalog.legacy_tranca_id if catalog else None) or booking.catalog_id,
         tranca_nome="",
-        data_hora=ag.data_hora,
-        status=ag.status,
-        sinal_pago=ag.sinal_pago,
+        data_hora=booking.scheduled_at,
+        status=booking.status,
+        sinal_pago=booking.deposit_paid,
         na_fila=False,
     )
 

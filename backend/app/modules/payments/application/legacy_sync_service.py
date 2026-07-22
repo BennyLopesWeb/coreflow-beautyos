@@ -1,5 +1,14 @@
 """
 Sincronização Strangler Fig — ``payments`` → ``core_payments``.
+
+.. deprecated:: 2.11.0-r4-f8
+    ``_upsert`` resolvia o ``CoreBooking``/``company_id`` via join com
+    ``Agendamento`` legado (``payment.agendamento_id``). A tabela
+    ``agendamentos`` foi removida (DROP físico — ADR-024 sunset / RFC-003
+    M11+) — resolve o booking diretamente via ``payment.booking_id``
+    (bridge R4-F6, path preferencial) ou, em fallback, via
+    ``CoreBooking.legacy_agendamento_id == payment.agendamento_id``
+    (coluna inteira simples, sem depender da tabela removida).
 """
 from decimal import Decimal
 from typing import Optional
@@ -7,7 +16,6 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.core.logging_config import get_logger
-from app.models.agendamento import Agendamento
 from app.models.payment import Payment, PaymentStatus, PaymentType
 from app.modules.booking.domain.models import CoreBooking
 from app.modules.payments.domain.models import (
@@ -90,25 +98,35 @@ class PaymentLegacySyncService:
         """
         Cria ou atualiza core_payment.
 
+        .. deprecated:: 2.11.0-r4-f8
+            Resolve o booking via ``payment.booking_id`` (bridge R4-F6,
+            preferencial — não depende de ``agendamentos``) ou, em
+            fallback, via ``CoreBooking.legacy_agendamento_id`` (coluna
+            inteira simples). Sem booking resolvido, não é possível
+            determinar ``company_id`` com segurança — retorna ``None``
+            (skip).
+
         Args:
             payment: Registro legado.
 
         Returns:
-            CorePayment ou None se agendamento ausente.
+            CorePayment ou None se nenhum booking puder ser resolvido.
         """
-        ag = (
-            self.db.query(Agendamento)
-            .filter(Agendamento.id == payment.agendamento_id)
-            .first()
-        )
-        if not ag:
+        booking = None
+        if payment.booking_id:
+            booking = (
+                self.db.query(CoreBooking)
+                .filter(CoreBooking.id == payment.booking_id)
+                .first()
+            )
+        elif payment.agendamento_id:
+            booking = (
+                self.db.query(CoreBooking)
+                .filter(CoreBooking.legacy_agendamento_id == payment.agendamento_id)
+                .first()
+            )
+        if not booking:
             return None
-
-        booking = (
-            self.db.query(CoreBooking)
-            .filter(CoreBooking.legacy_agendamento_id == ag.id)
-            .first()
-        )
 
         existing = (
             self.db.query(CorePayment)
@@ -120,15 +138,15 @@ class PaymentLegacySyncService:
         pstatus = _STATUS_MAP.get(payment.status, CorePaymentStatus.PENDING)
 
         payload = dict(
-            company_id=ag.company_id or 1,
-            booking_id=booking.id if booking else None,
+            company_id=booking.company_id,
+            booking_id=booking.id,
             payment_type=ptype,
             amount=Decimal(str(payment.valor)),
             status=pstatus,
             transaction_id=payment.transaction_id,
             receipt_url=payment.comprovante_url,
             paid_at=payment.paid_at,
-            legacy_agendamento_id=ag.id,
+            legacy_agendamento_id=payment.agendamento_id,
         )
 
         if existing:

@@ -1,13 +1,22 @@
 """
 Service de Schedule — blocos de agenda vinculados a reservas.
+
+.. deprecated:: 2.11.0-r4-f8
+    A tabela ``agendamentos`` foi removida (DROP físico — ADR-024 sunset /
+    RFC-003 M11+). ``criar_para_reserva``/``_duracao_minutos`` (que
+    recebiam um ``Agendamento`` como argumento) foram removidos por já
+    não terem call-site ativo desde R4-F6. Os métodos restantes
+    (``tem_conflito``, ``cancelar``, ``concluir``, ``listar_por_data``)
+    operam apenas sobre a tabela ``schedules`` e a coluna
+    ``Schedule.agendamento_id`` (inteiro simples, sem FK desde R4-F7) —
+    continuam funcionais e são usados por ``SchedulingPort`` (ACL) para
+    detectar conflito de horário em bookings core-only.
 """
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta, date
+from datetime import datetime, date
 from typing import List, Optional
 
 from app.models.schedule import Schedule, ScheduleStatus
-from app.models.agendamento import Agendamento, STATUS_OCUPAM_VAGA
-from app.core.exceptions import BusinessRuleError, NotFoundError
 
 
 class ScheduleService:
@@ -21,20 +30,6 @@ class ScheduleService:
             db: Sessão SQLAlchemy.
         """
         self.db = db
-
-    def _duracao_minutos(self, ag: Agendamento) -> int:
-        """
-        Obtém duração do atendimento a partir do modelo.
-
-        Args:
-            ag: Reserva.
-
-        Returns:
-            Duração em minutos.
-        """
-        if ag.service_image and ag.service_image.duracao_minutos:
-            return int(ag.service_image.duracao_minutos)
-        return 60
 
     def tem_conflito(
         self,
@@ -61,67 +56,6 @@ class ScheduleService:
         if excluir_agendamento_id:
             query = query.filter(Schedule.agendamento_id != excluir_agendamento_id)
         return query.first() is not None
-
-    def criar_para_reserva(self, ag: Agendamento) -> Schedule:
-        """
-        Cria schedule ao aprovar reserva.
-
-        .. deprecated:: 2.9.0-r4-f6
-            Sem call-site ativo em produção desde R4-F6 (ADR-024 sunset) —
-            ``ReservationService.aceitar_reagendamento`` (único caminho de
-            escrita restante) parou de chamar este método; bookings novos
-            são sempre core-only (``CoreBooking``), sem ``Schedule``
-            associado. Método mantido (não removido — model ``Schedule``
-            preservado, DROP físico adiado para R4-F8) apenas por
-            compatibilidade de referência/import e para dados legado que
-            ainda dependam dele fora do fluxo HTTP padrão. R4-F7 removeu a
-            FK física de ``Schedule.agendamento_id`` para ``agendamentos.id``
-            (coluna nullable, sem constraint) — este método continua
-            funcional (não levanta ``BusinessRuleError``) caso algum
-            consumidor legado ainda o invoque diretamente, mas nenhum path
-            HTTP ativo o faz.
-
-        Args:
-            ag: Reserva aprovada.
-
-        Returns:
-            Schedule criado.
-
-        Raises:
-            BusinessRuleError: Se houver conflito de horário.
-        """
-        inicio = ag.horario_aprovado or ag.data_hora
-        duracao = self._duracao_minutos(ag)
-        fim = inicio + timedelta(minutes=duracao)
-
-        if self.tem_conflito(inicio, fim, ag.id):
-            raise BusinessRuleError(
-                f"Horário {inicio.strftime('%H:%M')}–{fim.strftime('%H:%M')} já ocupado"
-            )
-
-        existente = (
-            self.db.query(Schedule).filter(Schedule.agendamento_id == ag.id).first()
-        )
-        if existente:
-            existente.inicio = inicio
-            existente.fim = fim
-            existente.data = inicio.date()
-            existente.status = ScheduleStatus.SCHEDULED
-            self.db.commit()
-            self.db.refresh(existente)
-            return existente
-
-        sch = Schedule(
-            agendamento_id=ag.id,
-            data=inicio.date(),
-            inicio=inicio,
-            fim=fim,
-            status=ScheduleStatus.SCHEDULED,
-        )
-        self.db.add(sch)
-        self.db.commit()
-        self.db.refresh(sch)
-        return sch
 
     def cancelar(self, agendamento_id: int) -> None:
         """

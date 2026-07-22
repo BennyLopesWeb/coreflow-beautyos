@@ -1,14 +1,21 @@
 """
 Service de configuração de agenda por dia.
+
+.. deprecated:: 2.11.0-r4-f8
+    O overlay de ``obter_visao_dia`` (nomes/status por slot) consultava
+    ``Agendamento`` legado via join com ``Cliente``/``Tranca``. A tabela
+    ``agendamentos`` foi removida (DROP físico — ADR-024 sunset / RFC-003
+    M11+) — o overlay agora usa ``CoreBooking`` (fonte da verdade desde
+    R3-F2/R4-F4), resolvendo ``tranca_id`` legado → ``CoreCatalog`` via
+    ``legacy_tranca_id`` (ACL) para o filtro.
 """
 from sqlalchemy.orm import Session
 from datetime import date, datetime
 from typing import List, Optional, Tuple
 
 from app.models.agenda_dia import AgendaDia
-from app.models.agendamento import Agendamento, STATUS_OCUPAM_VAGA
+from app.models.agendamento import STATUS_OCUPAM_VAGA
 from app.models.cliente import Cliente
-from app.models.tranca import Tranca
 from app.schemas.agenda_dia import AgendaDiaCreate, SlotAgendaItem, AgendaDiaDetalheResponse
 
 
@@ -99,38 +106,42 @@ class AgendaDiaService:
         slots: List[SlotAgendaItem] = []
         if ativo and tranca_id:
             from app.services.disponibilidade_service import DisponibilidadeService
+            from app.modules.booking.domain.models import CoreBooking
+            from app.modules.catalog.domain.models import CoreCatalog
+
             horarios = DisponibilidadeService(self.db).calcular_horarios_disponiveis(
                 base.replace(hour=hi, minute=mi),
                 tranca_id,
                 service_image_id=None,
                 ignorar_duracao_modelo=True,
             )
-            agendamentos = (
-                self.db.query(Agendamento, Cliente, Tranca)
-                .join(Cliente, Agendamento.cliente_id == Cliente.id)
-                .join(Tranca, Agendamento.tranca_id == Tranca.id)
+            bookings = (
+                self.db.query(CoreBooking, Cliente, CoreCatalog)
+                .join(Cliente, CoreBooking.customer_id == Cliente.id)
+                .join(CoreCatalog, CoreBooking.catalog_id == CoreCatalog.id)
                 .filter(
-                    Agendamento.data_hora >= base.replace(hour=hi, minute=mi),
-                    Agendamento.data_hora < base.replace(hour=hf, minute=mf),
-                    Agendamento.status.in_(STATUS_OCUPAM_VAGA),
-                    Agendamento.deleted_at.is_(None),
+                    CoreCatalog.legacy_tranca_id == tranca_id,
+                    CoreBooking.scheduled_at >= base.replace(hour=hi, minute=mi),
+                    CoreBooking.scheduled_at < base.replace(hour=hf, minute=mf),
+                    CoreBooking.status.in_(STATUS_OCUPAM_VAGA),
+                    CoreBooking.deleted_at.is_(None),
                 )
                 .all()
             )
-            ag_map = {
-                ag.data_hora.replace(second=0, microsecond=0): (ag, cliente, tranca)
-                for ag, cliente, tranca in agendamentos
+            booking_map = {
+                booking.scheduled_at.replace(second=0, microsecond=0): (booking, cliente, catalog)
+                for booking, cliente, catalog in bookings
             }
             for h in horarios:
                 key = h.horario.replace(second=0, microsecond=0)
-                ag_info = ag_map.get(key)
+                info = booking_map.get(key)
                 slots.append(SlotAgendaItem(
                     horario=h.horario,
                     disponivel=h.disponivel,
-                    agendamento_id=ag_info[0].id if ag_info else None,
-                    cliente_nome=ag_info[1].nome if ag_info else None,
-                    tranca_nome=ag_info[2].nome if ag_info else None,
-                    status=ag_info[0].status.value if ag_info else None,
+                    agendamento_id=info[0].id if info else None,
+                    cliente_nome=info[1].nome if info else None,
+                    tranca_nome=info[2].name if info else None,
+                    status=info[0].status.value if info else None,
                 ))
         else:
             current = base.replace(hour=hi, minute=mi, second=0, microsecond=0)

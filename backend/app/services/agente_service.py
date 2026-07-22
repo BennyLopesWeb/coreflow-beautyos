@@ -1,15 +1,21 @@
 """
 Service do agente inteligente de automação CRM/atendimento.
+
+.. deprecated:: 2.11.0-r4-f8
+    A tabela ``agendamentos`` foi removida (DROP físico — ADR-024 sunset /
+    RFC-003 M11+). ``analisar_e_criar_tarefas`` agora usa ``CoreBooking``
+    (fonte da verdade desde R3-F2/R4-F4) como equivalente para "lembrete
+    de pagamento pendente" e "última visita do cliente" — ver
+    ``docs/sprints/R4-F8.md``.
 """
 from sqlalchemy.orm import Session
 from datetime import datetime, date, timedelta
 from typing import List
 
 from app.models.agent_task import AgentTask, AgentTaskStatus, AgentTaskType
-from app.models.agendamento import Agendamento, StatusAgendamento
+from app.models.agendamento import ReservationStatus
 from app.models.cliente import Cliente
 from app.models.fila import Fila
-from app.models.tranca import Tranca
 from app.schemas.agente import AgenteExecutarResponse, AgentTaskResponse
 from app.core.exceptions import NotFoundError
 from app.core.logging_config import get_logger
@@ -79,55 +85,63 @@ class AgenteService:
         """
         Analisa o banco e cria tarefas automatizadas pendentes.
 
+        .. deprecated:: 2.11.0-r4-f8
+            "Lembretes de pagamento pendente" e "última visita do cliente"
+            usavam ``Agendamento`` legado; a tabela foi removida (DROP
+            físico — ADR-024 sunset / RFC-003 M11+). Ambos os blocos foram
+            reescritos para usar ``CoreBooking`` (fonte da verdade desde
+            R3-F2/R4-F4) como equivalente direto.
+
         Returns:
             Quantidade de novas tarefas criadas.
         """
+        from app.modules.booking.domain.models import CoreBooking
+
         criadas = 0
         hoje = date.today()
         limite_inativo = datetime.now() - timedelta(days=45)
 
-        # Lembretes de pagamento pendente
-        agendamentos_pendentes = self.db.query(Agendamento).filter(
-            Agendamento.sinal_pago.is_(False),
-            Agendamento.status == StatusAgendamento.PENDENTE,
-            Agendamento.deleted_at.is_(None),
-            Agendamento.data_hora >= datetime.now(),
+        # Lembretes de pagamento pendente (equivalente CoreBooking — R4-F8)
+        bookings_pendentes = self.db.query(CoreBooking).filter(
+            CoreBooking.deposit_paid.is_(False),
+            CoreBooking.status == ReservationStatus.PENDING_PAYMENT,
+            CoreBooking.deleted_at.is_(None),
+            CoreBooking.scheduled_at >= datetime.now(),
         ).all()
 
-        for ag in agendamentos_pendentes:
-            if self._tarefa_existe(AgentTaskType.LEMBRETE_PAGAMENTO, ag.id):
+        for booking in bookings_pendentes:
+            if self._tarefa_existe(AgentTaskType.LEMBRETE_PAGAMENTO, booking.id):
                 continue
-            cliente = self.db.query(Cliente).filter(Cliente.id == ag.cliente_id).first()
-            tranca = self.db.query(Tranca).filter(Tranca.id == ag.tranca_id).first()
+            cliente = self.db.query(Cliente).filter(Cliente.id == booking.customer_id).first()
             nome_cliente = cliente.nome if cliente else "Cliente"
-            nome_tranca = tranca.nome if tranca else "serviço"
+            nome_servico = booking.offering.name if booking.offering else "serviço"
             tarefa = AgentTask(
                 tipo=AgentTaskType.LEMBRETE_PAGAMENTO,
                 titulo=f"Lembrete Pix — {nome_cliente}",
                 descricao=(
                     f"Enviar lembrete de pagamento do sinal para {nome_cliente} "
-                    f"({cliente.telefone if cliente else 'N/A'}) — {nome_tranca} "
-                    f"em {ag.data_hora.strftime('%d/%m/%Y %H:%M')}."
+                    f"({cliente.telefone if cliente else 'N/A'}) — {nome_servico} "
+                    f"em {booking.scheduled_at.strftime('%d/%m/%Y %H:%M')}."
                 ),
-                referencia_id=ag.id,
+                referencia_id=booking.id,
             )
             self.db.add(tarefa)
             criadas += 1
 
-        # Reativar clientes inativos
+        # Reativar clientes inativos (última visita via CoreBooking — R4-F8)
         clientes = self.db.query(Cliente).filter(Cliente.deleted_at.is_(None)).all()
         for cliente in clientes:
             ultimo = (
-                self.db.query(Agendamento)
+                self.db.query(CoreBooking)
                 .filter(
-                    Agendamento.cliente_id == cliente.id,
-                    Agendamento.deleted_at.is_(None),
-                    Agendamento.status != StatusAgendamento.CANCELADO,
+                    CoreBooking.customer_id == cliente.id,
+                    CoreBooking.deleted_at.is_(None),
+                    CoreBooking.status != ReservationStatus.CANCELLED,
                 )
-                .order_by(Agendamento.data_hora.desc())
+                .order_by(CoreBooking.scheduled_at.desc())
                 .first()
             )
-            if ultimo and ultimo.data_hora >= limite_inativo:
+            if ultimo and ultimo.scheduled_at >= limite_inativo:
                 continue
             if self._tarefa_existe(AgentTaskType.REATIVAR_CLIENTE, cliente.id):
                 continue
@@ -151,8 +165,7 @@ class AgenteService:
         for item in fila_hoje[:3]:
             if self._tarefa_existe(AgentTaskType.NOTIFICAR_FILA, item.id):
                 continue
-            ag = self.db.query(Agendamento).filter(Agendamento.id == item.agendamento_id).first()
-            cliente = self.db.query(Cliente).filter(Cliente.id == ag.cliente_id).first() if ag else None
+            cliente = self.db.query(Cliente).filter(Cliente.id == item.cliente_id).first()
             tarefa = AgentTask(
                 tipo=AgentTaskType.NOTIFICAR_FILA,
                 titulo=f"Fila pos. {item.posicao} — {cliente.nome if cliente else 'Cliente'}",

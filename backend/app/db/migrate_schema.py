@@ -11,9 +11,32 @@ def _get_db_path() -> str:
     return settings.DATABASE_URL.replace("sqlite:///", "")
 
 
+def _tabela_existe(cursor: sqlite3.Cursor, table: str) -> bool:
+    """
+    Verifica se uma tabela existe no banco SQLite.
+
+    Args:
+        cursor: Cursor SQLite ativo.
+        table: Nome da tabela.
+
+    Returns:
+        True se a tabela existir em ``sqlite_master``.
+    """
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    )
+    return cursor.fetchone() is not None
+
+
 def _add_column_if_missing(cursor: sqlite3.Cursor, table: str, column: str, definition: str) -> None:
     """
     Adiciona uma coluna na tabela se ela ainda não existir.
+
+    Idempotente também quando ``table`` não existe (no-op silencioso) —
+    protege chamadores genéricos (ex.: ``_migrar_multi_tenant``, que
+    itera uma lista fixa de tabelas operacionais) contra tabelas legado
+    já removidas (``agendamentos``, DROP físico em R4-F8) em bancos
+    novos, onde ``create_all``/Alembic nunca chegam a criá-las.
 
     Args:
         cursor: Cursor SQLite ativo.
@@ -21,6 +44,8 @@ def _add_column_if_missing(cursor: sqlite3.Cursor, table: str, column: str, defi
         column: Nome da coluna.
         definition: Definição SQL da coluna (ex: 'updated_at DATETIME').
     """
+    if not _tabela_existe(cursor, table):
+        return
     cursor.execute(f"PRAGMA table_info({table})")
     columns = [row[1] for row in cursor.fetchall()]
     if column not in columns:
@@ -45,9 +70,6 @@ def migrate_schema() -> None:
 
     try:
         _add_column_if_missing(cursor, "financeiro", "updated_at", "DATETIME")
-        _add_column_if_missing(cursor, "agendamentos", "google_calendar_event_id", "TEXT")
-        _add_column_if_missing(cursor, "agendamentos", "comprovante_url", "TEXT")
-        _add_column_if_missing(cursor, "agendamentos", "service_image_id", "INTEGER")
         _add_column_if_missing(cursor, "service_images", "valor_total", "NUMERIC(10,2)")
         _add_column_if_missing(cursor, "service_images", "valor_sinal", "NUMERIC(10,2)")
         _add_column_if_missing(cursor, "service_images", "duracao_minutos", "INTEGER")
@@ -58,29 +80,58 @@ def migrate_schema() -> None:
         _add_column_if_missing(cursor, "service_images", "quantidade_trancas", "INTEGER")
         _add_column_if_missing(cursor, "service_images", "quantidade_cabelo", "VARCHAR(50)")
         _add_column_if_missing(cursor, "service_images", "ativo", "BOOLEAN DEFAULT 1")
-        _add_column_if_missing(cursor, "agendamentos", "valor_total", "NUMERIC(10,2)")
-        _add_column_if_missing(cursor, "agendamentos", "valor_sinal", "NUMERIC(10,2)")
-        _add_column_if_missing(cursor, "agendamentos", "valor_restante", "NUMERIC(10,2)")
-        _add_column_if_missing(cursor, "agendamentos", "status_pagamento", "VARCHAR(30) DEFAULT 'pending_payment'")
         conn.commit()
         _backfill_modelo_nomes(cursor)
-        _migrar_precos_categoria_para_modelos(cursor)
-        _backfill_reserva_valores(cursor)
-        _migrar_fila_espera(cursor)
-        _criar_agenda_dias(cursor)
-        _criar_schedules(cursor)
-        _criar_queue_entries(cursor)
-        _estender_reservas(cursor)
-        _estender_payments(cursor)
-        _normalizar_status_agendamentos(cursor)
-        _backfill_reservas_sem_modelo(cursor)
-        _migrar_multi_tenant(cursor)
-        _migrar_coreflow_plugin(cursor)
-        _migrar_dlq_replay_columns(cursor)
-        _migrar_r2_f1_booking_sync_columns(cursor)
-        _migrar_r4_f5_booking_id_columns(cursor)
-        _migrar_r4_f6_payment_booking_id(cursor)
-        _migrar_r4_f7_decouple_agendamento_fks(cursor)
+
+        # R4-F8 (ADR-024 sunset / RFC-003 M11+): a tabela ``agendamentos`` foi
+        # removida — os models SQLAlchemy não a criam mais via ``create_all``,
+        # então bancos novos nunca a têm. Todo o bloco de migrações
+        # incrementais abaixo pressupõe a tabela legado existente (colunas,
+        # backfills, recriações via ``fila``/``schedules``/etc.) e só é
+        # necessário para bancos SQLite de desenvolvimento criados **antes**
+        # desta release — pula inteiramente em bancos novos.
+        if _tabela_existe(cursor, "agendamentos"):
+            _add_column_if_missing(cursor, "agendamentos", "google_calendar_event_id", "TEXT")
+            _add_column_if_missing(cursor, "agendamentos", "comprovante_url", "TEXT")
+            _add_column_if_missing(cursor, "agendamentos", "service_image_id", "INTEGER")
+            _add_column_if_missing(cursor, "agendamentos", "valor_total", "NUMERIC(10,2)")
+            _add_column_if_missing(cursor, "agendamentos", "valor_sinal", "NUMERIC(10,2)")
+            _add_column_if_missing(cursor, "agendamentos", "valor_restante", "NUMERIC(10,2)")
+            _add_column_if_missing(cursor, "agendamentos", "status_pagamento", "VARCHAR(30) DEFAULT 'pending_payment'")
+            conn.commit()
+            _migrar_precos_categoria_para_modelos(cursor)
+            _backfill_reserva_valores(cursor)
+            _migrar_fila_espera(cursor)
+            _criar_agenda_dias(cursor)
+            _criar_schedules(cursor)
+            _criar_queue_entries(cursor)
+            _estender_reservas(cursor)
+            _estender_payments(cursor)
+            _normalizar_status_agendamentos(cursor)
+            _backfill_reservas_sem_modelo(cursor)
+            _migrar_multi_tenant(cursor)
+            _migrar_coreflow_plugin(cursor)
+            _migrar_dlq_replay_columns(cursor)
+            _migrar_r2_f1_booking_sync_columns(cursor)
+            _migrar_r4_f5_booking_id_columns(cursor)
+            _migrar_r4_f6_payment_booking_id(cursor)
+            _migrar_r4_f7_decouple_agendamento_fks(cursor)
+        else:
+            # Colunas/tabelas novas que os passos acima criariam mesmo sem
+            # ``agendamentos`` física (dependências de outras releases que
+            # não giram em torno da tabela legado) continuam sendo
+            # aplicadas normalmente em bancos novos.
+            _criar_agenda_dias(cursor)
+            _criar_schedules(cursor)
+            _criar_queue_entries(cursor)
+            _migrar_multi_tenant(cursor)
+            _migrar_coreflow_plugin(cursor)
+            _migrar_dlq_replay_columns(cursor)
+            _migrar_r2_f1_booking_sync_columns(cursor)
+            _migrar_r4_f5_booking_id_columns(cursor)
+            _migrar_r4_f6_payment_booking_id(cursor)
+
+        _migrar_r4_f8_drop_agendamentos(cursor)
         conn.commit()
         print("✅ Schema migrado com sucesso!")
     except Exception as error:
@@ -1071,6 +1122,29 @@ def _migrar_r4_f7_decouple_agendamento_fks(cursor: sqlite3.Cursor) -> None:
             "✅ Tabela 'satisfaction_surveys' migrada — agendamento_id opcional + "
             "booking_id, FK física para agendamentos removida (R4-F7)"
         )
+
+
+def _migrar_r4_f8_drop_agendamentos(cursor: sqlite3.Cursor) -> None:
+    """
+    DROP físico da tabela ``agendamentos`` (R4-F8 — ADR-024 sunset / RFC-003 M11+).
+
+    Espelha ``alembic/versions/cf016_r4_f8_drop_agendamentos.py`` para o
+    caminho SQLite legado (fora do Alembic). R4-F7 já removeu a última FK
+    física apontando para ``agendamentos.id``, então nenhuma constraint
+    impede o DROP. Idempotente — só executa se a tabela ainda existir
+    (bancos criados após esta release nunca a têm, já que o model
+    ``Agendamento`` deixou de ser mapeado no SQLAlchemy).
+
+    Args:
+        cursor: Cursor SQLite ativo.
+
+    Returns:
+        None.
+    """
+    if not _tabela_existe(cursor, "agendamentos"):
+        return
+    cursor.execute("DROP TABLE agendamentos")
+    print("✅ Tabela 'agendamentos' removida (DROP físico — R4-F8)")
 
 
 def _migrar_dlq_replay_columns(cursor: sqlite3.Cursor) -> None:

@@ -1,13 +1,28 @@
 """
-Model Agendamento (Reservation)
-Representa uma reserva de serviço sobre um modelo específico.
+Model Agendamento (Reservation) — enums + stub deprecado.
+
+.. deprecated:: 2.11.0-r4-f8
+    **DROP físico executado (R4-F8 / ADR-024 sunset / RFC-003 M11+).** A
+    tabela ``agendamentos`` foi removida via
+    ``alembic/versions/cf016_r4_f8_drop_agendamentos.py`` — nenhuma
+    consulta/escrita de produção deve mais depender dela. A classe
+    ``Agendamento`` **deixou de ser um model SQLAlchemy** (não herda mais
+    ``Base``, não tem ``__tablename__``/``Column``) nesta release — é
+    mantida apenas como stub para compatibilidade de referência/import
+    (alguns módulos ainda importam o símbolo por herança histórica). Usar
+    ``self.db.query(Agendamento)`` levanta erro imediatamente (classe não
+    mapeada) — todos os call-sites de produção foram migrados para
+    ``core_bookings``/``CoreBooking`` (ver ``app.modules.booking.domain.models``)
+    ou convertidos em no-ops documentados (ver ``docs/sprints/R4-F8.md``).
+
+    Os enums abaixo (``ReservationStatus``, ``StatusPagamento``,
+    ``StatusAgendamento``, ``STATUS_OCUPAM_VAGA``) **continuam em uso** —
+    são compartilhados por ``CoreBooking.status``/``CoreBooking.payment_status``
+    e por várias colunas históricas (``payments``, ``fila``, ``schedules``
+    etc.) que armazenam esses valores como ``Integer``/``String`` simples,
+    sem depender da tabela removida.
 """
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Numeric, Text
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 import enum
-from app.db.base import Base
-from app.db.enum_column import enum_values
 
 
 class ReservationStatus(str, enum.Enum):
@@ -61,64 +76,14 @@ class StatusPagamento(str, enum.Enum):
     PAID = "paid"
 
 
-class Agendamento(Base):
+class Agendamento:
     """
-    Reserva persistida no banco (tabela agendamentos).
+    Stub deprecado — tabela ``agendamentos`` removida em R4-F8.
 
-    Toda informação comercial vem do snapshot do modelo (service_image).
-
-    .. deprecated:: 2.7.0-r4-f4
-        **DEPRECATED (R4-F4 hard sunset / ADR-024 / RFC-003 M8).** Nenhum
-        caminho de escrita de produção deve mais inserir linhas nesta
-        tabela — ``core_bookings`` (``app.modules.booking.domain.models.CoreBooking``)
-        é a fonte da verdade (SoT) para reservas novas desde R3-F2, e desde
-        R4-F4 também para disponibilidade (``DisponibilidadeService``) e
-        processamento da fila do dia (``QueueEntryService.processar_reservas_do_dia``).
-        ``AgendamentoService.criar_agendamento`` levanta ``BusinessRuleError``
-        incondicionalmente. Este model é mantido **somente leitura** para
-        dados históricos (relatórios, sync legado→core, reconciliation,
-        fixtures CF6/CF9). R4-F7 removeu as últimas FKs físicas de outras
-        tabelas apontando para ``agendamentos.id`` (``payments``,
-        ``schedules``, ``satisfaction_surveys``, ``fila``,
-        ``queue_entries``, ``financeiro``, ``notification_logs``) —
-        a tabela **não é mais referenciada por constraint física alguma**,
-        mas continua existindo até o **DROP físico planejado para R4-F8**.
+    .. deprecated:: 2.11.0-r4-f8
+        Não é mais um model SQLAlchemy (sem ``Base``/``__tablename__``).
+        Mantido apenas para import de referência histórica em docstrings
+        e assinaturas de função que ainda mencionam o tipo. **Não deve
+        ser instanciado nem usado em ``session.query(...)``** — isso
+        levanta erro imediatamente, já que a classe não está mapeada.
     """
-    __tablename__ = "agendamentos"
-
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
-    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
-    tranca_id = Column(Integer, ForeignKey("trancas.id"), nullable=False, index=True)
-    service_image_id = Column(Integer, ForeignKey("service_images.id"), nullable=False, index=True)
-    data_hora = Column(DateTime(timezone=True), nullable=False, index=True)
-    horario_aprovado = Column(DateTime(timezone=True), nullable=True)
-    sinal_pago = Column(Boolean, default=False, nullable=False)
-    valor_total = Column(Numeric(10, 2), nullable=False)
-    percentual_sinal = Column(Numeric(5, 4), nullable=False, default=0.30)
-    valor_sinal = Column(Numeric(10, 2), nullable=False)
-    valor_restante = Column(Numeric(10, 2), nullable=False)
-    status_pagamento = Column(
-        enum_values(StatusPagamento),
-        default=StatusPagamento.PENDING_PAYMENT,
-        nullable=False,
-    )
-    comprovante_url = Column(String(255), nullable=True)
-    status = Column(
-        enum_values(ReservationStatus),
-        default=ReservationStatus.PENDING_PAYMENT,
-        nullable=False,
-        index=True,
-    )
-    observacoes = Column(String(255), nullable=True)
-    motivo_rejeicao = Column(Text, nullable=True)
-    horario_sugerido = Column(DateTime(timezone=True), nullable=True)
-    mensagem_reagendamento = Column(Text, nullable=True)
-    google_calendar_event_id = Column(String(255), nullable=True)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    cliente = relationship("Cliente", backref="agendamentos")
-    tranca = relationship("Tranca", backref="agendamentos")
-    service_image = relationship("ServiceImage", backref="agendamentos")

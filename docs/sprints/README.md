@@ -21,7 +21,11 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 | R4-F2 | 2.5.0-r4-f2 | Desligar dual-write outbound `project_*` por padrão (M7) — ✅ |
 | R4-F3 | 2.6.0-r4-f3 | Remover código do dual-write outbound `project_*` (M7 completo) — ✅ |
 | R4-F4 | 2.7.0-r4-f4 | Hard sunset — parar escritas novas em `agendamentos` (Option A, sem DROP); `core_bookings` SoT para disponibilidade/fila do dia (M8) — ✅ |
+| R4-F5 | 2.8.0-r4-f5 | FK `booking_id` em `queue_entries`/`fila` + fechamento do gap operacional (M9) — ✅ |
+| R4-F6 | 2.9.0-r4-f6 | Bridge `Payment`→`booking_id` + disponibilidade core-only + 410 admin legado (M10) — ✅ |
+| R4-F7 | 2.10.0-r4-f7 | Decouple físico das últimas FKs para `agendamentos` (M11) — ✅ |
+| R4-F8 | 2.11.0-r4-f8 | DROP físico de `agendamentos`; `Agendamento` deixa de ser model mapeado (M11+) — ✅ |
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos: R4-F5+ (avaliar drop físico da tabela `agendamentos`/`payments`/`schedules` legado)
+Próximos: fechar gap de `Financeiro` para bookings core-only e avaliar sunset explícito (410) das rotas legado de `app/routers/pagamentos.py`

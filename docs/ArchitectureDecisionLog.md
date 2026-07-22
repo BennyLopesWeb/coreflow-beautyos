@@ -16,6 +16,16 @@
 
 ---
 
+## 2026-07-22 — R4-F8 DROP físico de agendamentos
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F8 M11+ (RFC-003) | Migration `cf016_r4_f8_drop_agendamentos` executa `DROP TABLE agendamentos` (idempotente); `app/models/agendamento.py`: `Agendamento` deixa de herdar `Base` (não mapeado — `create_all` não recria a tabela); enums (`ReservationStatus`/`StatusPagamento`/`StatusAgendamento`/`STATUS_OCUPAM_VAGA`) preservados; toda leitura/escrita de produção sobre `Agendamento` reescrita para no-op ou `CoreBooking` equivalente (`AgendamentoService`, `ReservationService`, `PaymentReservationService`, `DisponibilidadeService`, `ScheduleService`, `QueueEntryService`, `NotificationService`, `AgenteService`, `AgendaDiaService`, `AdminService`, sync services legado→core, `booking_reconciliation_worker`, `LegacyPaymentQueryAdapter`); `2.11.0-r4-f8` |
+| **Superseded** | ADR-024 sunset table | DROP físico de `agendamentos` **executado** — encerra o Strangler Fig aberto desde R2-F1 para o par `Agendamento`↔`CoreBooking`. `payments`/`schedules`/etc. mantêm a coluna `agendamento_id` como `Integer` histórico (sem FK desde R4-F7) |
+| **Published** | Release + sprint + gate | [2.11.0-r4-f8.md](releases/2.11.0-r4-f8.md) · [R4-F8.md](sprints/R4-F8.md) · [R4-F8-Gate.md](reviews/R4-F8-Gate.md) |
+
+---
+
 ## 2026-07-21 — R4-F7 Decouple físico das FKs restantes para agendamentos
 
 | Evento | Artefato | Notas |

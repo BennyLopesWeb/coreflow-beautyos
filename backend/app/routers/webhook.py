@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas.webhook import WhatsAppMessage, WhatsAppWebhookResponse
 from app.integrations.pix import PixService
-from app.services.agendamento_service import AgendamentoService
 from app.core.config import settings
 from app.core.logging_config import get_logger
 

@@ -1,5 +1,15 @@
 """
-Sincronização Strangler Fig — bookings/agendamentos → ``core_orders``.
+Sincronização Strangler Fig — bookings → ``core_orders``.
+
+.. deprecated:: 2.11.0-r4-f8
+    Sincronizava a partir de ``Agendamento`` legado (``sync_all`` varria
+    ``agendamentos``, ``sync_one`` recebia ``agendamento_id``). A tabela
+    foi removida (DROP físico — ADR-024 sunset / RFC-003 M11+) —
+    ``sync_all`` tornou-se no-op (nenhum caminho de escrita ativo cria
+    ``Agendamento`` desde R3-F2/R4-F3/R4-F4, então não há mais nada a
+    sincronizar por essa direção) e ``sync_one`` passou a receber
+    ``booking_id`` (``core_bookings.id``) diretamente — equivalente
+    core-only, sem depender da tabela removida.
 """
 from decimal import Decimal
 from typing import Optional
@@ -7,7 +17,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.core.logging_config import get_logger
-from app.models.agendamento import Agendamento, ReservationStatus, StatusPagamento
+from app.models.agendamento import ReservationStatus, StatusPagamento
 from app.modules.booking.domain.models import CoreBooking
 from app.modules.order.domain.models import CoreOrder, CoreOrderStatus
 
@@ -23,7 +33,7 @@ _CANCELLED = {
 
 class OrderLegacySyncService:
     """
-    Sincroniza pedidos comerciais a partir de bookings/agendamentos legados.
+    Sincroniza pedidos comerciais a partir de bookings (``CoreBooking``).
 
     Args:
         db: Sessão SQLAlchemy.
@@ -34,74 +44,68 @@ class OrderLegacySyncService:
 
     def sync_all(self) -> int:
         """
-        Sincroniza todos os agendamentos ativos para core_orders.
+        Sincroniza pedidos legado ativos para core_orders.
+
+        .. deprecated:: 2.11.0-r4-f8
+            A tabela ``agendamentos`` foi removida — no-op (``0``). Use
+            ``sync_one(booking_id)`` para sincronizar um ``CoreBooking``
+            específico sob demanda.
 
         Returns:
-            Quantidade processada.
+            ``0`` — sempre no-op.
         """
-        rows = (
-            self.db.query(Agendamento)
-            .filter(Agendamento.deleted_at.is_(None))
-            .all()
-        )
-        count = 0
-        for ag in rows:
-            if self._upsert_from_agendamento(ag):
-                count += 1
-        self.db.commit()
-        logger.info(f"Sync orders: {count}")
-        return count
+        return 0
 
-    def sync_one(self, agendamento_id: int) -> Optional[CoreOrder]:
+    def sync_one(self, booking_id: int) -> Optional[CoreOrder]:
         """
-        Sincroniza pedido de um agendamento específico.
+        Sincroniza pedido de um booking core específico.
+
+        .. deprecated:: 2.11.0-r4-f8
+            Assinatura alterada de ``agendamento_id`` para ``booking_id``
+            (``core_bookings.id``) — a tabela ``agendamentos`` foi
+            removida (DROP físico R4-F8).
 
         Args:
-            agendamento_id: ID ``agendamentos``.
+            booking_id: ID ``core_bookings.id``.
 
         Returns:
-            CoreOrder ou None.
+            CoreOrder ou None se o booking não existir.
         """
-        ag = (
-            self.db.query(Agendamento)
-            .filter(Agendamento.id == agendamento_id, Agendamento.deleted_at.is_(None))
+        booking = (
+            self.db.query(CoreBooking)
+            .filter(CoreBooking.id == booking_id, CoreBooking.deleted_at.is_(None))
             .first()
         )
-        if not ag:
+        if not booking:
             return None
-        row = self._upsert_from_agendamento(ag)
+        row = self._upsert_from_booking(booking)
         self.db.commit()
         return row
 
-    def _upsert_from_agendamento(self, ag: Agendamento) -> Optional[CoreOrder]:
+    def _upsert_from_booking(self, booking: CoreBooking) -> Optional[CoreOrder]:
         """
-        Cria ou atualiza core_order a partir de Agendamento legado.
+        Cria ou atualiza core_order a partir de um ``CoreBooking``.
 
         Args:
-            ag: Registro legado.
+            booking: Booking core.
 
         Returns:
             CoreOrder persistido.
         """
-        booking = (
-            self.db.query(CoreBooking)
-            .filter(CoreBooking.legacy_agendamento_id == ag.id)
-            .first()
-        )
-        status = self._resolve_status(ag)
-        paid = self._calc_paid_amount(ag)
+        status = self._resolve_status(booking)
+        paid = self._calc_paid_amount(booking)
 
         existing = (
             self.db.query(CoreOrder)
-            .filter(CoreOrder.legacy_agendamento_id == ag.id)
+            .filter(CoreOrder.booking_id == booking.id)
             .first()
         )
         payload = dict(
-            company_id=ag.company_id or 1,
-            booking_id=booking.id if booking else None,
-            customer_id=ag.cliente_id,
+            company_id=booking.company_id,
+            booking_id=booking.id,
+            customer_id=booking.customer_id,
             status=status,
-            total_amount=Decimal(str(ag.valor_total)),
+            total_amount=Decimal(str(booking.price_total)),
             paid_amount=paid,
             currency="BRL",
         )
@@ -109,23 +113,23 @@ class OrderLegacySyncService:
             for key, val in payload.items():
                 setattr(existing, key, val)
             return existing
-        row = CoreOrder(legacy_agendamento_id=ag.id, **payload)
+        row = CoreOrder(legacy_agendamento_id=booking.legacy_agendamento_id, **payload)
         self.db.add(row)
         return row
 
-    def _resolve_status(self, ag: Agendamento) -> CoreOrderStatus:
+    def _resolve_status(self, booking: CoreBooking) -> CoreOrderStatus:
         """
-        Mapeia status legado para CoreOrderStatus.
+        Mapeia status do booking para CoreOrderStatus.
 
         Args:
-            ag: Agendamento legado.
+            booking: Booking core.
 
         Returns:
             CoreOrderStatus correspondente.
         """
-        if ag.status in _CANCELLED:
+        if booking.status in _CANCELLED:
             return CoreOrderStatus.CANCELLED
-        if ag.status_pagamento == StatusPagamento.PAID or ag.status in (
+        if booking.payment_status == StatusPagamento.PAID or booking.status in (
             ReservationStatus.PAID,
             ReservationStatus.COMPLETED,
             ReservationStatus.CONCLUIDO,
@@ -133,21 +137,21 @@ class OrderLegacySyncService:
             return CoreOrderStatus.PAID
         return CoreOrderStatus.OPEN
 
-    def _calc_paid_amount(self, ag: Agendamento) -> Decimal:
+    def _calc_paid_amount(self, booking: CoreBooking) -> Decimal:
         """
-        Calcula valor pago com base no snapshot da reserva.
+        Calcula valor pago com base no snapshot do booking.
 
         Args:
-            ag: Agendamento legado.
+            booking: Booking core.
 
         Returns:
             Valor pago acumulado.
         """
         paid = Decimal("0.00")
-        if ag.sinal_pago:
-            paid += Decimal(str(ag.valor_sinal or 0))
-        if ag.status_pagamento == StatusPagamento.PAID:
-            return Decimal(str(ag.valor_total))
-        if ag.status_pagamento == StatusPagamento.PARTIALLY_PAID:
+        if booking.deposit_paid:
+            paid += Decimal(str(booking.deposit_amount or 0))
+        if booking.payment_status == StatusPagamento.PAID:
+            return Decimal(str(booking.price_total))
+        if booking.payment_status == StatusPagamento.PARTIALLY_PAID:
             return paid
         return paid

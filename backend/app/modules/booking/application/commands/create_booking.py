@@ -13,9 +13,11 @@ padrão — gated por ``booking.legacy.projection.enabled`` (ADR-024 sunset /
 RFC-003 M7).
 R4-F3 (ADR-024 sunset / RFC-003 M7 completo): o dual-write outbound foi
 removido definitivamente do código. O booking é sempre core-only
-(``legacy_agendamento_id=None``, ``mark_core_only_synced()``); o modelo
-``Agendamento`` permanece apenas para dados históricos até um drop futuro
-(R4-F4+).
+(``legacy_agendamento_id=None``, ``mark_core_only_synced()``).
+R4-F8: a tabela ``agendamentos`` foi removida (DROP físico — ADR-024
+sunset / RFC-003 M11+) — ``legacy_agendamento_id`` permanece na tabela
+``core_bookings`` apenas como inteiro histórico (sem FK), sempre ``None``
+para bookings criados a partir desta release.
 """
 from dataclasses import dataclass
 from datetime import datetime

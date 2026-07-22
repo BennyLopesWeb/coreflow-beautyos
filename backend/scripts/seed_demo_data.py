@@ -13,14 +13,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.db.session import SessionLocal
 from app.models.tranca import Tranca
 from app.models.cliente import Cliente
-from app.models.agendamento import Agendamento, StatusAgendamento
 from app.models.financeiro import Financeiro, TipoMovimento
 from datetime import datetime, timedelta
 
 
 def seed_demo_data() -> None:
     """
-    Cria tranças, agendamentos e movimentos financeiros de exemplo.
+    Cria tranças e um movimento financeiro de exemplo.
+
+    .. deprecated:: 2.11.0-r4-f8
+        Não cria mais um agendamento de exemplo — a tabela ``agendamentos``
+        foi removida via DROP físico (ADR-024 sunset / RFC-003 M11+).
+        Para popular uma reserva de demonstração completa, sincronize o
+        catálogo (``LegacySyncService(db).sync_all()``) e use
+        ``POST /v1/bookings`` (ou ``CreateBookingHandler``) — o movimento
+        financeiro abaixo é criado isolado, apenas para exercitar a tela
+        de financeiro.
 
     Returns:
         None
@@ -66,31 +74,19 @@ def seed_demo_data() -> None:
         tranca = db.query(Tranca).first()
         cliente = db.query(Cliente).first()
 
-        if tranca and cliente and db.query(Agendamento).count() == 0:
-            agendamento = Agendamento(
-                cliente_id=cliente.id,
-                tranca_id=tranca.id,
-                data_hora=datetime.now() + timedelta(days=2),
-                sinal_pago=True,
-                status=StatusAgendamento.CONFIRMADO,
-                observacoes="Cliente preferencial",
-            )
-            db.add(agendamento)
-            db.commit()
-            db.refresh(agendamento)
-
+        if tranca and cliente and db.query(Financeiro).count() == 0:
             movimento = Financeiro(
                 tipo=TipoMovimento.ENTRADA,
                 descricao=f"Sinal - {tranca.nome}",
                 valor=tranca.valor_sinal,
-                agendamento_id=agendamento.id,
+                agendamento_id=None,
                 data=datetime.now(),
             )
             db.add(movimento)
             db.commit()
-            print("✅ Agendamento e movimento financeiro de exemplo criados")
+            print("✅ Movimento financeiro de exemplo criado")
         else:
-            print("ℹ️ Agendamentos já existem ou faltam trança/cliente")
+            print("ℹ️ Movimentos financeiros já existem ou faltam trança/cliente")
 
     finally:
         db.close()

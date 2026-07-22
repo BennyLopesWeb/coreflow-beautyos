@@ -295,12 +295,17 @@ class IdentityApplicationService:
         """
         Preenche company_id em entidades operacionais legadas.
 
+        .. deprecated:: 2.11.0-r4-f8
+            ``Agendamento`` removido da lista de models — a tabela
+            ``agendamentos`` foi removida (DROP físico — ADR-024 sunset /
+            RFC-003 M11+); ``self.db.query(Agendamento)`` levantaria erro
+            imediatamente (classe não mapeada).
+
         Args:
             company_id: ID do tenant padrão.
         """
         from app.models.tranca import Tranca
         from app.models.cliente import Cliente
-        from app.models.agendamento import Agendamento
         from app.models.fila import Fila
         from app.models.agenda_dia import AgendaDia
         from app.models.schedule import Schedule
@@ -311,7 +316,6 @@ class IdentityApplicationService:
         for model in (
             Tranca,
             Cliente,
-            Agendamento,
             Fila,
             AgendaDia,
             Schedule,

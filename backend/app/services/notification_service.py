@@ -1,12 +1,26 @@
 """
 Service de Notificações
 Gerencia envio de notificações automáticas
+
+.. deprecated:: 2.11.0-r4-f8
+    A tabela ``agendamentos`` foi removida (DROP físico — ADR-024 sunset /
+    RFC-003 M11+ — ver ``docs/sprints/R4-F8.md``). Todos os métodos que
+    consultavam ``Agendamento`` diretamente (``enviar_confirmacao_agendamento``,
+    ``enviar_lembretes_pendentes``, ``notificar_reserva_rejeitada``,
+    ``notificar_horario_sugerido``, ``notificar_atendimento_iniciado``,
+    ``notificar_atendimento_concluido``, ``notificar_pagamento_final``,
+    ``notificar_nova_reserva``, ``notificar_reserva_aguardando_aprovacao``,
+    ``notificar_reserva_aprovada``) tornaram-se no-ops (retornam ``None``/
+    lista vazia, logando um aviso) — nenhum caminho de escrita ativo cria
+    ``Agendamento`` desde R3-F2/R4-F3/R4-F4, então essas notificações já
+    não disparavam na prática. Métodos baseados em ``QueueEntry``/``Fila``
+    (``notificar_entrada_fila_operacional``, ``notificar_cliente_chamado``,
+    ``notificar_nova_fila`` e afins) continuam ativos.
 """
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import List, Optional
 from app.models.notification_log import NotificationLog, NotificationType, NotificationStatus
-from app.models.agendamento import Agendamento, StatusAgendamento
 from app.integrations.whatsapp import WhatsAppService
 from app.core.logging_config import get_logger
 
@@ -23,130 +37,86 @@ class NotificationService:
         self.db = db
         self.whatsapp = WhatsAppService()
     
-    def enviar_confirmacao_agendamento(self, agendamento_id: int) -> NotificationLog:
+    def enviar_confirmacao_agendamento(self, agendamento_id: int) -> Optional[NotificationLog]:
         """
-        Envia notificação de confirmação de agendamento
+        Envia notificação de confirmação de agendamento legado.
+
+        .. deprecated:: 2.11.0-r4-f8
+            Tabela ``agendamentos`` removida — sem call-site ativo em
+            produção. No-op: loga aviso e retorna ``None``.
+
+        Args:
+            agendamento_id: ID legado (ignorado).
+
+        Returns:
+            None.
         """
-        agendamento = self.db.query(Agendamento).filter(
-            Agendamento.id == agendamento_id
-        ).first()
-        
-        if not agendamento:
-            raise ValueError(f"Agendamento {agendamento_id} não encontrado")
-        
-        # Envia WhatsApp
-        resultado = self.whatsapp.enviar_confirmacao_agendamento(
-            telefone=agendamento.cliente.telefone,
-            nome_cliente=agendamento.cliente.nome,
-            data_hora=agendamento.data_hora,
-            tipo_tranca=agendamento.tranca.nome if agendamento.tranca else "Trança"
+        logger.warning(
+            "enviar_confirmacao_agendamento(%s) é no-op — tabela agendamentos "
+            "removida em R4-F8", agendamento_id,
         )
-        
-        # Registra log
-        log = NotificationLog(
-            agendamento_id=agendamento_id,
-            cliente_id=agendamento.cliente_id,
-            tipo=NotificationType.WHATSAPP,
-            status=NotificationStatus.ENVIADA if resultado.get("status") == "enviada" else NotificationStatus.FALHA,
-            destinatario=agendamento.cliente.telefone,
-            mensagem=f"Confirmação de agendamento - {agendamento.tranca.nome if agendamento.tranca else 'Trança'}",
-            enviada_at=datetime.now() if resultado.get("status") == "enviada" else None,
-            erro=resultado.get("error") if resultado.get("status") != "enviada" else None
-        )
-        
-        self.db.add(log)
-        self.db.commit()
-        self.db.refresh(log)
-        
-        return log
-    
+        return None
+
     def enviar_lembretes_pendentes(self) -> List[NotificationLog]:
         """
-        Envia lembretes para agendamentos próximos
-        Executar periodicamente (cron job)
+        Envia lembretes para agendamentos próximos (24h/3h antes).
+
+        .. deprecated:: 2.11.0-r4-f8
+            A tabela ``agendamentos`` foi removida (DROP físico — ADR-024
+            sunset / RFC-003 M11+). Nenhum caminho de escrita ativo cria
+            ``Agendamento`` desde R3-F2/R4-F3/R4-F4, então não há mais
+            lembretes legado a enviar. Equivalente core-only (via
+            ``CoreBooking.scheduled_at``) fica como débito residual — ver
+            ``docs/sprints/R4-F8.md``. Chamado por
+            ``POST /notifications/enviar-lembretes`` (cron).
+
+        Returns:
+            Lista vazia.
         """
-        logs = []
-        agora = datetime.now()
-        
-        # Lembretes 24h antes
-        data_24h = agora + timedelta(hours=24)
-        agendamentos_24h = self.db.query(Agendamento).filter(
-            Agendamento.status == StatusAgendamento.CONFIRMADO,
-            Agendamento.data_hora >= data_24h - timedelta(hours=1),
-            Agendamento.data_hora <= data_24h + timedelta(hours=1)
-        ).all()
-        
-        for agendamento in agendamentos_24h:
-            # Verifica se já foi enviado
-            log_existente = self.db.query(NotificationLog).filter(
-                NotificationLog.agendamento_id == agendamento.id,
-                NotificationLog.tipo == NotificationType.WHATSAPP,
-                NotificationLog.status == NotificationStatus.ENVIADA
-            ).first()
-            
-            if not log_existente:
-                resultado = self.whatsapp.enviar_lembrete_24h(
-                    telefone=agendamento.cliente.telefone,
-                    nome_cliente=agendamento.cliente.nome,
-                    data_hora=agendamento.data_hora
-                )
-                
-                log = NotificationLog(
-                    agendamento_id=agendamento.id,
-                    cliente_id=agendamento.cliente_id,
-                    tipo=NotificationType.WHATSAPP,
-                    status=NotificationStatus.ENVIADA if resultado.get("status") == "enviada" else NotificationStatus.FALHA,
-                    destinatario=agendamento.cliente.telefone,
-                    mensagem="Lembrete 24h antes",
-                    enviada_at=datetime.now() if resultado.get("status") == "enviada" else None
-                )
-                self.db.add(log)
-                logs.append(log)
-        
-        # Lembretes 3h antes
-        data_3h = agora + timedelta(hours=3)
-        agendamentos_3h = self.db.query(Agendamento).filter(
-            Agendamento.status == StatusAgendamento.CONFIRMADO,
-            Agendamento.data_hora >= data_3h - timedelta(minutes=30),
-            Agendamento.data_hora <= data_3h + timedelta(minutes=30)
-        ).all()
-        
-        for agendamento in agendamentos_3h:
-            resultado = self.whatsapp.enviar_lembrete_3h(
-                telefone=agendamento.cliente.telefone,
-                nome_cliente=agendamento.cliente.nome,
-                data_hora=agendamento.data_hora
-            )
-            
-            log = NotificationLog(
-                agendamento_id=agendamento.id,
-                cliente_id=agendamento.cliente_id,
-                tipo=NotificationType.WHATSAPP,
-                status=NotificationStatus.ENVIADA if resultado.get("status") == "enviada" else NotificationStatus.FALHA,
-                destinatario=agendamento.cliente.telefone,
-                mensagem="Lembrete 3h antes",
-                enviada_at=datetime.now() if resultado.get("status") == "enviada" else None
-            )
-            self.db.add(log)
-            logs.append(log)
-        
-        self.db.commit()
-        return logs
+        return []
 
-    def notificar_reserva_rejeitada(self, agendamento_id: int, motivo: str) -> NotificationLog:
-        """Notifica cliente sobre rejeição."""
-        from app.models.agendamento import Agendamento
-        ag = self.db.query(Agendamento).filter(Agendamento.id == agendamento_id).first()
-        msg = f"Sua reserva foi rejeitada. Motivo: {motivo}"
-        return self._registrar_log(ag.cliente_id, ag.cliente.telefone, msg, agendamento_id)
+    def notificar_reserva_rejeitada(self, agendamento_id: int, motivo: str) -> Optional[NotificationLog]:
+        """
+        Notifica cliente sobre rejeição de reserva legado.
 
-    def notificar_horario_sugerido(self, agendamento_id: int) -> NotificationLog:
-        """Notifica cliente sobre novo horário sugerido."""
-        from app.models.agendamento import Agendamento
-        ag = self.db.query(Agendamento).filter(Agendamento.id == agendamento_id).first()
-        h = ag.horario_sugerido.strftime('%d/%m às %H:%M') if ag.horario_sugerido else "—"
-        msg = f"Novo horário sugerido: {h}. {ag.mensagem_reagendamento or ''}"
-        return self._registrar_log(ag.cliente_id, ag.cliente.telefone, msg, agendamento_id)
+        .. deprecated:: 2.11.0-r4-f8
+            Tabela ``agendamentos`` removida — sem call-site ativo (o
+            único chamador, ``AgendamentoService``, sempre levanta
+            ``NotFoundError`` antes de chegar aqui). No-op: loga e
+            retorna ``None``.
+
+        Args:
+            agendamento_id: ID legado (ignorado).
+            motivo: Ignorado.
+
+        Returns:
+            None.
+        """
+        logger.warning(
+            "notificar_reserva_rejeitada(%s) é no-op — tabela agendamentos "
+            "removida em R4-F8", agendamento_id,
+        )
+        return None
+
+    def notificar_horario_sugerido(self, agendamento_id: int) -> Optional[NotificationLog]:
+        """
+        Notifica cliente sobre novo horário sugerido (reserva legado).
+
+        .. deprecated:: 2.11.0-r4-f8
+            Tabela ``agendamentos`` removida — sem call-site ativo. No-op:
+            loga e retorna ``None``.
+
+        Args:
+            agendamento_id: ID legado (ignorado).
+
+        Returns:
+            None.
+        """
+        logger.warning(
+            "notificar_horario_sugerido(%s) é no-op — tabela agendamentos "
+            "removida em R4-F8", agendamento_id,
+        )
+        return None
 
     def notificar_entrada_fila_operacional(self, entry_id: int) -> NotificationLog:
         """Notifica admin sobre entrada na fila operacional."""
@@ -165,27 +135,69 @@ class NotificationService:
         return self._registrar_log(entry.cliente_id, cliente.telefone, msg, entry.agendamento_id)
 
     def notificar_atendimento_iniciado(self, agendamento_id: Optional[int]) -> Optional[NotificationLog]:
-        """Notifica início do atendimento."""
+        """
+        Notifica início do atendimento (reserva legado).
+
+        .. deprecated:: 2.11.0-r4-f8
+            Tabela ``agendamentos`` removida — chamado por
+            ``QueueEntryService.iniciar`` apenas no fallback legado
+            (``entry.agendamento_id`` sem ``booking_id``), que nunca mais
+            ocorre para entradas criadas após R4-F3. No-op: loga e
+            retorna ``None``.
+
+        Args:
+            agendamento_id: ID legado, ou ``None``.
+
+        Returns:
+            None.
+        """
         if not agendamento_id:
             return None
-        from app.models.agendamento import Agendamento
-        ag = self.db.query(Agendamento).filter(Agendamento.id == agendamento_id).first()
-        msg = "Seu atendimento foi iniciado!"
-        return self._registrar_log(ag.cliente_id, ag.cliente.telefone, msg, agendamento_id)
+        logger.warning(
+            "notificar_atendimento_iniciado(%s) é no-op — tabela agendamentos "
+            "removida em R4-F8", agendamento_id,
+        )
+        return None
 
-    def notificar_atendimento_concluido(self, agendamento_id: int) -> NotificationLog:
-        """Notifica conclusão do atendimento."""
-        from app.models.agendamento import Agendamento
-        ag = self.db.query(Agendamento).filter(Agendamento.id == agendamento_id).first()
-        msg = f"Atendimento concluído! Valor restante: R$ {ag.valor_restante}. Realize o pagamento final."
-        return self._registrar_log(ag.cliente_id, ag.cliente.telefone, msg, agendamento_id)
+    def notificar_atendimento_concluido(self, agendamento_id: int) -> Optional[NotificationLog]:
+        """
+        Notifica conclusão do atendimento (reserva legado).
 
-    def notificar_pagamento_final(self, agendamento_id: int) -> NotificationLog:
-        """Notifica confirmação do pagamento final."""
-        from app.models.agendamento import Agendamento
-        ag = self.db.query(Agendamento).filter(Agendamento.id == agendamento_id).first()
-        msg = "Pagamento final confirmado. Obrigada pela preferência!"
-        return self._registrar_log(ag.cliente_id, ag.cliente.telefone, msg, agendamento_id)
+        .. deprecated:: 2.11.0-r4-f8
+            Tabela ``agendamentos`` removida — sem call-site ativo. No-op:
+            loga e retorna ``None``.
+
+        Args:
+            agendamento_id: ID legado (ignorado).
+
+        Returns:
+            None.
+        """
+        logger.warning(
+            "notificar_atendimento_concluido(%s) é no-op — tabela agendamentos "
+            "removida em R4-F8", agendamento_id,
+        )
+        return None
+
+    def notificar_pagamento_final(self, agendamento_id: int) -> Optional[NotificationLog]:
+        """
+        Notifica confirmação do pagamento final (reserva legado).
+
+        .. deprecated:: 2.11.0-r4-f8
+            Tabela ``agendamentos`` removida — sem call-site ativo. No-op:
+            loga e retorna ``None``.
+
+        Args:
+            agendamento_id: ID legado (ignorado).
+
+        Returns:
+            None.
+        """
+        logger.warning(
+            "notificar_pagamento_final(%s) é no-op — tabela agendamentos "
+            "removida em R4-F8", agendamento_id,
+        )
+        return None
 
     def _registrar_log(
         self,
@@ -221,35 +233,69 @@ class NotificationService:
         self.db.refresh(log)
         return log
 
-    def notificar_nova_reserva(self, agendamento_id: int) -> NotificationLog:
-        """Notifica administrador sobre nova reserva criada."""
-        from app.models.agendamento import Agendamento
-        ag = self.db.query(Agendamento).filter(Agendamento.id == agendamento_id).first()
-        if not ag:
-            raise ValueError("Agendamento não encontrado")
-        msg = f"Nova reserva #{ag.id} — {ag.cliente.nome} em {ag.data_hora.strftime('%d/%m %H:%M')}"
-        return self._registrar_log(ag.cliente_id, "admin@sala", msg, agendamento_id)
+    def notificar_nova_reserva(self, agendamento_id: int) -> Optional[NotificationLog]:
+        """
+        Notifica administrador sobre nova reserva legado criada.
 
-    def notificar_reserva_aguardando_aprovacao(self, agendamento_id: int) -> NotificationLog:
-        """Notifica cliente que sinal foi recebido e aguarda aprovação."""
-        from app.models.agendamento import Agendamento
-        ag = self.db.query(Agendamento).filter(Agendamento.id == agendamento_id).first()
-        msg = (
-            f"Olá {ag.cliente.nome}! Recebemos seu sinal. "
-            f"Sua reserva para {ag.data_hora.strftime('%d/%m às %H:%M')} "
-            f"aguarda confirmação da profissional."
-        )
-        return self._registrar_log(ag.cliente_id, ag.cliente.telefone, msg, agendamento_id)
+        .. deprecated:: 2.11.0-r4-f8
+            Tabela ``agendamentos`` removida — sem call-site ativo
+            (``AgendamentoService.criar_agendamento`` levanta
+            ``BusinessRuleError`` antes de chegar aqui desde R4-F4). No-op:
+            loga e retorna ``None``.
 
-    def notificar_reserva_aprovada(self, agendamento_id: int) -> NotificationLog:
-        """Notifica cliente que reserva foi confirmada."""
-        from app.models.agendamento import Agendamento
-        ag = self.db.query(Agendamento).filter(Agendamento.id == agendamento_id).first()
-        msg = (
-            f"Reserva confirmada! {ag.data_hora.strftime('%d/%m às %H:%M')}. "
-            f"Te esperamos no salão."
+        Args:
+            agendamento_id: ID legado (ignorado).
+
+        Returns:
+            None.
+        """
+        logger.warning(
+            "notificar_nova_reserva(%s) é no-op — tabela agendamentos "
+            "removida em R4-F8", agendamento_id,
         )
-        return self._registrar_log(ag.cliente_id, ag.cliente.telefone, msg, agendamento_id)
+        return None
+
+    def notificar_reserva_aguardando_aprovacao(self, agendamento_id: int) -> Optional[NotificationLog]:
+        """
+        Notifica cliente que sinal foi recebido e aguarda aprovação.
+
+        .. deprecated:: 2.11.0-r4-f8
+            Tabela ``agendamentos`` removida — chamado por
+            ``WorkflowEngine._action_notify_admin`` (payload de evento
+            legado, envolto em try/except — falha aqui já era tolerada
+            como "fallback log only"). No-op: loga e retorna ``None``.
+
+        Args:
+            agendamento_id: ID legado (ignorado).
+
+        Returns:
+            None.
+        """
+        logger.warning(
+            "notificar_reserva_aguardando_aprovacao(%s) é no-op — tabela "
+            "agendamentos removida em R4-F8", agendamento_id,
+        )
+        return None
+
+    def notificar_reserva_aprovada(self, agendamento_id: int) -> Optional[NotificationLog]:
+        """
+        Notifica cliente que reserva legado foi confirmada.
+
+        .. deprecated:: 2.11.0-r4-f8
+            Tabela ``agendamentos`` removida — sem call-site ativo. No-op:
+            loga e retorna ``None``.
+
+        Args:
+            agendamento_id: ID legado (ignorado).
+
+        Returns:
+            None.
+        """
+        logger.warning(
+            "notificar_reserva_aprovada(%s) é no-op — tabela agendamentos "
+            "removida em R4-F8", agendamento_id,
+        )
+        return None
 
     def notificar_nova_fila(self, fila_id: int) -> NotificationLog:
         """Notifica admin sobre nova entrada na fila."""
