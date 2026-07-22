@@ -7,7 +7,6 @@ from decimal import Decimal
 from typing import Optional, List
 
 from app.models.payment import Payment, PaymentStatus, PaymentType
-from app.models.agendamento import Agendamento, ReservationStatus, StatusPagamento
 from app.core.exceptions import NotFoundError, BusinessRuleError
 from app.core.logging_config import get_logger
 from app.services.financeiro_service import FinanceiroService
@@ -81,111 +80,23 @@ class PaymentReservationService:
         comprovante_url: Optional[str] = None,
     ) -> Payment:
         """
-        Confirma pagamento do sinal e atualiza reserva.
+        Confirma pagamento do sinal de uma reserva legado.
+
+        .. deprecated:: 2.11.0-r4-f8
+            A tabela ``agendamentos`` foi removida (DROP físico — ADR-024
+            sunset / RFC-003 M11+). Sempre levanta ``NotFoundError``. Use
+            ``confirmar_deposito_por_booking`` (path core-only, único
+            desde R4-F6).
 
         Args:
-            agendamento_id: ID da reserva.
-            transaction_id: ID externo opcional.
-            comprovante_url: URL do comprovante.
+            agendamento_id: ID da reserva legado.
+            transaction_id: Ignorado.
+            comprovante_url: Ignorado.
 
-        Returns:
-            Payment confirmado.
+        Raises:
+            NotFoundError: Sempre — a tabela não existe mais.
         """
-        ag = self.db.query(Agendamento).filter(Agendamento.id == agendamento_id).first()
-        if not ag:
-            raise NotFoundError("Reserva", str(agendamento_id))
-
-        pag = (
-            self.db.query(Payment)
-            .filter(
-                Payment.agendamento_id == agendamento_id,
-                Payment.tipo.in_([PaymentType.DEPOSIT, PaymentType.SINAL]),
-                Payment.status.in_([PaymentStatus.PENDING, PaymentStatus.PENDENTE]),
-            )
-            .first()
-        )
-        if not pag:
-            pag = Payment(
-                agendamento_id=agendamento_id,
-                tipo=PaymentType.DEPOSIT,
-                valor=ag.valor_sinal,
-                status=PaymentStatus.PENDING,
-            )
-            self.db.add(pag)
-
-        pag.status = PaymentStatus.PAID
-        pag.transaction_id = transaction_id
-        pag.comprovante_url = comprovante_url or ag.comprovante_url
-        pag.paid_at = datetime.utcnow()
-
-        ag.sinal_pago = True
-        ag.status = ReservationStatus.PENDING_APPROVAL
-        ag.status_pagamento = StatusPagamento.PARTIALLY_PAID
-        if comprovante_url:
-            ag.comprovante_url = comprovante_url
-
-        self.db.commit()
-        self.db.refresh(pag)
-
-        self.financeiro.registrar_entrada_automatica(
-            descricao=f"Sinal - Reserva #{ag.id}",
-            valor=ag.valor_sinal,
-            agendamento_id=ag.id,
-        )
-
-        self._sync_core_booking_deposit(ag.id)
-
-        from app.modules.booking.domain.events import DEPOSIT_CONFIRMED
-        from app.modules.payments.application.legacy_sync_service import PaymentLegacySyncService
-        from app.shared.events.outbox import OutboxService
-        from app.shared.events.domain_event import DomainEvent
-
-        PaymentLegacySyncService(self.db).sync_one(pag.id)
-
-        if ag.company_id:
-            OutboxService(self.db).record_and_publish(
-                DomainEvent(
-                    event_type=DEPOSIT_CONFIRMED,
-                    company_id=ag.company_id,
-                    aggregate_id=str(pag.id),
-                    aggregate_type="Payment",
-                    payload={
-                        "payment_id": pag.id,
-                        "agendamento_id": ag.id,
-                        "amount": str(ag.valor_sinal),
-                    },
-                )
-            )
-            self.db.commit()
-
-        return pag
-
-    def _sync_core_booking_deposit(self, agendamento_id: int) -> None:
-        """
-        Sincroniza ``CoreBooking.deposit_paid`` a partir do sinal legado (R4-F2).
-
-        Nice-to-have de paridade: quando o booking core está vinculado a um
-        ``Agendamento`` via ``legacy_agendamento_id`` (flag de projeção ON),
-        confirmar o sinal legado também deve refletir no core, para que
-        ``PaymentQueryPort.is_deposit_confirmed`` (que lê ``deposit_paid``
-        direto do core) fique consistente independente do caminho usado.
-
-        Args:
-            agendamento_id: ID ``agendamentos.id`` cujo sinal foi confirmado.
-
-        Returns:
-            None
-        """
-        from app.modules.booking.domain.models import CoreBooking
-
-        core = (
-            self.db.query(CoreBooking)
-            .filter(CoreBooking.legacy_agendamento_id == agendamento_id)
-            .first()
-        )
-        if core and not core.deposit_paid:
-            core.deposit_paid = True
-            self.db.commit()
+        raise NotFoundError("Reserva", str(agendamento_id))
 
     def confirmar_deposito_por_booking(self, booking_id: int) -> "CoreBooking":
         """
@@ -284,46 +195,22 @@ class PaymentReservationService:
         transaction_id: Optional[str] = None,
     ) -> Payment:
         """
-        Confirma pagamento do valor restante.
+        Confirma pagamento do valor restante de uma reserva legado.
+
+        .. deprecated:: 2.11.0-r4-f8
+            A tabela ``agendamentos`` foi removida (DROP físico — ADR-024
+            sunset / RFC-003 M11+). Sempre levanta ``NotFoundError``. Não
+            há ainda endpoint core-only equivalente para pagamento final
+            (débito residual — ver ``docs/sprints/R4-F8.md``).
 
         Args:
-            agendamento_id: ID da reserva.
-            transaction_id: ID externo opcional.
+            agendamento_id: ID da reserva legado.
+            transaction_id: Ignorado.
 
-        Returns:
-            Payment confirmado.
+        Raises:
+            NotFoundError: Sempre — a tabela não existe mais.
         """
-        ag = self.db.query(Agendamento).filter(Agendamento.id == agendamento_id).first()
-        if not ag:
-            raise NotFoundError("Reserva", str(agendamento_id))
-        if ag.status not in (
-            ReservationStatus.COMPLETED,
-            ReservationStatus.CONCLUIDO,
-        ):
-            raise BusinessRuleError("Reserva deve estar concluída para pagamento final")
-
-        pag = Payment(
-            agendamento_id=agendamento_id,
-            tipo=PaymentType.FINAL_PAYMENT,
-            valor=ag.valor_restante,
-            status=PaymentStatus.PAID,
-            transaction_id=transaction_id,
-            paid_at=datetime.utcnow(),
-        )
-        self.db.add(pag)
-
-        ag.status = ReservationStatus.PAID
-        ag.status_pagamento = StatusPagamento.PAID
-
-        self.db.commit()
-        self.db.refresh(pag)
-
-        self.financeiro.registrar_entrada_automatica(
-            descricao=f"Pagamento final - Reserva #{ag.id}",
-            valor=ag.valor_restante,
-            agendamento_id=ag.id,
-        )
-        return pag
+        raise NotFoundError("Reserva", str(agendamento_id))
 
     def listar_por_reserva(self, agendamento_id: int) -> List[Payment]:
         """

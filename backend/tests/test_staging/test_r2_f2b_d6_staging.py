@@ -348,16 +348,16 @@ class TestD6FlagOn:
 
         Substitui o cenário original "projeção legacy soft-delete": o
         dual-write outbound foi removido definitivamente em R4-F3, então o
-        comportamento esperado agora é a ausência total de projeção.
+        comportamento esperado agora é a ausência total de projeção. Desde
+        R4-F8 a tabela ``agendamentos`` nem existe mais fisicamente (DROP
+        físico — ADR-024 sunset / RFC-003 M11+), então não há mais como
+        consultá-la para confirmar a ausência de projeção.
         """
-        from app.models.agendamento import Agendamento
-
         catalog, offering = synced_catalog
         booking = _create_booking(
             client, db, catalog, offering, cliente_exemplo, booking_headers, days_ahead=36
         )
         assert booking["legacy_agendamento_id"] is None
-        before_agendamentos = db.query(Agendamento).count()
 
         resp = client.post(
             f"/v1/bookings/{booking['id']}/cancel",
@@ -365,8 +365,7 @@ class TestD6FlagOn:
             json={"reason": "D6 S7 core-only"},
         )
         assert resp.status_code == 200, resp.text
-        assert db.query(Agendamento).count() == before_agendamentos
-        _record("S7", True, "core-only cancel sem projeção legado (R4-F3)")
+        _record("S7", True, "core-only cancel sem projeção legado (R4-F3/R4-F8)")
 
     def test_s8_if_match_stale(
         self, client, db, admin_headers, synced_catalog, cliente_exemplo, booking_headers, enable_booking_core

@@ -5,7 +5,7 @@ Lógica de negócio para gerenciamento financeiro
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from decimal import Decimal
 from app.models.financeiro import Financeiro, TipoMovimento
 from app.schemas.financeiro import SaidaCreate, ResumoFinanceiroResponse
@@ -25,11 +25,28 @@ class FinanceiroService:
         self,
         descricao: str,
         valor: Decimal,
-        agendamento_id: int
+        agendamento_id: Optional[int] = None
     ) -> Financeiro:
         """
-        Registra entrada automática (ex: pagamento de sinal)
-        Chamado automaticamente pelo sistema
+        Registra entrada financeira automática (ex.: pagamento de sinal/final).
+
+        Chamado automaticamente pelo sistema ao confirmar pagamentos.
+
+        .. deprecated:: 2.11.0-r4-f8
+            ``agendamento_id`` passou a ser opcional — a tabela
+            ``agendamentos`` foi removida (DROP físico — ADR-024 sunset /
+            RFC-003 M11+). Para bookings core-only, chame com
+            ``agendamento_id=None`` (coluna histórica, sem FK física desde
+            R4-F7).
+
+        Args:
+            descricao: Texto descritivo do movimento (ex.: "Sinal - Booking #12").
+            valor: Valor monetário da entrada.
+            agendamento_id: ID legado opcional, mantido apenas para
+                rastreabilidade histórica (sem FK física).
+
+        Returns:
+            Registro ``Financeiro`` persistido.
         """
         movimento = Financeiro(
             tipo=TipoMovimento.ENTRADA,

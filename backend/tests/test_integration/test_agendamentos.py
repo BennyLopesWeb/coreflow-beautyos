@@ -44,43 +44,19 @@ def test_criar_agendamento_legado_removido(client, cliente_exemplo, tranca_exemp
 
 
 @pytest.mark.integration
-def test_confirmar_pagamento_sinal(client, cliente_exemplo, tranca_exemplo, service_image_exemplo, db):
-    """Testa POST /pagamentos/sinal sobre reserva legado (R4-F4: criada via ORM direto)."""
-    from decimal import Decimal
-    from datetime import datetime, timedelta
-
-    from app.models.agendamento import Agendamento, ReservationStatus, StatusPagamento
-    from app.utils.service_image_precos import resolver_precos_imagem
-
-    data_hora = datetime.now() + timedelta(days=1)
-    data_hora = data_hora.replace(hour=10, minute=0, second=0, microsecond=0)
-
-    precos = resolver_precos_imagem(service_image_exemplo, tranca_exemplo)
-    agendamento = Agendamento(
-        cliente_id=cliente_exemplo.id,
-        tranca_id=tranca_exemplo.id,
-        service_image_id=service_image_exemplo.id,
-        data_hora=data_hora,
-        status=ReservationStatus.PENDING_PAYMENT,
-        sinal_pago=False,
-        valor_total=precos["valor_total"],
-        percentual_sinal=service_image_exemplo.percentual_sinal or Decimal("0.30"),
-        valor_sinal=precos["valor_sinal"],
-        valor_restante=precos["valor_restante"],
-        status_pagamento=StatusPagamento.PENDING_PAYMENT,
-    )
-    db.add(agendamento)
-    db.commit()
-    db.refresh(agendamento)
-
-    # Confirma pagamento
+def test_confirmar_pagamento_sinal_agendamento_legado_sempre_falha(client):
+    """
+    POST /pagamentos/sinal sobre reserva legado sempre falha (400) — a
+    tabela ``agendamentos`` foi removida via DROP físico (R4-F8 — ADR-024
+    sunset / RFC-003 M11+). Use o fluxo core-only
+    (``POST /admin/pagamentos/booking/{booking_id}/confirmar-sinal``).
+    """
     data = {
-        "agendamento_id": agendamento.id,
+        "agendamento_id": 999999,
         "valor": 45.0,
     }
-    
+
     response = client.post("/pagamentos/sinal", json=data)
-    
-    assert response.status_code == 200
-    assert response.json()["sinal_pago"] is True
+
+    assert response.status_code == 400
 

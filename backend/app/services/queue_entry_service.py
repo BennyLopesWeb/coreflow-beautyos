@@ -6,12 +6,15 @@ from datetime import datetime, date, time
 from typing import List, Optional
 
 from app.models.queue_entry import QueueEntry, QueueEntryStatus, STATUS_FILA_OPERACIONAL_ATIVOS
-from app.models.agendamento import Agendamento, ReservationStatus
+from app.models.agendamento import ReservationStatus
 from app.models.cliente import Cliente
 from app.models.tranca import Tranca
 from app.models.service_image import ServiceImage
 from app.schemas.queue_entry import QueueJoinRequest, QueueEntryResponse
 from app.core.exceptions import NotFoundError, BusinessRuleError, ValidationError
+from app.core.logging_config import get_logger
+
+logger = get_logger("queue_entry_service")
 
 
 class QueueEntryService:
@@ -119,78 +122,21 @@ class QueueEntryService:
         """
         Rotina diária: reservas APPROVED de hoje → IN_QUEUE + QueueEntry.
 
-        R4-F4 (hard sunset / ADR-024 / RFC-003 M8): ``core_bookings`` é a
-        fonte primária — a maioria das reservas aprovadas desde R3-F2/R4-F3
-        não tem mais linha em ``agendamentos``. Processa ambas as fontes
-        (``core_bookings`` primário + ``agendamentos`` histórico) sem
-        duplicar quando um booking core ainda possui ``legacy_agendamento_id``
-        (histórico dual-write anterior a R4-F3).
+        .. deprecated:: 2.11.0-r4-f8
+            Cobria historicamente tanto ``core_bookings`` (fonte primária
+            desde R4-F4) quanto ``agendamentos`` legado (dados antigos com
+            dual-write anterior a R3-F2/R4-F3). A tabela ``agendamentos``
+            foi removida via DROP físico (ADR-024 sunset / RFC-003 M11+) —
+            processa apenas ``core_bookings``.
 
         Returns:
-            Quantidade total processada (core + histórico).
+            Quantidade de ``QueueEntry`` criadas a partir de ``core_bookings``.
         """
         hoje = date.today()
         inicio = datetime.combine(hoje, time.min)
         fim = datetime.combine(hoje, time.max)
 
-        count = self._processar_agendamentos_legado_do_dia(hoje, inicio, fim)
-        count += self._processar_core_bookings_do_dia(hoje, inicio, fim)
-        return count
-
-    def _processar_agendamentos_legado_do_dia(
-        self, hoje: date, inicio: datetime, fim: datetime
-    ) -> int:
-        """
-        Processa reservas legado (``agendamentos``) aprovadas para hoje.
-
-        Mantido para reservas históricas criadas antes de R3-F2/R4-F3 (dados
-        antigos com dual-write ainda ativo); nenhum caminho de escrita atual
-        cria novas linhas em ``agendamentos``.
-
-        Args:
-            hoje: Data de referência (hoje).
-            inicio: Início do dia.
-            fim: Fim do dia.
-
-        Returns:
-            Quantidade de ``QueueEntry`` criadas a partir de ``agendamentos``.
-        """
-        reservas = self.db.query(Agendamento).filter(
-            Agendamento.data_hora >= inicio,
-            Agendamento.data_hora <= fim,
-            Agendamento.status.in_([ReservationStatus.APPROVED, ReservationStatus.CONFIRMADO]),
-            Agendamento.deleted_at.is_(None),
-        ).all()
-
-        count = 0
-        for ag in reservas:
-            existente = (
-                self.db.query(QueueEntry)
-                .filter(QueueEntry.agendamento_id == ag.id)
-                .first()
-            )
-            if existente:
-                continue
-            posicao = self._proxima_posicao(hoje)
-            entry = QueueEntry(
-                agendamento_id=ag.id,
-                cliente_id=ag.cliente_id,
-                tranca_id=ag.tranca_id,
-                service_image_id=ag.service_image_id,
-                posicao=posicao,
-                data=hoje,
-                horario_entrada=ag.data_hora.time() if ag.data_hora else None,
-                status=QueueEntryStatus.WAITING,
-                observacoes=ag.observacoes,
-                mesmo_dia=0,
-            )
-            ag.status = ReservationStatus.IN_QUEUE
-            self.db.add(entry)
-            count += 1
-
-        if count:
-            self.db.commit()
-        return count
+        return self._processar_core_bookings_do_dia(hoje, inicio, fim)
 
     def _processar_core_bookings_do_dia(
         self, hoje: date, inicio: datetime, fim: datetime
@@ -201,10 +147,15 @@ class QueueEntryService:
         Path primário desde R4-F4: bookings core-only (sem
         ``legacy_agendamento_id``, criados via ``CreateBookingHandler``) não
         aparecem na consulta legado acima, então precisam ser processados
-        aqui para entrar na fila operacional do dia. Bookings que ainda têm
-        ``legacy_agendamento_id`` preenchido (histórico de dual-write
-        anterior a R4-F3) são ignorados aqui — já foram cobertos pela
-        consulta a ``agendamentos``.
+        aqui para entrar na fila operacional do dia.
+
+        .. deprecated:: 2.11.0-r4-f8
+            Bookings com ``legacy_agendamento_id`` preenchido (histórico de
+            dual-write anterior a R4-F3) eram ignorados aqui — cobertos
+            pela consulta a ``agendamentos``, removida junto com a tabela
+            (DROP físico — ADR-024 sunset / RFC-003 M11+). Agora todo
+            booking ``APPROVED`` do dia é processado por este método,
+            independente de ``legacy_agendamento_id``.
 
         Resolve ``tranca_id``/``service_image_id`` legado via
         ``catalog_id``/``offering_id`` (ACL) apenas para preencher os campos
@@ -237,10 +188,6 @@ class QueueEntryService:
 
         count = 0
         for booking in bookings:
-            if booking.legacy_agendamento_id:
-                # Já coberto por _processar_agendamentos_legado_do_dia.
-                continue
-
             tranca_id = booking.catalog.legacy_tranca_id if booking.catalog else None
             service_image_id = booking.offering.legacy_service_image_id if booking.offering else None
             horario_entrada = booking.scheduled_at.time() if booking.scheduled_at else None
@@ -374,10 +321,15 @@ class QueueEntryService:
         Cliente fez check-in.
 
         R4-F5: se a entrada tiver ``booking_id`` (core-only ou core+legado),
-        avança ``CoreBooking.status`` para ``CHECKED_IN`` também. Entradas
-        legado puras (``agendamento_id`` preenchido, sem ``booking_id`` —
-        histórico anterior à migração) continuam atualizando apenas
-        ``Agendamento``.
+        avança ``CoreBooking.status`` para ``CHECKED_IN`` também.
+
+        .. deprecated:: 2.11.0-r4-f8
+            Entradas legado puras (``agendamento_id`` preenchido, sem
+            ``booking_id`` — histórico anterior à migração) atualizavam
+            ``Agendamento.status`` diretamente; a tabela foi removida
+            (DROP físico — ADR-024 sunset / RFC-003 M11+), então esse
+            ramo agora é um no-op (apenas loga) — ``entry.agendamento_id``
+            é preservado só para auditoria histórica.
 
         Args:
             entry_id: ID da entrada.
@@ -390,9 +342,11 @@ class QueueEntryService:
         if entry.booking_id:
             self._avancar_booking_core(entry, ReservationStatus.CHECKED_IN)
         elif entry.agendamento_id:
-            ag = self.db.query(Agendamento).filter(Agendamento.id == entry.agendamento_id).first()
-            if ag:
-                ag.status = ReservationStatus.CHECKED_IN
+            logger.warning(
+                "QueueEntry id=%s com agendamento_id legado (%s) sem booking_id — "
+                "tabela agendamentos removida (R4-F8), nenhum status é atualizado",
+                entry.id, entry.agendamento_id,
+            )
         self.db.commit()
         self.db.refresh(entry)
         return entry
@@ -403,8 +357,12 @@ class QueueEntryService:
 
         R4-F5: se a entrada tiver ``booking_id``, avança
         ``CoreBooking.status`` para ``IN_SERVICE`` também (mesma regra de
-        precedência de ``checkin`` — booking core primeiro, fallback para
-        ``Agendamento`` legado apenas quando não há ``booking_id``).
+        precedência de ``checkin`` — booking core primeiro).
+
+        .. deprecated:: 2.11.0-r4-f8
+            O fallback para ``Agendamento`` legado (sem ``booking_id``) é
+            um no-op desde o DROP físico da tabela ``agendamentos``
+            (ADR-024 sunset / RFC-003 M11+) — apenas loga.
 
         Args:
             entry_id: ID da entrada.
@@ -417,9 +375,11 @@ class QueueEntryService:
         if entry.booking_id:
             self._avancar_booking_core(entry, ReservationStatus.IN_SERVICE)
         elif entry.agendamento_id:
-            ag = self.db.query(Agendamento).filter(Agendamento.id == entry.agendamento_id).first()
-            if ag:
-                ag.status = ReservationStatus.IN_SERVICE
+            logger.warning(
+                "QueueEntry id=%s com agendamento_id legado (%s) sem booking_id — "
+                "tabela agendamentos removida (R4-F8), nenhum status é atualizado",
+                entry.id, entry.agendamento_id,
+            )
         self.db.commit()
         self.db.refresh(entry)
 
@@ -436,9 +396,15 @@ class QueueEntryService:
         pagamento final de bookings core-only já é tratado por
         ``PaymentReservationService``/``POST /admin/pagamentos/booking/...``
         (não há ``Schedule``/``Payment`` legado associado a migrar aqui;
-        essa migração fica para R4-F6). Entradas legado puras (sem
-        ``booking_id``) continuam delegando a ``ReservationService.concluir``
-        (que também aciona ``Schedule`` e notificação legado).
+        essa migração fica para R4-F6).
+
+        .. deprecated:: 2.11.0-r4-f8
+            Entradas legado puras (sem ``booking_id``) delegavam a
+            ``ReservationService.concluir`` (``Agendamento`` + ``Schedule``
+            + notificação legado). A tabela ``agendamentos`` foi removida
+            (DROP físico — ADR-024 sunset / RFC-003 M11+) — esse ramo é
+            agora um no-op (apenas loga); ``ReservationService.concluir``
+            sempre levantaria ``NotFoundError`` de qualquer forma.
 
         Args:
             entry_id: ID da entrada.
@@ -452,8 +418,12 @@ class QueueEntryService:
         if entry.booking_id:
             self._avancar_booking_core(entry, ReservationStatus.COMPLETED)
         elif entry.agendamento_id:
-            from app.services.reservation_service import ReservationService
-            ReservationService(self.db).concluir(entry.agendamento_id)
+            logger.warning(
+                "QueueEntry id=%s com agendamento_id legado (%s) sem booking_id — "
+                "tabela agendamentos removida (R4-F8), ReservationService.concluir "
+                "não é mais chamado",
+                entry.id, entry.agendamento_id,
+            )
 
         self.db.commit()
         self.db.refresh(entry)

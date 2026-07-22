@@ -2,8 +2,6 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from app.models.financeiro import Financeiro, TipoMovimento
-from app.modules.catalog.application.legacy_sync_service import LegacySyncService
 from app.modules.invoice.application.legacy_sync_service import InvoiceLegacySyncService
 from app.modules.invoice.domain.models import CoreInvoice
 from app.modules.order.application.legacy_sync_service import OrderLegacySyncService
@@ -15,93 +13,62 @@ from app.shared.events.domain_event import DomainEvent
 from app.core.config import settings
 
 
-def _slot_disponivel(db, tranca_id: int, service_image_id: int) -> datetime:
+def _project_booking(db, company_id, cliente_exemplo, synced_catalog) -> int:
     """
-    Retorna primeiro horário disponível para testes.
+    Cria um ``CoreBooking`` core-only via ``CreateBookingHandler`` (R4-F8).
 
-    Args:
-        db: Sessão de teste.
-        tranca_id: ID tranca.
-        service_image_id: ID service image.
-
-    Returns:
-        datetime do slot.
-    """
-    from app.services.disponibilidade_service import DisponibilidadeService
-
-    horarios = DisponibilidadeService(db).calcular_horarios_disponiveis(
-        datetime.now() + timedelta(days=3),
-        tranca_id,
-        service_image_id,
-    )
-    return next(h for h in horarios if h.disponivel).horario
-
-
-def _project_booking(db, company_id, cliente_exemplo, tranca_exemplo, service_image_exemplo) -> int:
-    """
-    Cria agendamento legado diretamente via ORM (R4-F3 — sem dual-write outbound).
-
-    Substitui o antigo ``LegacyBookingAdapter.project_create_booking``
-    (removido em R4-F3 / ADR-024 sunset) por criação direta do
-    ``Agendamento`` + pagamento pendente via ``PaymentReservationService``,
-    já que o path core não gera mais essas linhas. Usado apenas para
-    exercitar os serviços de sync legado→core (``OrderLegacySyncService``/
-    ``InvoiceLegacySyncService``) que continuam dependendo de dados legado
-    existentes.
+    .. deprecated:: 2.11.0-r4-f8
+        Substitui a criação direta de ``Agendamento`` legado (a tabela
+        ``agendamentos`` foi removida via DROP físico — ADR-024 sunset /
+        RFC-003 M11+). Usado para exercitar os serviços de sync
+        core→genérico (``OrderLegacySyncService``/``InvoiceLegacySyncService``)
+        com dados core-only.
 
     Args:
         db: Sessão SQLAlchemy de teste.
         company_id: Tenant.
         cliente_exemplo: Fixture de cliente.
-        tranca_exemplo: Fixture de categoria (tranca).
-        service_image_exemplo: Fixture de modelo (service image).
+        synced_catalog: Tupla (CoreCatalog, CoreOffering) sincronizada.
 
     Returns:
-        ID do agendamento legado criado.
+        ID do ``core_bookings`` criado.
     """
-    from decimal import Decimal
-
-    from app.models.agendamento import Agendamento, ReservationStatus, StatusPagamento
-    from app.models.payment import PaymentType
-    from app.services.payment_reservation_service import PaymentReservationService
-    from app.utils.service_image_precos import resolver_precos_imagem
-
-    slot = _slot_disponivel(db, tranca_exemplo.id, service_image_exemplo.id)
-    precos = resolver_precos_imagem(service_image_exemplo)
-    ag = Agendamento(
-        company_id=company_id,
-        cliente_id=cliente_exemplo.id,
-        tranca_id=tranca_exemplo.id,
-        service_image_id=service_image_exemplo.id,
-        data_hora=slot,
-        valor_total=Decimal(str(precos["valor_total"])),
-        percentual_sinal=Decimal(str(precos["percentual_sinal"])),
-        valor_sinal=Decimal(str(precos["valor_sinal"])),
-        valor_restante=Decimal(str(precos["valor_restante"])),
-        status=ReservationStatus.PENDING_PAYMENT,
-        status_pagamento=StatusPagamento.PENDING_PAYMENT,
-        sinal_pago=False,
+    from app.modules.booking.application.commands.create_booking import (
+        CreateBookingCommand,
+        CreateBookingHandler,
     )
-    db.add(ag)
-    db.commit()
-    db.refresh(ag)
-    PaymentReservationService(db).criar_pendente(
-        ag.id, PaymentType.DEPOSIT, Decimal(str(precos["valor_sinal"]))
+    from app.services.disponibilidade_service import DisponibilidadeService
+
+    catalog, offering = synced_catalog
+    horarios = DisponibilidadeService(db).calcular_horarios_disponiveis(
+        datetime.now() + timedelta(days=3),
+        catalog.legacy_tranca_id,
+        offering.legacy_service_image_id,
     )
-    return ag.id
+    slot = next(h for h in horarios if h.disponivel)
+
+    result = CreateBookingHandler(db).execute(
+        CreateBookingCommand(
+            customer_id=cliente_exemplo.id,
+            catalog_id=catalog.id,
+            offering_id=offering.id,
+            scheduled_at=slot.horario,
+            company_id=company_id,
+        )
+    )
+    return result.booking.id
 
 
 def test_order_sync_from_booking(
-    db, cliente_exemplo, tranca_exemplo, service_image_exemplo, default_company
+    db, cliente_exemplo, synced_catalog, default_company
 ):
-    """Sync cria core_order a partir de agendamento legado."""
-    ag_id = _project_booking(db, default_company.id, cliente_exemplo, tranca_exemplo, service_image_exemplo)
-    LegacySyncService(db).sync_all()
-    OrderLegacySyncService(db).sync_one(ag_id)
+    """Sync cria core_order a partir de um CoreBooking (R4-F8 — booking_id, sem agendamento legado)."""
+    booking_id = _project_booking(db, default_company.id, cliente_exemplo, synced_catalog)
+    OrderLegacySyncService(db).sync_one(booking_id)
 
     row = (
         db.query(CoreOrder)
-        .filter(CoreOrder.legacy_agendamento_id == ag_id)
+        .filter(CoreOrder.booking_id == booking_id)
         .first()
     )
     assert row is not None
@@ -110,26 +77,20 @@ def test_order_sync_from_booking(
 
 
 def test_invoice_sync_from_financeiro(
-    db, cliente_exemplo, tranca_exemplo, service_image_exemplo, default_company
+    db, cliente_exemplo, synced_catalog, default_company
 ):
-    """Sync cria core_invoice a partir de entrada financeira."""
-    from app.services.payment_reservation_service import PaymentReservationService
+    """Sync cria core_invoice a partir de entrada financeira (R4-F8 — sem link a agendamento legado)."""
+    booking_id = _project_booking(db, default_company.id, cliente_exemplo, synced_catalog)
+    OrderLegacySyncService(db).sync_one(booking_id)
 
-    ag_id = _project_booking(db, default_company.id, cliente_exemplo, tranca_exemplo, service_image_exemplo)
-    PaymentReservationService(db).confirmar_deposito(ag_id, transaction_id="tx-inv")
-    LegacySyncService(db).sync_all()
-    OrderLegacySyncService(db).sync_all()
-    InvoiceLegacySyncService(db).sync_all()
+    from app.services.financeiro_service import FinanceiroService
 
-    mov = (
-        db.query(Financeiro)
-        .filter(
-            Financeiro.agendamento_id == ag_id,
-            Financeiro.tipo == TipoMovimento.ENTRADA,
-        )
-        .first()
+    mov = FinanceiroService(db).registrar_entrada_automatica(
+        descricao=f"Sinal - Booking #{booking_id}",
+        valor=Decimal("45.00"),
+        agendamento_id=None,
     )
-    assert mov is not None
+    InvoiceLegacySyncService(db).sync_all()
 
     inv = (
         db.query(CoreInvoice)
@@ -143,21 +104,28 @@ def test_invoice_sync_from_financeiro(
 
 def test_v1_orders_and_invoices_list(
     client, admin_headers, synced_catalog, cliente_exemplo, db,
-    tranca_exemplo, service_image_exemplo, default_company,
+    default_company,
 ):
-    """GET /v1/orders e /v1/invoices retornam dados sincronizados a partir de agendamento legado.
+    """GET /v1/orders e /v1/invoices retornam dados sincronizados a partir de CoreBooking (R4-F8).
 
-    R4-F3: o dual-write outbound foi removido — o agendamento legado usado
-    como fonte do sync (``OrderLegacySyncService``/``InvoiceLegacySyncService``)
-    é criado diretamente via ORM (``_project_booking``), não mais via
-    ``POST /v1/bookings`` + projeção.
+    A tabela ``agendamentos`` foi removida (DROP físico) — o booking usado
+    como fonte do sync (``OrderLegacySyncService``) é criado via
+    ``CreateBookingHandler`` (core-only), e a entrada financeira via
+    ``FinanceiroService`` diretamente (débito residual documentado:
+    ``confirmar_deposito_por_booking`` ainda não popula ``Financeiro``
+    automaticamente para bookings core-only).
     """
-    from app.services.payment_reservation_service import PaymentReservationService
+    from app.services.financeiro_service import FinanceiroService
 
-    ag_id = _project_booking(
-        db, default_company.id, cliente_exemplo, tranca_exemplo, service_image_exemplo
+    booking_id = _project_booking(
+        db, default_company.id, cliente_exemplo, synced_catalog
     )
-    PaymentReservationService(db).confirmar_deposito(ag_id)
+    OrderLegacySyncService(db).sync_one(booking_id)
+    FinanceiroService(db).registrar_entrada_automatica(
+        descricao=f"Sinal - Booking #{booking_id}",
+        valor=Decimal("45.00"),
+        agendamento_id=None,
+    )
 
     orders_resp = client.get("/v1/orders", headers=admin_headers)
     assert orders_resp.status_code == 200

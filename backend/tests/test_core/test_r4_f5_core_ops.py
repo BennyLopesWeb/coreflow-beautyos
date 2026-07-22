@@ -183,38 +183,22 @@ def test_checkin_iniciar_concluir_avancam_core_booking_para_entrada_core_only(
     assert booking.status == ReservationStatus.COMPLETED
 
 
-def test_checkin_iniciar_mantem_legado_quando_sem_booking_id(
+def test_checkin_iniciar_no_op_quando_apenas_agendamento_id_legado(
     db, cliente_exemplo, tranca_exemplo, service_image_exemplo
 ):
-    """Entrada legado pura (agendamento_id, sem booking_id) continua atualizando só Agendamento."""
-    from app.models.agendamento import Agendamento, StatusPagamento
-    from app.utils.service_image_precos import resolver_precos_imagem
-
-    precos = resolver_precos_imagem(service_image_exemplo, tranca_exemplo)
-    agendamento = Agendamento(
-        cliente_id=cliente_exemplo.id,
-        tranca_id=tranca_exemplo.id,
-        service_image_id=service_image_exemplo.id,
-        data_hora=datetime.now() + timedelta(days=72),
-        status=ReservationStatus.IN_QUEUE,
-        sinal_pago=True,
-        valor_total=precos["valor_total"],
-        percentual_sinal=service_image_exemplo.percentual_sinal or Decimal("0.30"),
-        valor_sinal=precos["valor_sinal"],
-        valor_restante=precos["valor_restante"],
-        status_pagamento=StatusPagamento.PARTIALLY_PAID,
-    )
-    db.add(agendamento)
-    db.commit()
-    db.refresh(agendamento)
-
+    """
+    Entrada legado pura (``agendamento_id`` histórico, sem ``booking_id``)
+    não levanta erro — ``checkin``/``iniciar`` apenas logam e avançam o
+    status da própria ``QueueEntry`` (R4-F8 — tabela ``agendamentos``
+    removida via DROP físico, nenhum status legado é mais atualizado).
+    """
     entry = QueueEntry(
-        agendamento_id=agendamento.id,
+        agendamento_id=999999,
         cliente_id=cliente_exemplo.id,
         tranca_id=tranca_exemplo.id,
         service_image_id=service_image_exemplo.id,
         posicao=1,
-        data=agendamento.data_hora.date(),
+        data=(datetime.now() + timedelta(days=72)).date(),
         status=QueueEntryStatus.WAITING,
         mesmo_dia=0,
     )
@@ -224,12 +208,12 @@ def test_checkin_iniciar_mantem_legado_quando_sem_booking_id(
 
     service = QueueEntryService(db)
     entry = service.checkin(entry.id)
-    db.refresh(agendamento)
-    assert agendamento.status == ReservationStatus.CHECKED_IN
+    assert entry.status == QueueEntryStatus.CHECKED_IN
+    assert entry.booking_id is None
 
     entry = service.iniciar(entry.id)
-    db.refresh(agendamento)
-    assert agendamento.status == ReservationStatus.IN_SERVICE
+    assert entry.status == QueueEntryStatus.IN_SERVICE
+    assert entry.booking_id is None
 
 
 def test_fila_aprovar_fila_seta_booking_id(db, synced_catalog, cliente_exemplo):

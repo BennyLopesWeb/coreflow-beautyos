@@ -1,5 +1,14 @@
 """
-Sincronização Strangler Fig — legado (Tranca/ServiceImage/Agendamento) → metamodelo CoreFlow.
+Sincronização Strangler Fig — legado (Tranca/ServiceImage) → metamodelo CoreFlow.
+
+.. deprecated:: 2.11.0-r4-f8
+    ``sync_bookings``/``sync_booking_from_agendamento`` sincronizavam
+    ``agendamentos`` → ``core_bookings`` (direção legado → core). A
+    tabela ``agendamentos`` foi removida (DROP físico — ADR-024 sunset /
+    RFC-003 M11+) — ambos os métodos tornaram-se no-ops (retornam
+    ``0``/``None``). ``sync_catalogs``/``sync_offerings`` (Tranca/
+    ServiceImage → core_catalogs/core_offerings) continuam ativos e
+    inalterados.
 """
 import re
 from decimal import Decimal
@@ -9,7 +18,6 @@ from sqlalchemy.orm import Session
 
 from app.models.tranca import Tranca
 from app.models.service_image import ServiceImage
-from app.models.agendamento import Agendamento
 from app.modules.catalog.domain.models import CoreCatalog, CoreOffering
 from app.modules.booking.domain.models import CoreBooking
 from app.core.logging_config import get_logger
@@ -165,61 +173,16 @@ class LegacySyncService:
         """
         Sincroniza ``agendamentos`` → ``core_bookings``.
 
-        Returns:
-            Quantidade processada.
-        """
-        agendamentos = (
-            self.db.query(Agendamento)
-            .filter(Agendamento.deleted_at.is_(None))
-            .all()
-        )
-        count = 0
-        for ag in agendamentos:
-            catalog = (
-                self.db.query(CoreCatalog)
-                .filter(CoreCatalog.legacy_tranca_id == ag.tranca_id)
-                .first()
-            )
-            offering = (
-                self.db.query(CoreOffering)
-                .filter(CoreOffering.legacy_service_image_id == ag.service_image_id)
-                .first()
-            )
-            if not catalog or not offering:
-                continue
+        .. deprecated:: 2.11.0-r4-f8
+            A tabela ``agendamentos`` foi removida (DROP físico — ADR-024
+            sunset / RFC-003 M11+). No-op: nenhum caminho de escrita ativo
+            cria ``Agendamento`` desde R3-F2/R4-F3/R4-F4, então não há mais
+            nada a projetar para ``core_bookings`` por essa direção.
 
-            existing = (
-                self.db.query(CoreBooking)
-                .filter(CoreBooking.legacy_agendamento_id == ag.id)
-                .first()
-            )
-            payload = dict(
-                company_id=ag.company_id or catalog.company_id,
-                customer_id=ag.cliente_id,
-                catalog_id=catalog.id,
-                offering_id=offering.id,
-                scheduled_at=ag.data_hora,
-                approved_at=ag.horario_aprovado,
-                status=ag.status,
-                payment_status=ag.status_pagamento,
-                price_total=ag.valor_total,
-                deposit_pct=ag.percentual_sinal,
-                deposit_amount=ag.valor_sinal,
-                remaining_amount=ag.valor_restante,
-                deposit_paid=ag.sinal_pago,
-                notes=ag.observacoes,
-            )
-            if existing:
-                for key, val in payload.items():
-                    setattr(existing, key, val)
-            else:
-                self.db.add(
-                    CoreBooking(legacy_agendamento_id=ag.id, **payload)
-                )
-            count += 1
-        self.db.commit()
-        logger.info(f"Sync bookings: {count}")
-        return count
+        Returns:
+            ``0`` — sempre no-op.
+        """
+        return 0
 
     def resolve_legacy_ids(
         self, catalog_id: int, offering_id: int
@@ -251,20 +214,19 @@ class LegacySyncService:
 
     def sync_booking_from_agendamento(self, agendamento_id: int) -> Optional[CoreBooking]:
         """
-        Sincroniza um agendamento recém-criado para core_bookings.
+        Sincroniza um agendamento legado recém-criado para core_bookings.
+
+        .. deprecated:: 2.11.0-r4-f8
+            A tabela ``agendamentos`` foi removida (DROP físico — ADR-024
+            sunset / RFC-003 M11+). No-op: sem call-site ativo em
+            produção (``BookingLegacyAdapter.sync_booking_from_agendamento``
+            não tem chamador de produção — apenas testes de wiring da
+            ACL, com mock).
 
         Args:
-            agendamento_id: ID do agendamento legado.
+            agendamento_id: ID do agendamento legado (ignorado).
 
         Returns:
-            CoreBooking ou None.
+            None.
         """
-        ag = self.db.query(Agendamento).filter(Agendamento.id == agendamento_id).first()
-        if not ag:
-            return None
-        self.sync_bookings()
-        return (
-            self.db.query(CoreBooking)
-            .filter(CoreBooking.legacy_agendamento_id == ag.id)
-            .first()
-        )
+        return None

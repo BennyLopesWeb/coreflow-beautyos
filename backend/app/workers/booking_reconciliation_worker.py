@@ -14,107 +14,48 @@ from app.core.architecture_metrics import ArchitectureMetricsStore
 from app.core.logging_config import get_logger
 from app.core.prometheus_metrics import set_booking_drift_count
 from app.db.session import SessionLocal
-from app.models.agendamento import Agendamento, ReservationStatus
 from app.modules.booking.domain.models import CoreBooking
-from app.modules.booking.domain.value_objects.booking_types import (
-    BookingLifecycleStatus,
-    SyncStatus,
-)
+from app.modules.booking.domain.value_objects.booking_types import SyncStatus
 
 logger = get_logger("booking_reconciliation")
-
-_ORM_TO_LIFECYCLE = {
-    ReservationStatus.PENDING_PAYMENT: BookingLifecycleStatus.PENDING,
-    ReservationStatus.PENDING_APPROVAL: BookingLifecycleStatus.PENDING,
-    ReservationStatus.WAITING_TIME_CONFIRMATION: BookingLifecycleStatus.PENDING,
-    ReservationStatus.APPROVED: BookingLifecycleStatus.APPROVED,
-    ReservationStatus.REJECTED: BookingLifecycleStatus.REJECTED,
-    ReservationStatus.CANCELLED: BookingLifecycleStatus.CANCELLED,
-    ReservationStatus.PENDENTE: BookingLifecycleStatus.PENDING,
-    ReservationStatus.CONFIRMADO: BookingLifecycleStatus.APPROVED,
-}
-
-
-def _lifecycle_from_orm(status) -> BookingLifecycleStatus:
-    """
-    Mapeia status ORM legado → lifecycle canônico.
-
-    Args:
-        status: Enum ou string ReservationStatus.
-
-    Returns:
-        BookingLifecycleStatus.
-    """
-    if hasattr(status, "value"):
-        key = ReservationStatus(status.value) if isinstance(status.value, str) else status
-    else:
-        key = ReservationStatus(status)
-    return _ORM_TO_LIFECYCLE.get(key, BookingLifecycleStatus.PENDING)
-
-
-def _core_lifecycle(status) -> BookingLifecycleStatus:
-    """
-    Normaliza status do core_bookings para lifecycle.
-
-    Args:
-        status: Valor ORM core.
-
-    Returns:
-        BookingLifecycleStatus.
-    """
-    return _lifecycle_from_orm(status)
 
 
 def detect_drift(db: Session) -> Tuple[int, List[int]]:
     """
-    Compara ``core_bookings`` com ``agendamentos`` e marca sync_status=drift.
+    Compara ``core_bookings`` com a projeção legado e marca sync_status=drift.
 
-    Regras (ADR-024 / R4-F2 sunset / R4-F3 remoção definitiva do dual-write):
-    - ``legacy_agendamento_id is None`` → **não é drift**. Desde R4-F3, o
-      dual-write outbound foi removido do código — todo booking novo é
-      core-only e nunca terá projeção legado — não há nada para
-      reconciliar, então ``SYNCED`` é o estado correto.
-    - ``legacy_agendamento_id`` presente (bookings antigos de antes de
-      R4-F2/R4-F3) mas ``Agendamento`` órfão (inexistente) → drift.
-    - ``legacy_agendamento_id`` presente e status canônico divergente → drift.
+    .. deprecated:: 2.11.0-r4-f8
+        A tabela ``agendamentos`` foi removida (DROP físico — ADR-024
+        sunset / RFC-003 M11+) — a comparação com ``Agendamento`` legado
+        (órfão ou status divergente) foi retirada. Desde R4-F3, o
+        dual-write outbound já havia sido removido do código (todo
+        booking novo é core-only, ``legacy_agendamento_id is None``);
+        agora, com a tabela removida, não há mais nenhuma projeção legado
+        para reconciliar contra — este método sempre reporta ``0`` drift
+        e normaliza qualquer ``sync_status=DRIFT`` residual para
+        ``SYNCED`` (o conceito de sync legado está retirado nesta
+        release).
 
     Args:
         db: Sessão SQLAlchemy.
 
     Returns:
-        Tupla (drift_count, lista de booking ids em drift).
+        Tupla ``(0, [])`` — sempre sem drift.
     """
     rows = (
         db.query(CoreBooking)
-        .filter(CoreBooking.deleted_at.is_(None))
+        .filter(
+            CoreBooking.deleted_at.is_(None),
+            CoreBooking.sync_status == SyncStatus.DRIFT.value,
+        )
         .all()
     )
-    drifted: List[int] = []
     for row in rows:
-        is_drift = False
-        if row.legacy_agendamento_id:
-            legacy = (
-                db.query(Agendamento)
-                .filter(Agendamento.id == row.legacy_agendamento_id)
-                .first()
-            )
-            if legacy is None:
-                is_drift = True
-            else:
-                core_lc = _core_lifecycle(row.status)
-                legacy_lc = _lifecycle_from_orm(legacy.status)
-                if core_lc != legacy_lc:
-                    is_drift = True
+        row.sync_status = SyncStatus.SYNCED.value
 
-        if is_drift:
-            drifted.append(row.id)
-            row.sync_status = SyncStatus.DRIFT.value
-        elif row.sync_status == SyncStatus.DRIFT.value:
-            row.sync_status = SyncStatus.SYNCED.value
-
-    if drifted:
+    if rows:
         db.commit()
-    return len(drifted), drifted
+    return 0, []
 
 
 def run_once(db: Optional[Session] = None) -> int:

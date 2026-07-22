@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, date
 from typing import List, Optional, Set
 
-from app.models.agendamento import Agendamento, ReservationStatus, STATUS_OCUPAM_VAGA
+from app.models.agendamento import ReservationStatus, STATUS_OCUPAM_VAGA
 from app.models.tranca import Tranca
 from app.models.service_image import ServiceImage
 from app.schemas.agendamento import HorarioDisponivel
@@ -44,43 +44,19 @@ class DisponibilidadeService:
         """
         Cancela reservas pendentes sem pagamento após prazo de expiração.
 
-        R4-F6: cobre tanto ``Agendamento`` legado (histórico, mantido só
-        para leitura desde R4-F4) quanto ``CoreBooking`` (fonte primária de
-        ocupação desde R4-F4) — bookings core-only pendentes sem sinal
-        pago também expiram, cancelados via ``CancelBookingHandler`` (path
-        core, sem depender de criar/cancelar linha em ``Agendamento``).
+        .. deprecated:: 2.11.0-r4-f8
+            Cobria historicamente tanto ``Agendamento`` legado quanto
+            ``CoreBooking``. A tabela ``agendamentos`` foi removida
+            fisicamente (DROP — ADR-024 sunset / RFC-003 M11+); nenhum
+            caminho de escrita cria reservas legado desde R3-F2/R4-F3/R4-F4,
+            então não há mais nada a expirar por esse lado. Cobre apenas
+            ``CoreBooking`` (fonte primária de ocupação), cancelado via
+            ``CancelBookingHandler``.
 
         Returns:
-            Quantidade total de reservas expiradas (legado + core).
+            Quantidade de reservas core expiradas.
         """
-        count = self._expirar_agendamentos_pendentes()
-        count += self._expirar_core_bookings_pendentes()
-        return count
-
-    def _expirar_agendamentos_pendentes(self) -> int:
-        """
-        Cancela ``Agendamento`` legado pendente sem sinal pago (histórico).
-
-        Returns:
-            Quantidade de agendamentos legados expirados.
-        """
-        from app.models.agendamento import StatusAgendamento
-        from app.services.agendamento_service import AgendamentoService
-
-        limite = datetime.now() - timedelta(hours=EXPIRACAO_PENDENTE_HORAS)
-        pendentes = self.db.query(Agendamento).filter(
-            Agendamento.status == StatusAgendamento.PENDENTE,
-            Agendamento.sinal_pago.is_(False),
-            Agendamento.created_at < limite,
-            Agendamento.deleted_at.is_(None),
-        ).all()
-
-        svc = AgendamentoService(self.db)
-        count = 0
-        for ag in pendentes:
-            svc.cancelar_agendamento(ag.id, liberar_vaga=True, motivo="expirado")
-            count += 1
-        return count
+        return self._expirar_core_bookings_pendentes()
 
     def _expirar_core_bookings_pendentes(self) -> int:
         """

@@ -19,7 +19,6 @@ import pytest
 
 from app.core.config import settings
 from app.core.feature_flags import feature_flags
-from app.models.agendamento import Agendamento
 from app.modules.booking.domain.models import CoreBooking
 from app.modules.booking.domain.value_objects.booking_types import SyncStatus
 from app.services.disponibilidade_service import DisponibilidadeService
@@ -107,8 +106,6 @@ def test_create_booking_default_no_legacy_projection(
     client, synced_catalog, cliente_exemplo, db, booking_headers
 ):
     """Create não gera legacy_agendamento_id nem Agendamento (sem dual-write)."""
-    before_agendamentos = db.query(Agendamento).count()
-
     booking = _create_booking(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=50
     )
@@ -120,8 +117,6 @@ def test_create_booking_default_no_legacy_projection(
     assert row is not None
     assert row.legacy_agendamento_id is None
     assert row.sync_status == SyncStatus.SYNCED.value
-
-    assert db.query(Agendamento).count() == before_agendamentos
 
 
 def test_approve_core_only_booking_without_legacy(
@@ -214,13 +209,17 @@ def test_reconciliation_core_only_booking_not_drift(
     assert row.sync_status != SyncStatus.DRIFT.value
 
 
-def test_reconciliation_still_flags_orphan_legacy_reference(
+def test_reconciliation_nao_mais_flags_orphan_legacy_reference(
     db, default_company, cliente_exemplo, synced_catalog
 ):
-    """Reconciliation continua detectando drift quando legacy_agendamento_id existe e está órfão.
-
-    Cobre bookings históricos criados antes de R4-F3 (quando o dual-write
-    ainda existia) que possam ter ficado com referência legado órfã.
+    """
+    Reconciliation não detecta mais drift por ``legacy_agendamento_id``
+    órfão (R4-F8 — tabela ``agendamentos`` removida via DROP físico,
+    ADR-024 sunset / RFC-003 M11+; não há mais projeção legado para
+    comparar contra ``core_bookings``). Cobre bookings históricos criados
+    antes de R4-F3 (quando o dual-write ainda existia) que possam ter
+    ficado com referência legado órfã — o inteiro histórico é preservado,
+    mas não bloqueia/marca mais nada.
     """
     from decimal import Decimal
 
@@ -243,9 +242,10 @@ def test_reconciliation_still_flags_orphan_legacy_reference(
     db.commit()
 
     count, ids = detect_drift(db)
-    assert row.id in ids
+    assert row.id not in ids
+    assert count == 0
     db.refresh(row)
-    assert row.sync_status == SyncStatus.DRIFT.value
+    assert row.sync_status == SyncStatus.SYNCED.value
 
 
 def test_queue_aprovar_com_horario_sem_agendamento_id(
