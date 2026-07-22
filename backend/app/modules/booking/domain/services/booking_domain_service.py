@@ -307,3 +307,23 @@ class BookingDomainService:
 
         booking.cancel(reason)
         return booking
+
+    def reschedule(self, booking: Booking, reason: Optional[str] = None) -> Booking:
+        """
+        Marca booking approved como rescheduled (ADR-026 / R4-F11).
+
+        Não cria o novo booking — isso fica no handler CQRS após validar
+        disponibilidade do novo slot.
+
+        Args:
+            booking: Aggregate carregado em approved.
+            reason: Motivo/mensagem opcional.
+
+        Returns:
+            Aggregate mutado (status rescheduled).
+
+        Raises:
+            InvalidBookingStateTransitionError: Estado inválido.
+        """
+        booking.reschedule(reason)
+        return booking

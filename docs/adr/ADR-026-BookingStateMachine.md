@@ -25,7 +25,7 @@ Estados de booking estavam implícitos no legado. Core exige máquina de estados
 | `cancelled` | Cancelado (cliente ou operador) | ✅ F2b |
 | `completed` | Serviço realizado | 🔜 R3 |
 | `no_show` | Cliente não compareceu | 🔜 R3 |
-| `rescheduled` | Substituído por novo booking | 🔜 R3 |
+| `rescheduled` | Substituído por novo booking | ✅ R4-F11 |
 | `expired` | Pending expirou (timeout) | 🔜 R3 |
 
 ### Diagrama (completo; R2 subset destacado)
@@ -65,7 +65,7 @@ stateDiagram-v2
 |----|------|--------|
 | `approved` | `completed` | `booking.completed` |
 | `approved` | `no_show` | `booking.no_show` |
-| `approved` | `rescheduled` | `booking.rescheduled` + new `booking.created` |
+| `approved` | `rescheduled` | `booking.rescheduled` + new `booking.created` ✅ R4-F11 |
 | `pending` | `expired` | `booking.expired` |
 
 ### Regras globais

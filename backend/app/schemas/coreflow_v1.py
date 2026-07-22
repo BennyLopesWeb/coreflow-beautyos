@@ -113,6 +113,21 @@ class BookingCancelRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class BookingRescheduleRequest(BaseModel):
+    """
+    Body para reagendamento core-only (R4-F11 / ADR-026).
+
+    Attributes:
+        scheduled_at: Novo horário do booking substituto.
+        notes: Motivo/mensagem opcional.
+        resource_id: ID core_resources opcional (Resource Engine).
+    """
+
+    scheduled_at: datetime
+    notes: Optional[str] = None
+    resource_id: Optional[int] = None
+
+
 class BookingResponse(BaseModel):
     """
     Resposta de booking genérico.
@@ -149,6 +164,21 @@ class BookingResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class BookingRescheduleResponse(BaseModel):
+    """
+    Resultado do reagendamento (R4-F11).
+
+    Attributes:
+        previous_booking_id: Booking fechado como ``rescheduled``.
+        previous_status: Status do booking antigo (sempre ``rescheduled``).
+        booking: Booking novo criado no horário solicitado.
+    """
+
+    previous_booking_id: int
+    previous_status: str
+    booking: BookingResponse
 
 
 class LocationResponse(BaseModel):

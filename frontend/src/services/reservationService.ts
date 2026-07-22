@@ -68,18 +68,36 @@ export const reservationService = {
     return response.data;
   },
 
+  /**
+   * Reagenda booking core-only (R4-F11 / ADR-026).
+   *
+   * Fecha o booking atual como `rescheduled` e cria um substituto.
+   * Successor de `PUT /reservations/{id}/reschedule` (410 Gone).
+   *
+   * @param id - ID `core_bookings`.
+   * @param novo_horario - Novo horário ISO.
+   * @param mensagem - Motivo/mensagem opcional.
+   * @returns Booking novo (substituto).
+   */
   reagendar: async (
     id: number,
     novo_horario: string,
     mensagem?: string,
   ): Promise<Reservation> => {
-    const response = await api.put<Reservation>(`/reservations/${id}/reschedule`, {
-      novo_horario,
-      mensagem,
+    const response = await api.post<{
+      previous_booking_id: number;
+      previous_status: string;
+      booking: Reservation;
+    }>(`/v1/bookings/${id}/reschedule`, {
+      scheduled_at: novo_horario,
+      notes: mensagem,
     });
-    return response.data;
+    return response.data.booking;
   },
 
+  /**
+   * @deprecated R4-F11 — fluxo two-step legado removido; `reagendar` já cria o substituto.
+   */
   aceitarReagendamento: async (id: number): Promise<Reservation> => {
     const response = await api.put<Reservation>(`/reservations/${id}/accept-reschedule`, {
       aceitar: true,

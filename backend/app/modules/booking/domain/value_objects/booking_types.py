@@ -9,15 +9,17 @@ from enum import Enum
 
 class BookingLifecycleStatus(str, Enum):
     """
-    Estado de ciclo de vida canônico do Core (R2-F1: create → pending).
+    Estado de ciclo de vida canônico do Core (ADR-026).
 
-    Mapeia para ``ReservationStatus`` legado na camada de infraestrutura.
+    Mapeia para ``ReservationStatus`` na camada de infraestrutura.
+    ``RESCHEDULED`` (R4-F11) é terminal — booking substituído por outro.
     """
 
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
     CANCELLED = "cancelled"
+    RESCHEDULED = "rescheduled"
 
 
 class SyncStatus(str, Enum):

@@ -187,3 +187,28 @@ class Booking:
         if reason:
             prefix = self.notes or ""
             self.notes = f"{prefix} | {reason}".strip(" |") if prefix else reason
+
+    def reschedule(self, reason: Optional[str] = None) -> None:
+        """
+        Transição approved → rescheduled (ADR-026 / R4-F11).
+
+        Fecha o booking atual como terminal ``rescheduled``; o handler CQRS
+        cria em seguida um novo booking no horário solicitado.
+
+        Args:
+            reason: Motivo/mensagem opcional (ex.: horário sugerido).
+
+        Returns:
+            None
+
+        Raises:
+            InvalidBookingStateTransitionError: Se status != approved.
+        """
+        from app.modules.booking.domain.exceptions import InvalidBookingStateTransitionError
+
+        if self.status != BookingLifecycleStatus.APPROVED:
+            raise InvalidBookingStateTransitionError()
+        self.status = BookingLifecycleStatus.RESCHEDULED
+        if reason:
+            prefix = self.notes or ""
+            self.notes = f"{prefix} | {reason}".strip(" |") if prefix else reason
