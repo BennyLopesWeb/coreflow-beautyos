@@ -138,7 +138,7 @@ def test_nenhuma_tabela_tem_fk_fisica_para_agendamentos(db):
     Usa ``sa.inspect(...).get_foreign_keys`` sobre a engine de teste (schema
     criado via ``Base.metadata.create_all`` a partir dos models já
     atualizados nesta release) — equivalente ao que a migration
-    ``cf015_r4_f7_decouple_agendamento_fks`` garante em bancos reais.
+    ``cf015_r4_f7_decouple_fks`` garante em bancos reais.
     """
     inspector = sa.inspect(db.get_bind())
     for table_name in _TABELAS_SEM_FK_FISICA:

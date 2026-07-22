@@ -20,7 +20,7 @@
 
 | Evento | Artefato | Notas |
 |--------|----------|-------|
-| **Implemented (tech)** | R4-F7 M11 (RFC-003) | Migration `cf015_r4_f7_decouple_agendamento_fks` remove a FK física para `agendamentos.id` de `payments`, `schedules`, `satisfaction_surveys`, `fila`, `queue_entries`, `financeiro` e `notification_logs`; `schedules`/`satisfaction_surveys` ganham `agendamento_id` nullable + `booking_id` (FK nullable `core_bookings.id`); `DisponibilidadeService._slots_ocupados` passa a ler ocupação exclusivamente de `core_bookings` (leitura de compatibilidade sobre `Agendamento` removida); `2.10.0-r4-f7` |
+| **Implemented (tech)** | R4-F7 M11 (RFC-003) | Migration `cf015_r4_f7_decouple_fks` remove a FK física para `agendamentos.id` de `payments`, `schedules`, `satisfaction_surveys`, `fila`, `queue_entries`, `financeiro` e `notification_logs`; `schedules`/`satisfaction_surveys` ganham `agendamento_id` nullable + `booking_id` (FK nullable `core_bookings.id`); `DisponibilidadeService._slots_ocupados` passa a ler ocupação exclusivamente de `core_bookings` (leitura de compatibilidade sobre `Agendamento` removida); `2.10.0-r4-f7` |
 | **Amended** | ADR-024 sunset table | DROP físico de `agendamentos`/`payments`/`schedules` movido explicitamente para **R4-F8** — nenhuma tabela referencia mais `agendamentos` por FK física desde R4-F7 |
 | **Published** | Release + sprint + gate | [2.10.0-r4-f7.md](releases/2.10.0-r4-f7.md) · [R4-F7.md](sprints/R4-F7.md) · [R4-F7-Gate.md](reviews/R4-F7-Gate.md) |
 

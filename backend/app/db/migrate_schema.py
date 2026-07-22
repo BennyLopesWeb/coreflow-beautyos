@@ -663,7 +663,7 @@ def _migrar_r4_f7_decouple_agendamento_fks(cursor: sqlite3.Cursor) -> None:
     Remove a FK física para ``agendamentos`` de sete tabelas e adiciona
     ``booking_id`` (bridge ``core_bookings.id``) + ``agendamento_id``
     nullable em ``schedules``/``satisfaction_surveys`` — espelha
-    ``alembic/versions/cf015_r4_f7_decouple_agendamento_fks.py`` para o
+    ``alembic/versions/cf015_r4_f7_decouple_fks.py`` para o
     banco SQLite gerenciado por este script legado (R4-F7 — ADR-024
     sunset / RFC-003 M11).
 

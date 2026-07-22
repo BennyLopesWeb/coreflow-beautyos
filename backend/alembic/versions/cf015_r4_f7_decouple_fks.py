@@ -2,7 +2,7 @@
 import sqlalchemy as sa
 from alembic import op
 
-revision = "cf015_r4_f7_decouple_agendamento_fks"
+revision = "cf015_r4_f7_decouple_fks"
 down_revision = "cf014_r4_f6_payment_booking_id"
 branch_labels = None
 depends_on = None

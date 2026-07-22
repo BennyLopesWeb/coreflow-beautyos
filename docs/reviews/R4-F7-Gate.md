@@ -12,7 +12,7 @@
 |----------|--------|
 | `APP_VERSION = 2.10.0-r4-f7` (`config.py`) | ✅ |
 | Tags Terraform `staging`/`prod` → `2.10.0-r4-f7` | ✅ |
-| Migration Alembic `cf015_r4_f7_decouple_agendamento_fks`: remove FK física para `agendamentos` de `payments`/`schedules`/`satisfaction_surveys`/`fila`/`queue_entries`/`financeiro`/`notification_logs`; `schedules`/`satisfaction_surveys` ganham `agendamento_id` nullable + `booking_id` (FK nullable indexada) | ✅ |
+| Migration Alembic `cf015_r4_f7_decouple_fks`: remove FK física para `agendamentos` de `payments`/`schedules`/`satisfaction_surveys`/`fila`/`queue_entries`/`financeiro`/`notification_logs`; `schedules`/`satisfaction_surveys` ganham `agendamento_id` nullable + `booking_id` (FK nullable indexada) | ✅ |
 | Migration idempotente (compatível com `create_all` em testes) | ✅ |
 | Migration validada com round-trip completo (`upgrade`/`downgrade`/`upgrade`) contra banco com schema legado real (sete tabelas com FK física, `schedules`/`satisfaction_surveys` com `agendamento_id NOT NULL`) | ✅ |
 | Script legado `migrate_schema.py` espelha a migração para o SQLite fora do Alembic (`_migrar_r4_f7_decouple_agendamento_fks`, recria tabela via `PRAGMA foreign_key_list`) | ✅ |
