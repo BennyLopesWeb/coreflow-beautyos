@@ -20,7 +20,8 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 | R4-F1 | 2.4.0-r4-f1 | 410 Gone booking legado + catalog alias gone — ✅ |
 | R4-F2 | 2.5.0-r4-f2 | Desligar dual-write outbound `project_*` por padrão (M7) — ✅ |
 | R4-F3 | 2.6.0-r4-f3 | Remover código do dual-write outbound `project_*` (M7 completo) — ✅ |
+| R4-F4 | 2.7.0-r4-f4 | Hard sunset — parar escritas novas em `agendamentos` (Option A, sem DROP); `core_bookings` SoT para disponibilidade/fila do dia (M8) — ✅ |
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos: R4-F4+ (avaliar drop físico da tabela `agendamentos`)
+Próximos: R4-F5+ (avaliar drop físico da tabela `agendamentos`/`payments`/`schedules` legado)

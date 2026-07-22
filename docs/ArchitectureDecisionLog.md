@@ -46,6 +46,17 @@
 
 ---
 
+## 2026-07-21 — R4-F4 Hard sunset Agendamento writes (Option A, sem DROP)
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F4 M8 (RFC-003) | `FilaService.aprovar_fila` migrado para `CreateBookingHandler`; `AgendamentoService.criar_agendamento` desativado (`BusinessRuleError` → `/v1/bookings`); `DisponibilidadeService`/`QueueEntryService.processar_reservas_do_dia` usam `core_bookings` como fonte primária; `2.7.0-r4-f4` |
+| **Deprecated (model)** | `Agendamento`/`agendamentos` | Docstring `.. deprecated:: 2.7.0-r4-f4` — somente leitura histórica; DROP físico planejado R4-F5 |
+| **Amended** | ADR-024 sunset table | R4-F4 hard sunset adicionado; DROP movido explicitamente para R4-F5+ |
+| **Published** | Release + sprint + gate | [2.7.0-r4-f4.md](releases/2.7.0-r4-f4.md) · [R4-F4.md](sprints/R4-F4.md) · [R4-F4-Gate.md](reviews/R4-F4-Gate.md) |
+
+---
+
 ## 2026-07-21 — R4-F2 Disable booking legacy dual-write projection
 
 | Evento | Artefato | Notas |

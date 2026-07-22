@@ -143,10 +143,50 @@ def confirmar_sinal_admin(
 ):
     """
     Admin confirma recebimento do sinal (comprovante) → pending_approval.
+
+    Path legado (``agendamentos``) — mantido somente para reservas
+    históricas criadas antes de R3-F2/R4-F3. Para bookings core-only
+    (padrão desde R4-F4), use ``POST /admin/pagamentos/booking/{booking_id}/confirmar-sinal``.
     """
     try:
         ag = AgendamentoService(db).confirmar_sinal(agendamento_id)
         return {"id": ag.id, "status": ag.status.value, "sinal_pago": ag.sinal_pago}
+    except Exception as e:
+        from fastapi import HTTPException, status
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/pagamentos/booking/{booking_id}/confirmar-sinal")
+def confirmar_sinal_admin_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    """
+    Admin confirma recebimento do sinal diretamente em ``core_bookings`` (R4-F4).
+
+    Path primário desde R4-F4: bookings core-only (criados via
+    ``POST /v1/bookings``) não têm ``Agendamento`` associado, então a
+    confirmação do sinal deve atualizar ``CoreBooking.deposit_paid``
+    diretamente via ``PaymentReservationService.confirmar_deposito_por_booking``
+    (mesmo path usado por ``/v1/bookings/{id}/approve``, ADR-028).
+
+    Args:
+        booking_id: ID ``core_bookings.id``.
+        db: Sessão SQLAlchemy.
+
+    Returns:
+        Dict com ``id``, ``status`` e ``deposit_paid`` do booking atualizado.
+    """
+    from app.services.payment_reservation_service import PaymentReservationService
+
+    try:
+        booking = PaymentReservationService(db).confirmar_deposito_por_booking(booking_id)
+        return {
+            "id": booking.id,
+            "status": booking.status.value,
+            "deposit_paid": booking.deposit_paid,
+        }
     except Exception as e:
         from fastapi import HTTPException, status
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

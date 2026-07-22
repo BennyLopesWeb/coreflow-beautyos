@@ -118,30 +118,68 @@ class DisponibilidadeService:
                 pass
         return DURACAO_PADRAO_MIN
 
+    def _duracao_core_booking(self, booking) -> int:
+        """
+        Obtém duração de um ``CoreBooking`` existente via ``core_offerings``.
+
+        Args:
+            booking: Instância de ``CoreBooking`` persistida.
+
+        Returns:
+            Duração em minutos (``DURACAO_PADRAO_MIN`` se offering sem duração).
+        """
+        offering = booking.offering
+        if offering and offering.duration_minutes:
+            return int(offering.duration_minutes)
+        return DURACAO_PADRAO_MIN
+
     def _slots_ocupados(self, data_inicio: datetime, data_fim: datetime) -> Set[datetime]:
         """
         Calcula conjunto de slots de 30 min ocupados no intervalo (capacidade única).
+
+        R4-F4 (hard sunset / ADR-024 / RFC-003 M8): ``core_bookings`` é a
+        fonte primária de ocupação — nenhum novo booking gera linha em
+        ``agendamentos`` desde R3-F2/R4-F3. A consulta a ``Agendamento``
+        é mantida apenas para cobrir reservas históricas (criadas antes da
+        migração) que ainda estejam com status ativo.
 
         Args:
             data_inicio: Início do expediente.
             data_fim: Fim do expediente.
 
         Returns:
-            Set de datetimes (início de cada slot de 30 min ocupado).
+            Set de datetimes (início de cada slot de 30 min ocupado), união
+            de ``core_bookings`` ativos (primário) e ``agendamentos``
+            históricos ativos (legado, somente leitura).
         """
+        from app.modules.booking.domain.models import CoreBooking
+
+        ocupados: Set[datetime] = set()
+
+        core_bookings = self.db.query(CoreBooking).filter(
+            CoreBooking.scheduled_at >= data_inicio,
+            CoreBooking.scheduled_at < data_fim,
+            CoreBooking.status.in_(STATUS_OCUPAM_VAGA),
+            CoreBooking.deleted_at.is_(None),
+        ).all()
+        for booking in core_bookings:
+            duracao = self._duracao_core_booking(booking)
+            inicio = booking.scheduled_at.replace(second=0, microsecond=0)
+            for i in range(0, duracao, 30):
+                ocupados.add(inicio + timedelta(minutes=i))
+
         agendamentos = self.db.query(Agendamento).filter(
             Agendamento.data_hora >= data_inicio,
             Agendamento.data_hora < data_fim,
             Agendamento.status.in_(STATUS_OCUPAM_VAGA),
             Agendamento.deleted_at.is_(None),
         ).all()
-
-        ocupados: Set[datetime] = set()
         for ag in agendamentos:
             duracao = self._duracao_agendamento(ag)
             inicio = ag.data_hora.replace(second=0, microsecond=0)
             for i in range(0, duracao, 30):
                 ocupados.add(inicio + timedelta(minutes=i))
+
         return ocupados
 
     def calcular_horarios_disponiveis(

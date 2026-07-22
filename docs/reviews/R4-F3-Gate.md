@@ -54,5 +54,10 @@ Suíte completa (`pytest tests/`): 394 passed, 6 skipped.
 
 ## Próximo
 
-R4-F4 (ou posterior) — avaliar drop físico de `agendamentos` e models
-legado associados, após confirmação de zero dependência residual.
+R4-F4 ✅ — hard sunset (Option A, sem DROP): parou toda escrita nova em
+`agendamentos` (`FilaService.aprovar_fila` → `CreateBookingHandler`,
+`AgendamentoService.criar_agendamento` desativado) e moveu disponibilidade/
+fila do dia para `core_bookings` como SoT. Ver
+[R4-F4.md](../sprints/R4-F4.md) e [R4-F4-Gate.md](R4-F4-Gate.md). Drop
+físico de `agendamentos` e models legado associados fica para **R4-F5+**,
+após confirmação de zero dependência residual.

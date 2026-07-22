@@ -225,6 +225,7 @@ Registro completo: `docs/reviews/R2-ArchitectureRiskRegister.md`.
 | M5 | Remover routers `/agendamentos` write | R3-F3 ✅ (`2.3.0-r3-f3`) |
 | M6 | `410 Gone` rotas legado booking | R4-F1 ✅ (`2.4.0-r4-f1`) |
 | M7 | Desligar (R4-F2) e remover definitivamente (R4-F3) o dual-write outbound (`project_*`) | R4-F2 ✅ (`2.5.0-r4-f2`) · R4-F3 ✅ **completo** (`2.6.0-r4-f3`) |
+| M8 | Hard sunset — parar toda escrita nova em `agendamentos` (Option A, sem DROP); `core_bookings` SoT para disponibilidade e fila do dia | R4-F4 ✅ (`2.7.0-r4-f4`) |
 
 **Nomenclatura eventos:** `reservation.*` alias até R3-F2; sunset ADR-027.
 
@@ -232,6 +233,15 @@ Registro completo: `docs/reviews/R2-ArchitectureRiskRegister.md`.
 `LegacyBookingAdapter`; bookings sempre core-only. Próximo gate após R4-F3
 avalia o drop físico da tabela `agendamentos` (fora do escopo de RFC-003,
 tratado em ADR futuro — ver `docs/reviews/R4-F3-Gate.md`).
+
+**M8 completo (R4-F4):** `FilaService.aprovar_fila` migrado para
+`CreateBookingHandler` (não escreve mais em `agendamentos`);
+`AgendamentoService.criar_agendamento` desativado (`BusinessRuleError` →
+`/v1/bookings`); `DisponibilidadeService`/`QueueEntryService.processar_reservas_do_dia`
+passam a usar `core_bookings` como fonte primária (leitura de `agendamentos`
+mantida apenas para histórico). Tabela `agendamentos` **não removida**
+(Option A) — DROP físico planejado para **R4-F5** (ver
+`docs/sprints/R4-F4.md` e `docs/reviews/R4-F4-Gate.md`).
 
 ---
 

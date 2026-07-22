@@ -81,8 +81,8 @@ def _create_booking(client, db, synced_catalog, cliente_exemplo, booking_headers
 
 
 def test_app_version_r4_f3():
-    """APP_VERSION marca a release R4-F3."""
-    assert settings.APP_VERSION == "2.6.0-r4-f3"
+    """APP_VERSION avançou de R4-F3 (pin exato relaxado em R4-F4+; ver test_app_version_r4_f4)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_legacy_projection_flag_removed():
