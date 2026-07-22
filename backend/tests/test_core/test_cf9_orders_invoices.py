@@ -106,26 +106,20 @@ def test_v1_orders_and_invoices_list(
     client, admin_headers, synced_catalog, cliente_exemplo, db,
     default_company,
 ):
-    """GET /v1/orders e /v1/invoices retornam dados sincronizados a partir de CoreBooking (R4-F8).
+    """GET /v1/orders e /v1/invoices retornam dados sincronizados a partir de CoreBooking (R4-F9).
 
     A tabela ``agendamentos`` foi removida (DROP físico) — o booking usado
     como fonte do sync (``OrderLegacySyncService``) é criado via
-    ``CreateBookingHandler`` (core-only), e a entrada financeira via
-    ``FinanceiroService`` diretamente (débito residual documentado:
-    ``confirmar_deposito_por_booking`` ainda não popula ``Financeiro``
-    automaticamente para bookings core-only).
+    ``CreateBookingHandler`` (core-only). A entrada financeira é criada
+    automaticamente por ``confirmar_deposito_por_booking`` (R4-F9).
     """
-    from app.services.financeiro_service import FinanceiroService
+    from app.services.payment_reservation_service import PaymentReservationService
 
     booking_id = _project_booking(
         db, default_company.id, cliente_exemplo, synced_catalog
     )
     OrderLegacySyncService(db).sync_one(booking_id)
-    FinanceiroService(db).registrar_entrada_automatica(
-        descricao=f"Sinal - Booking #{booking_id}",
-        valor=Decimal("45.00"),
-        agendamento_id=None,
-    )
+    PaymentReservationService(db).confirmar_deposito_por_booking(booking_id)
 
     orders_resp = client.get("/v1/orders", headers=admin_headers)
     assert orders_resp.status_code == 200

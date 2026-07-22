@@ -46,10 +46,11 @@ def test_criar_agendamento_legado_removido(client, cliente_exemplo, tranca_exemp
 @pytest.mark.integration
 def test_confirmar_pagamento_sinal_agendamento_legado_sempre_falha(client):
     """
-    POST /pagamentos/sinal sobre reserva legado sempre falha (400) — a
-    tabela ``agendamentos`` foi removida via DROP físico (R4-F8 — ADR-024
-    sunset / RFC-003 M11+). Use o fluxo core-only
-    (``POST /admin/pagamentos/booking/{booking_id}/confirmar-sinal``).
+    POST /pagamentos/sinal responde 410 Gone (R4-F9 — LegacyGoneMiddleware).
+
+    A tabela ``agendamentos`` foi removida (R4-F8); o path legado de
+    pagamento foi sunsetado. Use
+    ``POST /admin/pagamentos/booking/{booking_id}/confirmar-sinal``.
     """
     data = {
         "agendamento_id": 999999,
@@ -58,5 +59,5 @@ def test_confirmar_pagamento_sinal_agendamento_legado_sempre_falha(client):
 
     response = client.post("/pagamentos/sinal", json=data)
 
-    assert response.status_code == 400
+    assert response.status_code == 410
 

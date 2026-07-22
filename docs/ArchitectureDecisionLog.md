@@ -16,6 +16,16 @@
 
 ---
 
+## 2026-07-22 — R4-F9 Financeiro core-only + sunset pagamentos legado
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F9 (RFC-003) | `PaymentReservationService.confirmar_deposito_por_booking` registra entrada `Financeiro` na 1ª confirmação (best-effort); `LegacyGoneMiddleware` expande 410 para `/pagamentos/sinal*` e `/pagamentos/comprovante*` → `/v1/payments`; `2.12.0-r4-f9` |
+| **Amended** | ADR-033 / R4-F1 gone | Mapa 410 deixa de ser só booking — inclui payments legado pós-DROP `agendamentos` |
+| **Published** | Release + sprint + gate | [2.12.0-r4-f9.md](releases/2.12.0-r4-f9.md) · [R4-F9.md](sprints/R4-F9.md) · [R4-F9-Gate.md](reviews/R4-F9-Gate.md) |
+
+---
+
 ## 2026-07-22 — R4-F8 DROP físico de agendamentos
 
 | Evento | Artefato | Notas |

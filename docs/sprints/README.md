@@ -25,7 +25,8 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 | R4-F6 | 2.9.0-r4-f6 | Bridge `Payment`→`booking_id` + disponibilidade core-only + 410 admin legado (M10) — ✅ |
 | R4-F7 | 2.10.0-r4-f7 | Decouple físico das últimas FKs para `agendamentos` (M11) — ✅ |
 | R4-F8 | 2.11.0-r4-f8 | DROP físico de `agendamentos`; `Agendamento` deixa de ser model mapeado (M11+) — ✅ |
+| R4-F9 | 2.12.0-r4-f9 | Financeiro em deposit core-only + 410 `/pagamentos/sinal*` — ✅ |
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos: fechar gap de `Financeiro` para bookings core-only e avaliar sunset explícito (410) das rotas legado de `app/routers/pagamentos.py`
+Próximos: endpoint core de reagendamento / pagamento final; limpeza do router `pagamentos.py`
