@@ -3,7 +3,6 @@ Model Financeiro
 Representa movimentações financeiras
 """
 from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey, Enum as SQLEnum
-from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 from app.db.base import Base
@@ -19,6 +18,10 @@ class Financeiro(Base):
     """
     Model de Movimento Financeiro
     Armazena entradas e saídas financeiras
+
+    R4-F7: ``agendamento_id`` deixou de ter FK física para
+    ``agendamentos.id`` (permanece ``Integer`` simples, opcional, sem
+    constraint) — mantido apenas para leitura histórica.
     """
     __tablename__ = "financeiro"
     
@@ -27,7 +30,8 @@ class Financeiro(Base):
     tipo = Column(SQLEnum(TipoMovimento), nullable=False, index=True)
     descricao = Column(String(255), nullable=False)
     valor = Column(Numeric(10, 2), nullable=False)
-    agendamento_id = Column(Integer, ForeignKey("agendamentos.id"), nullable=True)  # Opcional
+    # R4-F7: FK física para agendamentos.id removida — Integer simples.
+    agendamento_id = Column(Integer, nullable=True)  # Opcional
     data = Column(DateTime(timezone=True), nullable=False, index=True)
     
     # Soft delete
@@ -36,7 +40,4 @@ class Financeiro(Base):
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
-    # Relacionamento
-    agendamento = relationship("Agendamento", backref="movimentos_financeiros")
 

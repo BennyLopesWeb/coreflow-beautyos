@@ -12,11 +12,25 @@ class SatisfactionSurvey(Base):
     """
     Model de Pesquisa de Satisfação
     Armazena respostas de pesquisas de satisfação dos clientes
+
+    R4-F7 (decouple físico das FKs restantes para ``agendamentos`` / ADR-024
+    sunset / RFC-003 M11): ``agendamento_id`` deixou de ter FK física para
+    ``agendamentos.id`` (permanece ``Integer`` simples, sem constraint) e
+    passou a ser nullable — ``booking_id`` (FK nullable ``core_bookings.id``)
+    é o novo vínculo para pesquisas associadas a bookings core-only. Não há
+    service/router ativo criando ``SatisfactionSurvey`` nesta release
+    (débito residual documentado — ver ``docs/sprints/R4-F7.md``); model
+    mantido — sem DROP — até **R4-F8**.
     """
     __tablename__ = "satisfaction_surveys"
     
     id = Column(Integer, primary_key=True, index=True)
-    agendamento_id = Column(Integer, ForeignKey("agendamentos.id"), nullable=False, index=True)
+    # R4-F7: FK física para agendamentos.id removida — Integer simples,
+    # mantido apenas para leitura histórica.
+    agendamento_id = Column(Integer, nullable=True, index=True)
+    # R4-F7: FK para core_bookings.id — vínculo para pesquisas associadas a
+    # bookings core-only (sem Agendamento associado).
+    booking_id = Column(Integer, ForeignKey("core_bookings.id"), nullable=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
     
     # Avaliações (1-5)
@@ -34,6 +48,5 @@ class SatisfactionSurvey(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relacionamentos
-    agendamento = relationship("Agendamento", backref="surveys")
     cliente = relationship("Cliente", backref="surveys")
 

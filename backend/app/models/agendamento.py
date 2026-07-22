@@ -76,10 +76,13 @@ class Agendamento(Base):
         processamento da fila do dia (``QueueEntryService.processar_reservas_do_dia``).
         ``AgendamentoService.criar_agendamento`` levanta ``BusinessRuleError``
         incondicionalmente. Este model é mantido **somente leitura** para
-        dados históricos (relatórios, sync legado→core, reconciliation) até
-        o **DROP físico planejado para R4-F5** (junto com ``payments``/
-        ``schedules`` legado associados, condicionado à confirmação de zero
-        dependência residual — ver ``docs/sprints/R4-F4.md``).
+        dados históricos (relatórios, sync legado→core, reconciliation,
+        fixtures CF6/CF9). R4-F7 removeu as últimas FKs físicas de outras
+        tabelas apontando para ``agendamentos.id`` (``payments``,
+        ``schedules``, ``satisfaction_surveys``, ``fila``,
+        ``queue_entries``, ``financeiro``, ``notification_logs``) —
+        a tabela **não é mais referenciada por constraint física alguma**,
+        mas continua existindo até o **DROP físico planejado para R4-F8**.
     """
     __tablename__ = "agendamentos"
 

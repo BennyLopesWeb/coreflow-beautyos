@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # App
     PLATFORM_NAME: str = "CoreFlow Platform"
     APP_NAME: str = "CoreFlow API"
-    APP_VERSION: str = "2.9.0-r4-f6"
+    APP_VERSION: str = "2.10.0-r4-f7"
 
     # Feature flags — migração incremental (RFC-002) — default false (R1-F2)
     # R3-F2: booking.core.enabled default TRUE — path legado ACL/ReservationService
@@ -44,9 +44,18 @@ class Settings(BaseSettings):
     # (FK nullable ``core_bookings.id``) é adicionado; admin de pagamentos
     # legado (``/admin/pagamentos/{agendamento_id}/confirmar-sinal``) retorna
     # ``410 Gone``; ``aceitar_reagendamento`` deixa de escrever ``Schedule``.
-    # DROP físico de ``agendamentos``/``payments``/``schedules`` (e FKs
-    # associadas) continua fora de escopo — adiado explicitamente para
-    # **R4-F7** (Schedule/SatisfactionSurvey ainda referenciam agendamentos).
+    # R4-F7 (decouple físico das FKs restantes para ``agendamentos``):
+    # ``schedules``/``satisfaction_surveys`` ganham ``agendamento_id``
+    # nullable + ``booking_id`` (FK nullable ``core_bookings.id``); FK física
+    # para ``agendamentos.id`` é removida de ``payments``, ``schedules``,
+    # ``satisfaction_surveys``, ``fila``, ``queue_entries``, ``financeiro`` e
+    # ``notification_logs`` (colunas ``agendamento_id`` permanecem como
+    # ``Integer`` simples, sem constraint física — apenas leitura/histórico).
+    # ``DisponibilidadeService`` passa a ler ocupação exclusivamente de
+    # ``core_bookings``. Tabela ``agendamentos`` **não é removida** nesta
+    # release — permanece necessária para fixtures/leitura histórica
+    # (CF6/CF9/sync legado→core). DROP físico adiado explicitamente para
+    # **R4-F8**.
     FEATURE_RESOURCE_ENGINE_ENABLED: bool = False
     FEATURE_AI_CORE_ENABLED: bool = False
     FEATURE_WORKFLOW_ENABLED: bool = False

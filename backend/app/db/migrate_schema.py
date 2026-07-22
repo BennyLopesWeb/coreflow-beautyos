@@ -80,6 +80,7 @@ def migrate_schema() -> None:
         _migrar_r2_f1_booking_sync_columns(cursor)
         _migrar_r4_f5_booking_id_columns(cursor)
         _migrar_r4_f6_payment_booking_id(cursor)
+        _migrar_r4_f7_decouple_agendamento_fks(cursor)
         conn.commit()
         print("✅ Schema migrado com sucesso!")
     except Exception as error:
@@ -633,6 +634,443 @@ def _migrar_r4_f6_payment_booking_id(cursor: sqlite3.Cursor) -> None:
             "CREATE INDEX IF NOT EXISTS ix_payments_booking_id ON payments (booking_id)"
         )
         print("✅ Coluna 'booking_id' adicionada em 'payments' (R4-F6)")
+
+
+def _tem_fk_para(cursor: sqlite3.Cursor, table: str, referenced_table: str) -> bool:
+    """
+    Verifica se ``table`` possui, na DDL física, uma ``FOREIGN KEY`` que
+    referencia ``referenced_table``.
+
+    Usa ``PRAGMA foreign_key_list``, que lê o schema declarado
+    independentemente de ``PRAGMA foreign_keys`` estar ligado (este
+    projeto não liga a enforcement do SQLite — a FK existe apenas na DDL).
+
+    Args:
+        cursor: Cursor SQLite ativo.
+        table: Nome da tabela a inspecionar.
+        referenced_table: Nome da tabela referenciada (ex.: ``"agendamentos"``).
+
+    Returns:
+        True se houver ao menos uma FK física de ``table`` para
+        ``referenced_table``.
+    """
+    cursor.execute(f"PRAGMA foreign_key_list({table})")
+    return any(row[2] == referenced_table for row in cursor.fetchall())
+
+
+def _migrar_r4_f7_decouple_agendamento_fks(cursor: sqlite3.Cursor) -> None:
+    """
+    Remove a FK física para ``agendamentos`` de sete tabelas e adiciona
+    ``booking_id`` (bridge ``core_bookings.id``) + ``agendamento_id``
+    nullable em ``schedules``/``satisfaction_surveys`` — espelha
+    ``alembic/versions/cf015_r4_f7_decouple_fks.py`` para o
+    banco SQLite gerenciado por este script legado (R4-F7 — ADR-024
+    sunset / RFC-003 M11).
+
+    SQLite não suporta ``ALTER TABLE ... DROP CONSTRAINT`` nem
+    ``ALTER COLUMN`` diretamente — cada tabela afetada é recriada
+    preservando dados e índices (mesmo padrão de ``_migrar_fila_espera``/
+    ``_migrar_r4_f6_payment_booking_id``), omitindo a cláusula
+    ``FOREIGN KEY ... REFERENCES agendamentos(id)`` da nova DDL.
+    Idempotente: cada tabela só é recriada se ainda tiver a FK física para
+    ``agendamentos`` (ou, no caso de ``schedules``/``satisfaction_surveys``,
+    se ``booking_id`` ainda não existir) — sem efeito em bancos já
+    migrados, inclusive os criados via ``Base.metadata.create_all()`` em
+    testes (onde os models já nascem sem essa FK).
+
+    A tabela ``agendamentos`` **não é removida** — permanece necessária
+    para fixtures/histórico até o DROP físico planejado para R4-F8.
+
+    Args:
+        cursor: Cursor SQLite ativo.
+
+    Returns:
+        None.
+    """
+    if _tem_fk_para(cursor, "payments", "agendamentos"):
+        cursor.execute(
+            """
+            CREATE TABLE payments_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agendamento_id INTEGER,
+                booking_id INTEGER,
+                tipo VARCHAR(20) NOT NULL,
+                valor NUMERIC(10,2) NOT NULL,
+                status VARCHAR(20) DEFAULT 'pending' NOT NULL,
+                transaction_id TEXT,
+                comprovante_url TEXT,
+                paid_at DATETIME,
+                deleted_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME,
+                FOREIGN KEY(booking_id) REFERENCES core_bookings(id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT INTO payments_new (
+                id, agendamento_id, booking_id, tipo, valor, status, transaction_id,
+                comprovante_url, paid_at, deleted_at, created_at, updated_at
+            )
+            SELECT id, agendamento_id, booking_id, tipo, valor, status, transaction_id,
+                   comprovante_url, paid_at, deleted_at, created_at, updated_at
+            FROM payments
+            """
+        )
+        cursor.execute("DROP TABLE payments")
+        cursor.execute("ALTER TABLE payments_new RENAME TO payments")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_payments_agendamento_id ON payments (agendamento_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_payments_transaction_id ON payments (transaction_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_payments_booking_id ON payments (booking_id)"
+        )
+        print("✅ FK física 'payments.agendamento_id' → 'agendamentos' removida (R4-F7)")
+
+    if _tem_fk_para(cursor, "fila", "agendamentos"):
+        cursor.execute(
+            """
+            CREATE TABLE fila_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER,
+                cliente_id INTEGER NOT NULL,
+                tranca_id INTEGER NOT NULL,
+                service_image_id INTEGER NOT NULL,
+                data DATE NOT NULL,
+                horario_desejado TIME,
+                observacoes TEXT,
+                mesmo_dia BOOLEAN DEFAULT 0 NOT NULL,
+                posicao INTEGER NOT NULL,
+                status VARCHAR(20) DEFAULT 'waiting' NOT NULL,
+                agendamento_id INTEGER UNIQUE,
+                booking_id INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME,
+                FOREIGN KEY(company_id) REFERENCES companies(id),
+                FOREIGN KEY(cliente_id) REFERENCES clientes(id),
+                FOREIGN KEY(tranca_id) REFERENCES trancas(id),
+                FOREIGN KEY(service_image_id) REFERENCES service_images(id),
+                FOREIGN KEY(booking_id) REFERENCES core_bookings(id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT INTO fila_new (
+                id, company_id, cliente_id, tranca_id, service_image_id, data,
+                horario_desejado, observacoes, mesmo_dia, posicao, status,
+                agendamento_id, booking_id, created_at, updated_at
+            )
+            SELECT id, company_id, cliente_id, tranca_id, service_image_id, data,
+                   horario_desejado, observacoes, mesmo_dia, posicao, status,
+                   agendamento_id, booking_id, created_at, updated_at
+            FROM fila
+            """
+        )
+        cursor.execute("DROP TABLE fila")
+        cursor.execute("ALTER TABLE fila_new RENAME TO fila")
+        cursor.execute("CREATE INDEX IF NOT EXISTS ix_fila_status ON fila (status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS ix_fila_data ON fila (data)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS ix_fila_tranca_id ON fila (tranca_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS ix_fila_company_id ON fila (company_id)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_fila_service_image_id ON fila (service_image_id)"
+        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS ix_fila_cliente_id ON fila (cliente_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS ix_fila_booking_id ON fila (booking_id)")
+        print("✅ FK física 'fila.agendamento_id' → 'agendamentos' removida (R4-F7)")
+
+    if _tem_fk_para(cursor, "queue_entries", "agendamentos"):
+        cursor.execute(
+            """
+            CREATE TABLE queue_entries_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER,
+                agendamento_id INTEGER,
+                booking_id INTEGER,
+                cliente_id INTEGER NOT NULL,
+                tranca_id INTEGER,
+                service_image_id INTEGER,
+                posicao INTEGER NOT NULL,
+                data DATE NOT NULL,
+                horario_entrada TIME,
+                status VARCHAR(20) DEFAULT 'waiting' NOT NULL,
+                observacoes TEXT,
+                mesmo_dia INTEGER DEFAULT 0 NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME,
+                FOREIGN KEY(company_id) REFERENCES companies(id),
+                FOREIGN KEY(booking_id) REFERENCES core_bookings(id),
+                FOREIGN KEY(cliente_id) REFERENCES clientes(id),
+                FOREIGN KEY(tranca_id) REFERENCES trancas(id),
+                FOREIGN KEY(service_image_id) REFERENCES service_images(id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT INTO queue_entries_new (
+                id, company_id, agendamento_id, booking_id, cliente_id, tranca_id,
+                service_image_id, posicao, data, horario_entrada, status,
+                observacoes, mesmo_dia, created_at, updated_at
+            )
+            SELECT id, company_id, agendamento_id, booking_id, cliente_id, tranca_id,
+                   service_image_id, posicao, data, horario_entrada, status,
+                   observacoes, mesmo_dia, created_at, updated_at
+            FROM queue_entries
+            """
+        )
+        cursor.execute("DROP TABLE queue_entries")
+        cursor.execute("ALTER TABLE queue_entries_new RENAME TO queue_entries")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_queue_entries_cliente_id ON queue_entries (cliente_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_queue_entries_agendamento_id ON queue_entries (agendamento_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_queue_entries_data ON queue_entries (data)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_queue_entries_booking_id ON queue_entries (booking_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_queue_entries_status ON queue_entries (status)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_queue_entries_company_id ON queue_entries (company_id)"
+        )
+        print("✅ FK física 'queue_entries.agendamento_id' → 'agendamentos' removida (R4-F7)")
+
+    if _tem_fk_para(cursor, "financeiro", "agendamentos"):
+        cursor.execute(
+            """
+            CREATE TABLE financeiro_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER,
+                tipo VARCHAR(20) NOT NULL,
+                descricao VARCHAR(255) NOT NULL,
+                valor NUMERIC(10,2) NOT NULL,
+                agendamento_id INTEGER,
+                data DATETIME NOT NULL,
+                deleted_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME,
+                FOREIGN KEY(company_id) REFERENCES companies(id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT INTO financeiro_new (
+                id, company_id, tipo, descricao, valor, agendamento_id, data,
+                deleted_at, created_at, updated_at
+            )
+            SELECT id, company_id, tipo, descricao, valor, agendamento_id, data,
+                   deleted_at, created_at, updated_at
+            FROM financeiro
+            """
+        )
+        cursor.execute("DROP TABLE financeiro")
+        cursor.execute("ALTER TABLE financeiro_new RENAME TO financeiro")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_financeiro_data ON financeiro (data)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_financeiro_company_id ON financeiro (company_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_financeiro_tipo ON financeiro (tipo)"
+        )
+        print("✅ FK física 'financeiro.agendamento_id' → 'agendamentos' removida (R4-F7)")
+
+    if _tem_fk_para(cursor, "notification_logs", "agendamentos"):
+        cursor.execute(
+            """
+            CREATE TABLE notification_logs_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agendamento_id INTEGER,
+                cliente_id INTEGER,
+                tipo VARCHAR(20) NOT NULL,
+                status VARCHAR(20) DEFAULT 'pendente' NOT NULL,
+                destinatario VARCHAR(255) NOT NULL,
+                mensagem TEXT,
+                tentativas INTEGER DEFAULT 0 NOT NULL,
+                erro VARCHAR(255),
+                enviada_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME,
+                FOREIGN KEY(cliente_id) REFERENCES clientes(id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT INTO notification_logs_new (
+                id, agendamento_id, cliente_id, tipo, status, destinatario,
+                mensagem, tentativas, erro, enviada_at, created_at, updated_at
+            )
+            SELECT id, agendamento_id, cliente_id, tipo, status, destinatario,
+                   mensagem, tentativas, erro, enviada_at, created_at, updated_at
+            FROM notification_logs
+            """
+        )
+        cursor.execute("DROP TABLE notification_logs")
+        cursor.execute("ALTER TABLE notification_logs_new RENAME TO notification_logs")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_notification_logs_cliente_id ON notification_logs (cliente_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_notification_logs_agendamento_id ON notification_logs (agendamento_id)"
+        )
+        print("✅ FK física 'notification_logs.agendamento_id' → 'agendamentos' removida (R4-F7)")
+
+    precisa_recriar_schedules = _tem_fk_para(
+        cursor, "schedules", "agendamentos"
+    )
+    if not precisa_recriar_schedules:
+        cursor.execute("PRAGMA table_info(schedules)")
+        cols_schedules = [row[1] for row in cursor.fetchall()]
+        precisa_recriar_schedules = "booking_id" not in cols_schedules
+    if precisa_recriar_schedules:
+        cursor.execute(
+            """
+            CREATE TABLE schedules_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER,
+                agendamento_id INTEGER,
+                booking_id INTEGER,
+                data DATE NOT NULL,
+                inicio DATETIME NOT NULL,
+                fim DATETIME NOT NULL,
+                status VARCHAR(20) DEFAULT 'scheduled' NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME,
+                FOREIGN KEY(company_id) REFERENCES companies(id),
+                FOREIGN KEY(booking_id) REFERENCES core_bookings(id)
+            )
+            """
+        )
+        cursor.execute("PRAGMA table_info(schedules)")
+        tem_booking_id_antes = any(row[1] == "booking_id" for row in cursor.fetchall())
+        if tem_booking_id_antes:
+            cursor.execute(
+                """
+                INSERT INTO schedules_new (
+                    id, company_id, agendamento_id, booking_id, data, inicio, fim,
+                    status, created_at, updated_at
+                )
+                SELECT id, company_id, agendamento_id, booking_id, data, inicio, fim,
+                       status, created_at, updated_at
+                FROM schedules
+                """
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO schedules_new (
+                    id, company_id, agendamento_id, data, inicio, fim,
+                    status, created_at, updated_at
+                )
+                SELECT id, company_id, agendamento_id, data, inicio, fim,
+                       status, created_at, updated_at
+                FROM schedules
+                """
+            )
+        cursor.execute("DROP TABLE schedules")
+        cursor.execute("ALTER TABLE schedules_new RENAME TO schedules")
+        cursor.execute("CREATE INDEX IF NOT EXISTS ix_schedules_data ON schedules (data)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_schedules_company_id ON schedules (company_id)"
+        )
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_schedules_agendamento_id ON schedules (agendamento_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_schedules_booking_id ON schedules (booking_id)"
+        )
+        print(
+            "✅ Tabela 'schedules' migrada — agendamento_id opcional + booking_id, "
+            "FK física para agendamentos removida (R4-F7)"
+        )
+
+    precisa_recriar_surveys = _tem_fk_para(
+        cursor, "satisfaction_surveys", "agendamentos"
+    )
+    if not precisa_recriar_surveys:
+        cursor.execute("PRAGMA table_info(satisfaction_surveys)")
+        cols_surveys = [row[1] for row in cursor.fetchall()]
+        precisa_recriar_surveys = "booking_id" not in cols_surveys
+    if precisa_recriar_surveys:
+        cursor.execute(
+            """
+            CREATE TABLE satisfaction_surveys_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agendamento_id INTEGER,
+                booking_id INTEGER,
+                cliente_id INTEGER NOT NULL,
+                nota_atendimento INTEGER,
+                nota_qualidade INTEGER,
+                nota_pontualidade INTEGER,
+                nota_geral INTEGER NOT NULL,
+                comentario TEXT,
+                recomendaria VARCHAR(255),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME,
+                FOREIGN KEY(cliente_id) REFERENCES clientes(id),
+                FOREIGN KEY(booking_id) REFERENCES core_bookings(id)
+            )
+            """
+        )
+        cursor.execute("PRAGMA table_info(satisfaction_surveys)")
+        tem_booking_id_antes = any(row[1] == "booking_id" for row in cursor.fetchall())
+        if tem_booking_id_antes:
+            cursor.execute(
+                """
+                INSERT INTO satisfaction_surveys_new (
+                    id, agendamento_id, booking_id, cliente_id, nota_atendimento,
+                    nota_qualidade, nota_pontualidade, nota_geral, comentario,
+                    recomendaria, created_at, updated_at
+                )
+                SELECT id, agendamento_id, booking_id, cliente_id, nota_atendimento,
+                       nota_qualidade, nota_pontualidade, nota_geral, comentario,
+                       recomendaria, created_at, updated_at
+                FROM satisfaction_surveys
+                """
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO satisfaction_surveys_new (
+                    id, agendamento_id, cliente_id, nota_atendimento,
+                    nota_qualidade, nota_pontualidade, nota_geral, comentario,
+                    recomendaria, created_at, updated_at
+                )
+                SELECT id, agendamento_id, cliente_id, nota_atendimento,
+                       nota_qualidade, nota_pontualidade, nota_geral, comentario,
+                       recomendaria, created_at, updated_at
+                FROM satisfaction_surveys
+                """
+            )
+        cursor.execute("DROP TABLE satisfaction_surveys")
+        cursor.execute("ALTER TABLE satisfaction_surveys_new RENAME TO satisfaction_surveys")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_satisfaction_surveys_cliente_id ON satisfaction_surveys (cliente_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_satisfaction_surveys_agendamento_id ON satisfaction_surveys (agendamento_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_satisfaction_surveys_booking_id ON satisfaction_surveys (booking_id)"
+        )
+        print(
+            "✅ Tabela 'satisfaction_surveys' migrada — agendamento_id opcional + "
+            "booking_id, FK física para agendamentos removida (R4-F7)"
+        )
 
 
 def _migrar_dlq_replay_columns(cursor: sqlite3.Cursor) -> None:

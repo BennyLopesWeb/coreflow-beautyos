@@ -72,9 +72,14 @@ class ScheduleService:
             escrita restante) parou de chamar este método; bookings novos
             são sempre core-only (``CoreBooking``), sem ``Schedule``
             associado. Método mantido (não removido — model ``Schedule``
-            preservado, DROP físico adiado para R4-F7) apenas por
+            preservado, DROP físico adiado para R4-F8) apenas por
             compatibilidade de referência/import e para dados legado que
-            ainda dependam dele fora do fluxo HTTP padrão.
+            ainda dependam dele fora do fluxo HTTP padrão. R4-F7 removeu a
+            FK física de ``Schedule.agendamento_id`` para ``agendamentos.id``
+            (coluna nullable, sem constraint) — este método continua
+            funcional (não levanta ``BusinessRuleError``) caso algum
+            consumidor legado ainda o invoque diretamente, mas nenhum path
+            HTTP ativo o faz.
 
         Args:
             ag: Reserva aprovada.

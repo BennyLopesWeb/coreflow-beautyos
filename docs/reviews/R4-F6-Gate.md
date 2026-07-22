@@ -71,6 +71,12 @@ Suíte completa (`pytest tests/`): 418 passed, 6 skipped (baseline R4-F5: 408 pa
 
 ## Próximo
 
-R4-F7 — remover FKs físicas restantes de `Schedule`/`SatisfactionSurvey`,
-executar o DROP físico de `agendamentos`/`payments`/`schedules` legado, e
-migrar `AdminService.listar_pagamentos` para incluir bookings core-only.
+R4-F7 — remover FKs físicas restantes de `Schedule`/`SatisfactionSurvey`
+(e das demais tabelas ainda com constraint física para `agendamentos`).
+
+> **Atualização (R4-F7, 2026-07-21):** o DROP físico de
+> `agendamentos`/`payments`/`schedules` **não** foi executado em R4-F7 —
+> apenas o decouple físico das FKs. Foi replanejado para **R4-F8** (ver
+> [R4-F7.md](../sprints/R4-F7.md) · [R4-F7-Gate.md](R4-F7-Gate.md)), assim
+> como a migração de `AdminService.listar_pagamentos` para bookings
+> core-only.

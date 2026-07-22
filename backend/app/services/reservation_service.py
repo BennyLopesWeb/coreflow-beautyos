@@ -357,8 +357,10 @@ class ReservationService:
         core-only (``CoreBooking``, sem ``Schedule`` associado) desde
         R3-F2, e ``DisponibilidadeService``/``core_bookings`` é quem
         valida conflito de horário (fonte primária desde R4-F4). O model
-        ``Schedule`` é mantido (sem DROP — ver ``docs/sprints/R4-F6.md``,
-        DROP físico adiado para R4-F7), só deixa de receber escrita nova
+        ``Schedule`` é mantido (sem DROP — ver ``docs/sprints/R4-F6.md``/
+        ``docs/sprints/R4-F7.md``; R4-F7 removeu a FK física de
+        ``Schedule.agendamento_id`` para ``agendamentos.id``, DROP físico
+        do model adiado para R4-F8), só deixa de receber escrita nova
         por este caminho. Método permanece ativo apenas para transição de
         status de ``Agendamento`` legado histórico ainda em
         ``WAITING_TIME_CONFIRMATION`` (sem router HTTP associado — ver
