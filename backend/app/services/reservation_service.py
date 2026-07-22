@@ -210,9 +210,8 @@ class ReservationService:
 
         .. deprecated:: 2.11.0-r4-f8
             Tabela removida — delega a ``obter``, que sempre levanta
-            ``NotFoundError``. Reagendamento core-only ainda não tem
-            endpoint dedicado (débito residual — ver
-            ``docs/sprints/R4-F8.md``).
+            ``NotFoundError``. Use
+            ``POST /v1/bookings/{id}/reschedule`` (R4-F11 / ADR-026).
 
         Args:
             reservation_id: ID da reserva legado.

@@ -16,6 +16,16 @@
 
 ---
 
+## 2026-07-22 — R4-F11 Reagendamento core-only
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F11 (ADR-026) | `RescheduleBookingHandler`: `approved → rescheduled` + novo `booking.created`; `POST /v1/bookings/{id}/reschedule`; evento `booking.rescheduled`; transfere `deposit_paid`; `2.14.0-r4-f11` |
+| **Amended** | ADR-026 | Transição `rescheduled` sai de 🔜 R3 e passa a Implemented |
+| **Published** | Release + sprint + gate | [2.14.0-r4-f11.md](releases/2.14.0-r4-f11.md) · [R4-F11.md](sprints/R4-F11.md) · [R4-F11-Gate.md](reviews/R4-F11-Gate.md) |
+
+---
+
 ## 2026-07-22 — R4-F10 Pagamento final core-only
 
 | Evento | Artefato | Notas |

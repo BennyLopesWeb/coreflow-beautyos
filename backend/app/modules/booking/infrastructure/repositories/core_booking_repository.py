@@ -24,6 +24,7 @@ _LIFECYCLE_TO_ORM = {
     BookingLifecycleStatus.APPROVED: ReservationStatus.APPROVED,
     BookingLifecycleStatus.REJECTED: ReservationStatus.REJECTED,
     BookingLifecycleStatus.CANCELLED: ReservationStatus.CANCELLED,
+    BookingLifecycleStatus.RESCHEDULED: ReservationStatus.RESCHEDULED,
 }
 
 _ORM_TO_LIFECYCLE = {
@@ -33,6 +34,7 @@ _ORM_TO_LIFECYCLE = {
     ReservationStatus.APPROVED: BookingLifecycleStatus.APPROVED,
     ReservationStatus.REJECTED: BookingLifecycleStatus.REJECTED,
     ReservationStatus.CANCELLED: BookingLifecycleStatus.CANCELLED,
+    ReservationStatus.RESCHEDULED: BookingLifecycleStatus.RESCHEDULED,
     ReservationStatus.PENDENTE: BookingLifecycleStatus.PENDING,
     ReservationStatus.CONFIRMADO: BookingLifecycleStatus.APPROVED,
 }

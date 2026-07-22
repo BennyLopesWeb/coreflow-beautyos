@@ -42,6 +42,7 @@ class ReservationStatus(str, enum.Enum):
     COMPLETED = "completed"
     PAID = "paid"
     CANCELLED = "cancelled"
+    RESCHEDULED = "rescheduled"  # R4-F11 / ADR-026 — substituído por novo booking
     # Legado
     PENDENTE = "pendente"
     CONFIRMADO = "confirmado"

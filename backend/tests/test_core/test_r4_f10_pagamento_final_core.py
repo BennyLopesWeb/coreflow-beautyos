@@ -65,8 +65,8 @@ def _booking(db, company, cliente, synced_catalog, *, deposit_paid: bool = True)
 
 
 def test_app_version_r4_f10():
-    """APP_VERSION marca a release R4-F10 (pagamento final core-only)."""
-    assert settings.APP_VERSION == "2.13.0-r4-f10"
+    """APP_VERSION avançou de R4-F10 (pin exato relaxado em R4-F11+; ver test_app_version_r4_f11)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_match_legacy_gone_payments_router():

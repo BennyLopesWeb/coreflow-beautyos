@@ -72,6 +72,14 @@ def event_catalog_entries() -> List[Dict[str, Any]]:
             "consumers": ["WorkflowEngine", "PushHandlers"],
         },
         {
+            "event_type": "booking.rescheduled",
+            "status": "implemented",
+            "schema": None,
+            "avro": None,
+            "publishers": ["RescheduleBookingHandler"],
+            "consumers": ["WorkflowEngine", "PushHandlers"],
+        },
+        {
             "event_type": "resource.created",
             "status": "implemented",
             "schema": None,

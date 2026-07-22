@@ -40,12 +40,18 @@ from app.modules.booking.application.commands.cancel_booking import (
     CancelBookingCommand,
     CancelBookingHandler,
 )
+from app.modules.booking.application.commands.reschedule_booking import (
+    RescheduleBookingCommand,
+    RescheduleBookingHandler,
+)
 from app.modules.booking.application.booking_query_service import BookingQueryService
 from app.modules.booking.application.booking_response import booking_to_response_dict
 from app.schemas.coreflow_v1 import (
     BookingCancelRequest,
     BookingCreateRequest,
     BookingRejectRequest,
+    BookingRescheduleRequest,
+    BookingRescheduleResponse,
     BookingResponse,
 )
 from app.shared.idempotency.request_hash import compute_request_hash
@@ -335,10 +341,10 @@ def cancelar_booking(
         raise HTTPException(status_code=400, detail=str(exc.detail))
 
 
-@router.post("/{booking_id}/cancel", response_model=BookingResponse)
-def cancelar_booking(
+@router.post("/{booking_id}/reschedule", response_model=BookingRescheduleResponse)
+def reagendar_booking(
     booking_id: int,
-    body: BookingCancelRequest,
+    body: BookingRescheduleRequest,
     tenant: TenantContext = Depends(get_tenant_context),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin_user),
@@ -346,38 +352,49 @@ def cancelar_booking(
     correlation_id: Optional[str] = Header(None, alias="X-Correlation-Id"),
 ):
     """
-    Cancela booking genérico (admin) — domain path R2-F2b quando flag ON.
+    Reagenda booking approved — fecha como ``rescheduled`` e cria substituto (R4-F11).
 
     Args:
-        booking_id: ID core_bookings.
-        body: Motivo opcional.
-        if_match: Versão optimistic lock opcional.
+        booking_id: ID do booking a substituir.
+        body: Novo ``scheduled_at`` e notes opcionais.
+        if_match: Versão optimistic lock opcional do booking antigo.
         correlation_id: Rastreio outbox.
 
     Returns:
-        BookingResponse atualizado.
+        BookingRescheduleResponse com previous + novo booking.
     """
-    handler = CancelBookingHandler(db)
+    handler = RescheduleBookingHandler(db)
     expected = _parse_if_match(if_match)
     if if_match and expected is None:
         raise HTTPException(status_code=412, detail="precondition_failed")
     try:
-        core = handler.execute(
-            CancelBookingCommand(
+        result = handler.execute(
+            RescheduleBookingCommand(
                 booking_id=booking_id,
                 company_id=tenant.company_id,
-                reason=body.reason,
+                scheduled_at=body.scheduled_at,
+                notes=body.notes,
                 expected_version=expected,
                 correlation_id=correlation_id or str(uuid.uuid4()),
+                resource_id=body.resource_id,
             )
         )
-        return BookingResponse(**booking_to_response_dict(core))
+        prev_status = (
+            result.previous.status.value
+            if hasattr(result.previous.status, "value")
+            else str(result.previous.status)
+        )
+        return BookingRescheduleResponse(
+            previous_booking_id=result.previous.id,
+            previous_status=prev_status,
+            booking=_to_booking_response(result.booking),
+        )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    except CancelPolicyViolationError as exc:
-        raise HTTPException(status_code=409, detail=str(exc.detail))
     except VersionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc.detail))
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     except BusinessRuleError as exc:
         raise HTTPException(status_code=409, detail=str(exc.detail))
     except ValidationError as exc:
