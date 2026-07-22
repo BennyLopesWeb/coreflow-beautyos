@@ -32,6 +32,7 @@ class FilaResponse(BaseModel):
     posicao: int
     status: StatusFila
     agendamento_id: Optional[int] = None
+    booking_id: Optional[int] = None
     created_at: datetime
 
     class Config:
@@ -55,6 +56,7 @@ class FilaItemDetalhado(BaseModel):
     mesmo_dia: bool
     status: StatusFila
     agendamento_id: Optional[int] = None
+    booking_id: Optional[int] = None
     created_at: datetime
 
 

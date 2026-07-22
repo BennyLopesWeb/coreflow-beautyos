@@ -68,6 +68,7 @@ class QueueEntryService:
         return QueueEntryResponse(
             id=entry.id,
             agendamento_id=entry.agendamento_id,
+            booking_id=entry.booking_id,
             cliente_id=entry.cliente_id,
             cliente_nome=cliente.nome if cliente else "Cliente",
             tranca_nome=tranca.nome if tranca else None,
@@ -211,6 +212,12 @@ class QueueEntryService:
         ``agendamentos`` para o vínculo (``QueueEntry.agendamento_id``
         permanece ``None`` para bookings core-only).
 
+        R4-F5: a entrada criada aqui recebe ``booking_id=booking.id`` (FK
+        forte para ``core_bookings``), usado por ``checkin``/``iniciar``/
+        ``concluir`` para avançar o status do booking core diretamente,
+        sem depender da heurística por atributos compostos usada apenas
+        para dedupe (evitar processar o mesmo booking duas vezes).
+
         Args:
             hoje: Data de referência (hoje).
             inicio: Início do dia.
@@ -241,11 +248,15 @@ class QueueEntryService:
             existente = (
                 self.db.query(QueueEntry)
                 .filter(
-                    QueueEntry.cliente_id == booking.customer_id,
-                    QueueEntry.data == hoje,
-                    QueueEntry.tranca_id == tranca_id,
-                    QueueEntry.service_image_id == service_image_id,
-                    QueueEntry.horario_entrada == horario_entrada,
+                    (QueueEntry.booking_id == booking.id)
+                    | (
+                        (QueueEntry.booking_id.is_(None))
+                        & (QueueEntry.cliente_id == booking.customer_id)
+                        & (QueueEntry.data == hoje)
+                        & (QueueEntry.tranca_id == tranca_id)
+                        & (QueueEntry.service_image_id == service_image_id)
+                        & (QueueEntry.horario_entrada == horario_entrada)
+                    )
                 )
                 .first()
             )
@@ -255,6 +266,7 @@ class QueueEntryService:
             posicao = self._proxima_posicao(hoje)
             entry = QueueEntry(
                 agendamento_id=None,
+                booking_id=booking.id,
                 cliente_id=booking.customer_id,
                 tranca_id=tranca_id,
                 service_image_id=service_image_id,
@@ -329,9 +341,43 @@ class QueueEntryService:
         NotificationService(self.db).notificar_cliente_chamado(entry.id)
         return entry
 
+    def _avancar_booking_core(self, entry: QueueEntry, novo_status: ReservationStatus) -> None:
+        """
+        Avança o status do ``CoreBooking`` vinculado à entrada (R4-F5).
+
+        Fecha o gap operacional identificado no gate R4-F4: entradas
+        core-only (sem ``agendamento_id``, o caso mais comum desde
+        R4-F3/R4-F4) não avançavam o booking core durante o atendimento.
+        Atualização direta via ORM (sem ``BookingDomainService``, que hoje
+        só cobre create/approve/reject/cancel — não modela os estados
+        operacionais IN_QUEUE/CHECKED_IN/IN_SERVICE/COMPLETED).
+
+        Args:
+            entry: Entrada da fila operacional já com ``booking_id``
+                resolvido (chamada é um no-op silencioso se ``None``).
+            novo_status: Novo ``ReservationStatus`` para o ``CoreBooking``.
+
+        Returns:
+            None. A alteração é apenas adicionada à sessão — o commit é
+            responsabilidade do chamador.
+        """
+        if not entry.booking_id:
+            return
+        from app.modules.booking.domain.models import CoreBooking
+
+        booking = self.db.query(CoreBooking).filter(CoreBooking.id == entry.booking_id).first()
+        if booking:
+            booking.status = novo_status
+
     def checkin(self, entry_id: int) -> QueueEntry:
         """
         Cliente fez check-in.
+
+        R4-F5: se a entrada tiver ``booking_id`` (core-only ou core+legado),
+        avança ``CoreBooking.status`` para ``CHECKED_IN`` também. Entradas
+        legado puras (``agendamento_id`` preenchido, sem ``booking_id`` —
+        histórico anterior à migração) continuam atualizando apenas
+        ``Agendamento``.
 
         Args:
             entry_id: ID da entrada.
@@ -341,7 +387,9 @@ class QueueEntryService:
         """
         entry = self._obter(entry_id)
         entry.status = QueueEntryStatus.CHECKED_IN
-        if entry.agendamento_id:
+        if entry.booking_id:
+            self._avancar_booking_core(entry, ReservationStatus.CHECKED_IN)
+        elif entry.agendamento_id:
             ag = self.db.query(Agendamento).filter(Agendamento.id == entry.agendamento_id).first()
             if ag:
                 ag.status = ReservationStatus.CHECKED_IN
@@ -353,6 +401,11 @@ class QueueEntryService:
         """
         Inicia atendimento (IN_SERVICE).
 
+        R4-F5: se a entrada tiver ``booking_id``, avança
+        ``CoreBooking.status`` para ``IN_SERVICE`` também (mesma regra de
+        precedência de ``checkin`` — booking core primeiro, fallback para
+        ``Agendamento`` legado apenas quando não há ``booking_id``).
+
         Args:
             entry_id: ID da entrada.
 
@@ -361,7 +414,9 @@ class QueueEntryService:
         """
         entry = self._obter(entry_id)
         entry.status = QueueEntryStatus.IN_SERVICE
-        if entry.agendamento_id:
+        if entry.booking_id:
+            self._avancar_booking_core(entry, ReservationStatus.IN_SERVICE)
+        elif entry.agendamento_id:
             ag = self.db.query(Agendamento).filter(Agendamento.id == entry.agendamento_id).first()
             if ag:
                 ag.status = ReservationStatus.IN_SERVICE
@@ -376,6 +431,15 @@ class QueueEntryService:
         """
         Finaliza atendimento e dispara pagamento final.
 
+        R4-F5: para entradas com ``booking_id`` (core-only), avança
+        ``CoreBooking.status`` para ``COMPLETED`` diretamente — o
+        pagamento final de bookings core-only já é tratado por
+        ``PaymentReservationService``/``POST /admin/pagamentos/booking/...``
+        (não há ``Schedule``/``Payment`` legado associado a migrar aqui;
+        essa migração fica para R4-F6). Entradas legado puras (sem
+        ``booking_id``) continuam delegando a ``ReservationService.concluir``
+        (que também aciona ``Schedule`` e notificação legado).
+
         Args:
             entry_id: ID da entrada.
 
@@ -385,7 +449,9 @@ class QueueEntryService:
         entry = self._obter(entry_id)
         entry.status = QueueEntryStatus.COMPLETED
 
-        if entry.agendamento_id:
+        if entry.booking_id:
+            self._avancar_booking_core(entry, ReservationStatus.COMPLETED)
+        elif entry.agendamento_id:
             from app.services.reservation_service import ReservationService
             ReservationService(self.db).concluir(entry.agendamento_id)
 
@@ -421,13 +487,19 @@ class QueueEntryService:
         vem ``None`` e ``entry.agendamento_id`` é deixado ``None`` (sem
         levantar erro; não há mais projeção legado).
 
+        R4-F5: ``entry.booking_id`` é sempre preenchido com o ``id`` do
+        booking core criado, independente de haver projeção legado — é
+        esse vínculo que ``checkin``/``iniciar``/``concluir`` usam para
+        avançar ``CoreBooking.status`` durante o atendimento.
+
         Args:
             entry_id: ID da entrada.
             data_hora: Horário confirmado.
 
         Returns:
-            QueueEntry atualizado com ``agendamento_id`` da projeção legado
-            quando presente, ou ``None`` para booking core-only.
+            QueueEntry atualizado com ``booking_id`` do booking core criado
+            e ``agendamento_id`` da projeção legado quando presente
+            (``None`` para booking core-only).
 
         Raises:
             BusinessRuleError: Entrada sem modelo definido.
@@ -473,6 +545,7 @@ class QueueEntryService:
         # CreateBookingHandler já faz commit — recarrega entry e vincula
         entry = self._obter(entry_id)
         entry.agendamento_id = booking.legacy_agendamento_id
+        entry.booking_id = booking.id
         entry.status = QueueEntryStatus.WAITING
         self.db.commit()
         self.db.refresh(entry)

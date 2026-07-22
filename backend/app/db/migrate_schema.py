@@ -78,6 +78,7 @@ def migrate_schema() -> None:
         _migrar_coreflow_plugin(cursor)
         _migrar_dlq_replay_columns(cursor)
         _migrar_r2_f1_booking_sync_columns(cursor)
+        _migrar_r4_f5_booking_id_columns(cursor)
         conn.commit()
         print("✅ Schema migrado com sucesso!")
     except Exception as error:
@@ -538,6 +539,20 @@ def _migrar_r2_f1_booking_sync_columns(cursor: sqlite3.Cursor) -> None:
     )
     _add_column_if_missing(cursor, "core_bookings", "version", "INTEGER DEFAULT 1")
     print("✅ Colunas sync_status/version adicionadas em core_bookings (R2-F1)")
+
+
+def _migrar_r4_f5_booking_id_columns(cursor: sqlite3.Cursor) -> None:
+    """
+    Adiciona ``booking_id`` (FK lógica ``core_bookings.id``) em
+    ``queue_entries`` e ``fila`` (R4-F5 — linkage forte QueueEntry/Fila →
+    CoreBooking, espelhando ``alembic/versions/cf013_r4_f5_booking_id.py``
+    para o banco SQLite local gerenciado por este script legado).
+
+    Args:
+        cursor: Cursor SQLite ativo.
+    """
+    _add_column_if_missing(cursor, "queue_entries", "booking_id", "INTEGER")
+    _add_column_if_missing(cursor, "fila", "booking_id", "INTEGER")
 
 
 def _migrar_dlq_replay_columns(cursor: sqlite3.Cursor) -> None:

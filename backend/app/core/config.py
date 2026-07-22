@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # App
     PLATFORM_NAME: str = "CoreFlow Platform"
     APP_NAME: str = "CoreFlow API"
-    APP_VERSION: str = "2.7.0-r4-f4"
+    APP_VERSION: str = "2.8.0-r4-f5"
 
     # Feature flags — migração incremental (RFC-002) — default false (R1-F2)
     # R3-F2: booking.core.enabled default TRUE — path legado ACL/ReservationService
@@ -32,7 +32,13 @@ class Settings(BaseSettings):
     # disponibilidade/fila-do-dia passam a usar ``core_bookings`` como SoT;
     # ``AgendamentoService.criar_agendamento`` agora falha (ver docstring do
     # método). ``agendamentos`` permanece somente leitura para histórico até
-    # o DROP físico planejado em R4-F5.
+    # o DROP físico planejado em R4-F6.
+    # R4-F5 (linkage FK + fechamento do gap operacional): ``queue_entries``/
+    # ``fila`` ganham ``booking_id`` (FK nullable para ``core_bookings.id``);
+    # checkin/iniciar/concluir passam a avançar ``CoreBooking.status`` para
+    # entradas core-only. DROP físico de ``agendamentos``/``payments``/
+    # ``schedules`` continua fora de escopo — adiado para R4-F6, condicionado
+    # à migração de Payment/Schedule para o core.
     FEATURE_RESOURCE_ENGINE_ENABLED: bool = False
     FEATURE_AI_CORE_ENABLED: bool = False
     FEATURE_WORKFLOW_ENABLED: bool = False

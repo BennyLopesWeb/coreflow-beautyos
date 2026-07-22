@@ -90,8 +90,8 @@ def _create_booking(client, db, synced_catalog, cliente_exemplo, booking_headers
 
 
 def test_app_version_r4_f4():
-    """APP_VERSION marca a release R4-F4 (hard sunset)."""
-    assert settings.APP_VERSION == "2.7.0-r4-f4"
+    """APP_VERSION avançou de R4-F4 (pin exato relaxado em R4-F5+; ver test_app_version_r4_f5)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_criar_agendamento_sempre_falha(db, cliente_exemplo, tranca_exemplo, service_image_exemplo):

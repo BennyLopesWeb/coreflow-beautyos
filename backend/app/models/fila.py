@@ -46,6 +46,10 @@ class Fila(Base):
     posicao = Column(Integer, nullable=False)
     status = Column(SQLEnum(StatusFila), default=StatusFila.WAITING, nullable=False, index=True)
     agendamento_id = Column(Integer, ForeignKey("agendamentos.id"), nullable=True, unique=True)
+    # R4-F5: FK para core_bookings.id — vínculo forte criado por aprovar_fila,
+    # substituindo a dependência exclusiva de legacy_agendamento_id (sempre
+    # None para bookings core-only desde R4-F3/R4-F4).
+    booking_id = Column(Integer, ForeignKey("core_bookings.id"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
