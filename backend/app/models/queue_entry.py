@@ -39,6 +39,10 @@ class QueueEntry(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
     agendamento_id = Column(Integer, ForeignKey("agendamentos.id"), nullable=True, index=True)
+    # R4-F5: FK para core_bookings.id — vínculo forte com o booking core (em vez
+    # da heurística por atributos compostos usada até R4-F4). Nullable porque
+    # entradas urgentes (``entrar``) não têm booking até serem aprovadas.
+    booking_id = Column(Integer, ForeignKey("core_bookings.id"), nullable=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
     tranca_id = Column(Integer, ForeignKey("trancas.id"), nullable=True)
     service_image_id = Column(Integer, ForeignKey("service_images.id"), nullable=True)

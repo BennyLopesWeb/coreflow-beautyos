@@ -135,7 +135,10 @@ def aprovar_reserva_admin(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.post("/pagamentos/{agendamento_id}/confirmar-sinal")
+@router.post(
+    "/pagamentos/{agendamento_id}/confirmar-sinal",
+    deprecated=True,
+)
 def confirmar_sinal_admin(
     agendamento_id: int,
     db: Session = Depends(get_db),
@@ -144,9 +147,19 @@ def confirmar_sinal_admin(
     """
     Admin confirma recebimento do sinal (comprovante) → pending_approval.
 
-    Path legado (``agendamentos``) — mantido somente para reservas
-    históricas criadas antes de R3-F2/R4-F3. Para bookings core-only
-    (padrão desde R4-F4), use ``POST /admin/pagamentos/booking/{booking_id}/confirmar-sinal``.
+    .. deprecated:: 2.8.0-r4-f5
+        **DEPRECATED (R4-F5 — admin de pagamentos ainda dual-path, gap
+        residual do gate R4-F4).** Path legado (``agendamentos``/
+        ``payments``) — mantido **somente** para reservas históricas
+        criadas antes de R3-F2/R4-F3 (nenhum caminho de escrita atual gera
+        ``Agendamento`` novo, ver ``AgendamentoService.criar_agendamento``).
+        Use ``POST /admin/pagamentos/booking/{booking_id}/confirmar-sinal``
+        para todo booking novo (core-only desde R4-F3). Marcado
+        ``deprecated=True`` no OpenAPI nesta release; a reescrita completa
+        do admin de pagamentos para booking-first (removendo esta rota)
+        fica para **R4-F6**, condicionada à migração de ``Payment``/
+        ``Schedule`` legado para o core (pré-requisito para o DROP físico
+        de ``agendamentos``/``payments``/``schedules``).
     """
     try:
         ag = AgendamentoService(db).confirmar_sinal(agendamento_id)

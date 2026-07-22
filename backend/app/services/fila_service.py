@@ -85,6 +85,7 @@ class FilaService:
             mesmo_dia=fila.mesmo_dia,
             status=fila.status,
             agendamento_id=fila.agendamento_id,
+            booking_id=fila.booking_id,
             created_at=fila.created_at,
         )
 
@@ -204,18 +205,23 @@ class FilaService:
 
         Resolve catalog/offering via ACL e delega a ``CreateBookingHandler``
         (mesmo padrão de ``QueueEntryService.aprovar_com_horario`` desde
-        R4-F3). Não chama mais ``AgendamentoService.criar_agendamento`` —
+        R4-F3).         Não chama mais ``AgendamentoService.criar_agendamento`` —
         nenhuma linha nova é inserida em ``agendamentos``; o booking criado
         é sempre core-only (``legacy_agendamento_id=None``) e
         ``fila.agendamento_id`` é deixado ``None``.
+
+        R4-F5: ``fila.booking_id`` é sempre preenchido com o ``id`` do
+        booking core criado (FK forte para ``core_bookings``, substituindo
+        a dependência de ``legacy_agendamento_id``).
 
         Args:
             fila_id: ID do item na fila.
             body: Horário confirmado para a reserva.
 
         Returns:
-            Fila aprovada. ``agendamento_id`` permanece ``None`` para
-            bookings core-only (comportamento esperado desde R4-F3/R4-F4).
+            Fila aprovada com ``booking_id`` do booking core criado.
+            ``agendamento_id`` permanece ``None`` para bookings core-only
+            (comportamento esperado desde R4-F3/R4-F4).
 
         Raises:
             NotFoundError: Item da fila não encontrado.
@@ -262,6 +268,7 @@ class FilaService:
         fila = self.db.query(Fila).filter(Fila.id == fila_id).first()
         fila.status = StatusFila.APPROVED
         fila.agendamento_id = booking.legacy_agendamento_id
+        fila.booking_id = booking.id
         self.db.commit()
         self.db.refresh(fila)
 

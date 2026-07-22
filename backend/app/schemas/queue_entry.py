@@ -20,6 +20,7 @@ class QueueEntryResponse(BaseModel):
     """Item da fila operacional."""
     id: int
     agendamento_id: Optional[int] = None
+    booking_id: Optional[int] = None
     cliente_id: int
     cliente_nome: str
     tranca_nome: Optional[str] = None
