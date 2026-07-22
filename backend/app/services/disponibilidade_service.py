@@ -165,26 +165,6 @@ class DisponibilidadeService:
         except ValueError as e:
             raise BusinessRuleError(str(e))
 
-    def _duracao_agendamento(self, agendamento: Agendamento) -> int:
-        """
-        Obtém duração de um agendamento existente.
-
-        Args:
-            agendamento: Agendamento persistido.
-
-        Returns:
-            Duração em minutos.
-        """
-        tranca = self.db.query(Tranca).filter(Tranca.id == agendamento.tranca_id).first()
-        if not tranca:
-            return DURACAO_PADRAO_MIN
-        if agendamento.service_image_id:
-            try:
-                return self._duracao_minutos(tranca, agendamento.service_image_id)
-            except BusinessRuleError:
-                pass
-        return DURACAO_PADRAO_MIN
-
     def _duracao_core_booking(self, booking) -> int:
         """
         Obtém duração de um ``CoreBooking`` existente via ``core_offerings``.
@@ -204,27 +184,27 @@ class DisponibilidadeService:
         """
         Calcula conjunto de slots de 30 min ocupados no intervalo (capacidade única).
 
-        R4-F6 (cutover de disponibilidade core-only / ADR-024 / RFC-003 M10):
-        ``core_bookings`` é a **única** fonte de ocupação para bookings
-        novos — nenhum caminho de escrita de produção insere linha em
-        ``agendamentos`` desde R3-F2/R4-F3 (ver
+        R4-F7 (cutover de disponibilidade core-only completo / ADR-024 /
+        RFC-003 M11): ``core_bookings`` é a **única** fonte de ocupação —
+        a leitura de compatibilidade sobre ``Agendamento`` legado (mantida
+        desde R4-F4/R4-F6 para reservas históricas ativas) foi removida
+        nesta release. Nenhum caminho de escrita de produção insere linha
+        em ``agendamentos`` desde R3-F2/R4-F3 (ver
         ``AgendamentoService.criar_agendamento``, sempre
-        ``BusinessRuleError``). A consulta a ``Agendamento`` legado é
-        mantida **apenas** como leitura de compatibilidade para reservas
-        históricas (criadas antes da migração) que ainda estejam com
-        status ativo — não é mais primária desde R4-F4, e o DROP físico
-        dessa tabela (e desta consulta) fica para **R4-F7**, condicionado à
-        confirmação de que não há mais reservas históricas ativas.
+        ``BusinessRuleError``); reservas legado históricas que ainda
+        estejam com status ativo (criadas antes da migração para
+        ``core_bookings``) não bloqueiam mais slots aqui — débito residual
+        aceito e documentado no gate R4-F7 (tabela ``agendamentos``
+        permanece somente leitura para relatórios/sync, sem DROP físico
+        até R4-F8).
 
         Args:
             data_inicio: Início do expediente.
             data_fim: Fim do expediente.
 
         Returns:
-            Set de datetimes (início de cada slot de 30 min ocupado), união
-            de ``core_bookings`` ativos (fonte primária/autoritativa) e
-            ``agendamentos`` históricos ativos (legado, somente leitura,
-            R4-F7 candidato a remoção).
+            Set de datetimes (início de cada slot de 30 min ocupado) —
+            exclusivamente a partir de ``core_bookings`` ativos.
         """
         from app.modules.booking.domain.models import CoreBooking
 
@@ -239,18 +219,6 @@ class DisponibilidadeService:
         for booking in core_bookings:
             duracao = self._duracao_core_booking(booking)
             inicio = booking.scheduled_at.replace(second=0, microsecond=0)
-            for i in range(0, duracao, 30):
-                ocupados.add(inicio + timedelta(minutes=i))
-
-        agendamentos = self.db.query(Agendamento).filter(
-            Agendamento.data_hora >= data_inicio,
-            Agendamento.data_hora < data_fim,
-            Agendamento.status.in_(STATUS_OCUPAM_VAGA),
-            Agendamento.deleted_at.is_(None),
-        ).all()
-        for ag in agendamentos:
-            duracao = self._duracao_agendamento(ag)
-            inicio = ag.data_hora.replace(second=0, microsecond=0)
             for i in range(0, duracao, 30):
                 ocupados.add(inicio + timedelta(minutes=i))
 

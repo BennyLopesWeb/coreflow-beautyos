@@ -159,10 +159,22 @@ def test_disponibilidade_marca_slot_ocupado_por_core_booking(
     assert ocupado.disponivel is False
 
 
-def test_disponibilidade_ainda_ve_agendamento_historico(
+def test_disponibilidade_nao_ve_mais_agendamento_historico(
     db, cliente_exemplo, tranca_exemplo, service_image_exemplo
 ):
-    """DisponibilidadeService continua marcando slot ocupado por Agendamento historico (leitura)."""
+    """
+    DisponibilidadeService não bloqueia mais slot por Agendamento histórico
+    (superado — R4-F7 removeu a leitura de compatibilidade sobre
+    ``agendamentos`` em ``_slots_ocupados``; ``core_bookings`` é a única
+    fonte de ocupação desde então).
+
+    Documentava, até R4-F6, que a leitura de compatibilidade sobre
+    ``Agendamento`` legado ainda bloqueava slots (candidata a remoção — ver
+    docstring anterior de ``_slots_ocupados``); R4-F7 executou essa
+    remoção (débito residual aceito e documentado em
+    ``docs/sprints/R4-F7.md`` — reservas legado históricas ativas não
+    bloqueiam mais a agenda, apenas ``core_bookings``).
+    """
     from decimal import Decimal
 
     from app.models.agendamento import ReservationStatus, StatusPagamento
@@ -197,8 +209,8 @@ def test_disponibilidade_ainda_ve_agendamento_historico(
         tranca_exemplo.id,
         service_image_exemplo.id,
     )
-    ocupado = next(h for h in horarios_depois if h.horario == slot)
-    assert ocupado.disponivel is False
+    ainda_disponivel = next(h for h in horarios_depois if h.horario == slot)
+    assert ainda_disponivel.disponivel is True
 
 
 def test_fila_aprovar_nao_cria_agendamento(db, synced_catalog, cliente_exemplo):

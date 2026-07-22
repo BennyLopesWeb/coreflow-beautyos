@@ -29,11 +29,16 @@ class NotificationLog(Base):
     """
     Model de Log de Notificação
     Armazena histórico de notificações enviadas
+
+    R4-F7: ``agendamento_id`` deixou de ter FK física para
+    ``agendamentos.id`` (permanece ``Integer`` simples, opcional, sem
+    constraint) — mantido apenas para leitura histórica.
     """
     __tablename__ = "notification_logs"
     
     id = Column(Integer, primary_key=True, index=True)
-    agendamento_id = Column(Integer, ForeignKey("agendamentos.id"), nullable=True, index=True)
+    # R4-F7: FK física para agendamentos.id removida — Integer simples.
+    agendamento_id = Column(Integer, nullable=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True, index=True)
     
     # Informações da notificação
@@ -54,6 +59,5 @@ class NotificationLog(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relacionamentos
-    agendamento = relationship("Agendamento", backref="notifications")
     cliente = relationship("Cliente", backref="notifications")
 

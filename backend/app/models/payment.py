@@ -3,7 +3,6 @@ Model Payment (ReservationPayment)
 Pagamentos persistidos: sinal e pagamento final.
 """
 from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey, Enum as SQLEnum
-from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 from app.db.base import Base
@@ -46,11 +45,19 @@ class Payment(Base):
     preenchido apenas para pagamentos históricos/legado. Um registro deve
     ter ao menos um dos dois preenchidos (não validado a nível de schema —
     responsabilidade de ``PaymentReservationService``).
+
+    R4-F7 (decouple físico das FKs restantes / RFC-003 M11): a FK física
+    para ``agendamentos.id`` foi removida (``agendamento_id`` permanece
+    ``Integer`` simples, sem constraint) — mesma mudança aplicada em
+    ``Schedule``/``SatisfactionSurvey``/``Fila``/``QueueEntry``/
+    ``Financeiro``/``NotificationLog`` nesta release.
     """
     __tablename__ = "payments"
 
     id = Column(Integer, primary_key=True, index=True)
-    agendamento_id = Column(Integer, ForeignKey("agendamentos.id"), nullable=True, index=True)
+    # R4-F7: FK física para agendamentos.id removida — Integer simples,
+    # mantido apenas para leitura histórica.
+    agendamento_id = Column(Integer, nullable=True, index=True)
     # R4-F6: FK para core_bookings.id — vínculo autoritativo para pagamentos
     # de bookings core-only (sem Agendamento associado). Nullable para
     # preservar compatibilidade com pagamentos históricos ligados apenas a
@@ -65,5 +72,3 @@ class Payment(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    agendamento = relationship("Agendamento", backref="payments")

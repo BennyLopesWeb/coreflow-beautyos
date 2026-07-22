@@ -106,8 +106,8 @@ def _create_booking(client, db, synced_catalog, cliente_exemplo, booking_headers
 
 
 def test_app_version_r4_f6():
-    """APP_VERSION marca a release R4-F6 (bridge Payment→booking_id)."""
-    assert settings.APP_VERSION == "2.9.0-r4-f6"
+    """APP_VERSION avançou de R4-F6 (pin exato relaxado em R4-F7+; ver test_app_version_r4_f7)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_payment_aceita_booking_id_sem_agendamento_id(db, default_company, cliente_exemplo, synced_catalog):

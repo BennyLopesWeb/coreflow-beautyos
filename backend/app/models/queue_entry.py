@@ -33,12 +33,19 @@ class QueueEntry(Base):
 
     Diferente de Fila (waitlist pré-reserva): aqui o cliente já tem reserva aprovada
     ou entrou para atendimento urgente no mesmo dia.
+
+    R4-F7: ``agendamento_id`` deixou de ter FK física para
+    ``agendamentos.id`` (permanece ``Integer`` simples, sem constraint) —
+    ``booking_id`` (FK ``core_bookings.id``, desde R4-F5) é o vínculo
+    autoritativo.
     """
     __tablename__ = "queue_entries"
 
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
-    agendamento_id = Column(Integer, ForeignKey("agendamentos.id"), nullable=True, index=True)
+    # R4-F7: FK física para agendamentos.id removida — Integer simples,
+    # mantido apenas para leitura histórica.
+    agendamento_id = Column(Integer, nullable=True, index=True)
     # R4-F5: FK para core_bookings.id — vínculo forte com o booking core (em vez
     # da heurística por atributos compostos usada até R4-F4). Nullable porque
     # entradas urgentes (``entrar``) não têm booking até serem aprovadas.
@@ -60,7 +67,6 @@ class QueueEntry(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    agendamento = relationship("Agendamento", backref="queue_entry", uselist=False)
     cliente = relationship("Cliente", backref="queue_entries")
     tranca = relationship("Tranca", backref="queue_entries")
     service_image = relationship("ServiceImage", backref="queue_entries")

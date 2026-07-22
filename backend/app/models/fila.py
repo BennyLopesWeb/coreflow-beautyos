@@ -31,6 +31,11 @@ class Fila(Base):
 
     Cliente entra sem horário confirmado; a profissional aprova manualmente
     e, ao aprovar, cria-se a reserva efetiva vinculada.
+
+    R4-F7: ``agendamento_id`` deixou de ter FK física para
+    ``agendamentos.id`` (permanece ``Integer`` simples, sem constraint) —
+    ``booking_id`` (FK ``core_bookings.id``, desde R4-F5) é o vínculo
+    autoritativo.
     """
     __tablename__ = "fila"
 
@@ -45,7 +50,10 @@ class Fila(Base):
     mesmo_dia = Column(Boolean, default=False, nullable=False)
     posicao = Column(Integer, nullable=False)
     status = Column(SQLEnum(StatusFila), default=StatusFila.WAITING, nullable=False, index=True)
-    agendamento_id = Column(Integer, ForeignKey("agendamentos.id"), nullable=True, unique=True)
+    # R4-F7: FK física para agendamentos.id removida — Integer simples,
+    # mantido apenas para leitura histórica. unique=True preservado (nulls
+    # múltiplos permitidos).
+    agendamento_id = Column(Integer, nullable=True, unique=True)
     # R4-F5: FK para core_bookings.id — vínculo forte criado por aprovar_fila,
     # substituindo a dependência exclusiva de legacy_agendamento_id (sempre
     # None para bookings core-only desde R4-F3/R4-F4).
@@ -56,4 +64,3 @@ class Fila(Base):
     cliente = relationship("Cliente", backref="filas")
     tranca = relationship("Tranca", backref="filas")
     service_image = relationship("ServiceImage", backref="filas")
-    agendamento = relationship("Agendamento", backref="fila_espera", uselist=False)
