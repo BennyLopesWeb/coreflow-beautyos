@@ -233,6 +233,49 @@ def confirmar_sinal_admin_booking(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+@router.post("/pagamentos/booking/{booking_id}/confirmar-final")
+def confirmar_final_admin_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    """
+    Admin confirma pagamento final (remaining) em ``core_bookings`` (R4-F10).
+
+    Path core-only que substitui ``POST /payments/final`` (legado, 410).
+    Exige sinal já confirmado (``deposit_paid``); atualiza
+    ``payment_status=PAID``, cria ``Payment`` FINAL_PAYMENT e registra
+    entrada ``Financeiro``.
+
+    Args:
+        booking_id: ID ``core_bookings.id``.
+        db: Sessão SQLAlchemy.
+
+    Returns:
+        Dict com ``id``, ``status``, ``payment_status`` e ``deposit_paid``.
+    """
+    from app.services.payment_reservation_service import PaymentReservationService
+
+    try:
+        booking = PaymentReservationService(db).confirmar_pagamento_final_por_booking(
+            booking_id
+        )
+        pay_val = (
+            booking.payment_status.value
+            if hasattr(booking.payment_status, "value")
+            else booking.payment_status
+        )
+        return {
+            "id": booking.id,
+            "status": booking.status.value,
+            "payment_status": pay_val,
+            "deposit_paid": booking.deposit_paid,
+        }
+    except Exception as e:
+        from fastapi import HTTPException, status
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
 @router.get("/agenda-dia/{data_ref}", response_model=AgendaDiaDetalheResponse)
 def visao_agenda_dia(
     data_ref: date,

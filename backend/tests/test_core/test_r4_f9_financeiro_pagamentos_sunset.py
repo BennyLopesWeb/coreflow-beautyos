@@ -20,8 +20,8 @@ from app.services.payment_reservation_service import PaymentReservationService
 
 
 def test_app_version_r4_f9():
-    """APP_VERSION marca a release R4-F9 (Financeiro + sunset pagamentos)."""
-    assert settings.APP_VERSION == "2.12.0-r4-f9"
+    """APP_VERSION avançou de R4-F9 (pin exato relaxado em R4-F10+; ver test_app_version_r4_f10)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_match_legacy_gone_pagamentos():

@@ -16,6 +16,15 @@
 
 ---
 
+## 2026-07-22 — R4-F10 Pagamento final core-only
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F10 (RFC-003) | `confirmar_pagamento_final_por_booking` + admin `POST /admin/pagamentos/booking/{id}/confirmar-final`; Financeiro no remaining (1ª confirmação); 410 em `/payments/deposit*` e `/payments/final`; `2.13.0-r4-f10` |
+| **Published** | Release + sprint + gate | [2.13.0-r4-f10.md](releases/2.13.0-r4-f10.md) · [R4-F10.md](sprints/R4-F10.md) · [R4-F10-Gate.md](reviews/R4-F10-Gate.md) |
+
+---
+
 ## 2026-07-22 — R4-F9 Financeiro core-only + sunset pagamentos legado
 
 | Evento | Artefato | Notas |
