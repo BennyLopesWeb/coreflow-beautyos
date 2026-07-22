@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # App
     PLATFORM_NAME: str = "CoreFlow Platform"
     APP_NAME: str = "CoreFlow API"
-    APP_VERSION: str = "2.8.0-r4-f5"
+    APP_VERSION: str = "2.9.0-r4-f6"
 
     # Feature flags — migração incremental (RFC-002) — default false (R1-F2)
     # R3-F2: booking.core.enabled default TRUE — path legado ACL/ReservationService
@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     # entradas core-only. DROP físico de ``agendamentos``/``payments``/
     # ``schedules`` continua fora de escopo — adiado para R4-F6, condicionado
     # à migração de Payment/Schedule para o core.
+    # R4-F6 (bridge Payment→booking_id + cutover disponibilidade core-only):
+    # ``payments.agendamento_id`` passa a ser opcional e ``payments.booking_id``
+    # (FK nullable ``core_bookings.id``) é adicionado; admin de pagamentos
+    # legado (``/admin/pagamentos/{agendamento_id}/confirmar-sinal``) retorna
+    # ``410 Gone``; ``aceitar_reagendamento`` deixa de escrever ``Schedule``.
+    # DROP físico de ``agendamentos``/``payments``/``schedules`` (e FKs
+    # associadas) continua fora de escopo — adiado explicitamente para
+    # **R4-F7** (Schedule/SatisfactionSurvey ainda referenciam agendamentos).
     FEATURE_RESOURCE_ENGINE_ENABLED: bool = False
     FEATURE_AI_CORE_ENABLED: bool = False
     FEATURE_WORKFLOW_ENABLED: bool = False

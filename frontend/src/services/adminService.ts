@@ -74,10 +74,31 @@ export const adminService = {
   },
 
   /**
-   * Confirma recebimento do sinal (comprovante) → pending_approval.
+   * @deprecated Desde 2.9.0-r4-f6 (ADR-024 sunset). A rota legado
+   * `POST /admin/pagamentos/{agendamentoId}/confirmar-sinal` foi removida
+   * e agora responde sempre `410 Gone` — use `confirmarSinalBooking` para
+   * bookings core-only (criados via `POST /v1/bookings` desde R3-F2/R4-F3).
+   * Mantido apenas por compatibilidade de referência; chamadas a partir de
+   * 2.9.0-r4-f6 sempre lançam erro HTTP 410.
    */
   confirmarSinal: async (agendamentoId: number) => {
     const response = await api.post(`/admin/pagamentos/${agendamentoId}/confirmar-sinal`);
+    return response.data;
+  },
+
+  /**
+   * Confirma recebimento do sinal diretamente em um booking core (R4-F4+).
+   *
+   * Path primário — e único desde 2.9.0-r4-f6 — para confirmação de sinal
+   * pelo admin. Atualiza `CoreBooking.deposit_paid` diretamente, sem
+   * depender de `Agendamento` legado.
+   *
+   * @param {number} bookingId - ID `core_bookings.id`.
+   * @returns {Promise<{id: number; status: string; deposit_paid: boolean}>}
+   *   Booking atualizado.
+   */
+  confirmarSinalBooking: async (bookingId: number) => {
+    const response = await api.post(`/admin/pagamentos/booking/${bookingId}/confirmar-sinal`);
     return response.data;
   },
 

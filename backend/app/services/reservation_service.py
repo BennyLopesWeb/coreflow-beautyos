@@ -8,7 +8,12 @@ foram removidos — sempre levantam ``BusinessRuleError`` apontando para
 ``/v1/bookings``. As assinaturas e DocStrings são mantidas por
 compatibilidade de referência/import. Os demais métodos (listagem/leitura,
 ``confirmar_deposito``, ``concluir``, reagendamento e pagamentos) continuam
-ativos e são usados pelo path core via dual-write/projeção.
+ativos para dados legado históricos.
+
+R4-F6 (ADR-024 sunset / RFC-003 M10): ``aceitar_reagendamento`` deixou de
+criar ``Schedule`` — bookings novos são sempre core-only, sem entidade
+``Schedule`` associada; o método permanece só para transição de status de
+``Agendamento`` histórico (sem router HTTP ativo).
 """
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta
@@ -347,6 +352,21 @@ class ReservationService:
         """
         Cliente aceita horário sugerido → APPROVED.
 
+        R4-F6 (parada de escritas ``Schedule`` em paths ativos / ADR-024
+        sunset): não cria mais ``Schedule`` — bookings novos são sempre
+        core-only (``CoreBooking``, sem ``Schedule`` associado) desde
+        R3-F2, e ``DisponibilidadeService``/``core_bookings`` é quem
+        valida conflito de horário (fonte primária desde R4-F4). O model
+        ``Schedule`` é mantido (sem DROP — ver ``docs/sprints/R4-F6.md``,
+        DROP físico adiado para R4-F7), só deixa de receber escrita nova
+        por este caminho. Método permanece ativo apenas para transição de
+        status de ``Agendamento`` legado histórico ainda em
+        ``WAITING_TIME_CONFIRMATION`` (sem router HTTP associado — ver
+        ``ScheduleService.criar_para_reserva`` para o path equivalente
+        removido; reagendamento core-only ainda não tem endpoint
+        ``/v1/bookings`` dedicado, débito residual documentado no gate
+        R4-F6).
+
         Args:
             reservation_id: ID da reserva.
 
@@ -364,7 +384,11 @@ class ReservationService:
         ag.status = ReservationStatus.APPROVED
         self.db.commit()
 
-        self.schedule.criar_para_reserva(ag)
+        logger.info(
+            "aceitar_reagendamento id=%s não cria Schedule (R4-F6 — parada de "
+            "escrita legado); disponibilidade validada via core_bookings/v1 bookings",
+            reservation_id,
+        )
         return self.obter(reservation_id)
 
     def cancelar(self, reservation_id: int, motivo: Optional[str] = None) -> Agendamento:

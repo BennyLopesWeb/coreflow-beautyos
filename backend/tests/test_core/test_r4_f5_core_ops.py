@@ -66,8 +66,8 @@ def _slot_for_day(db, catalog, offering, days_ahead: int) -> datetime:
 
 
 def test_app_version_r4_f5():
-    """APP_VERSION marca a release R4-F5 (FK booking_id + gap operacional)."""
-    assert settings.APP_VERSION == "2.8.0-r4-f5"
+    """APP_VERSION avançou de R4-F5 (pin exato relaxado em R4-F6+; ver test_app_version_r4_f6)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_aprovar_com_horario_seta_booking_id(db, synced_catalog, cliente_exemplo):

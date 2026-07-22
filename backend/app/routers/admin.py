@@ -141,32 +141,55 @@ def aprovar_reserva_admin(
 )
 def confirmar_sinal_admin(
     agendamento_id: int,
-    db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ):
     """
-    Admin confirma recebimento do sinal (comprovante) → pending_approval.
+    **REMOVIDO (R4-F6 — retorna 410 Gone).**
 
-    .. deprecated:: 2.8.0-r4-f5
-        **DEPRECATED (R4-F5 — admin de pagamentos ainda dual-path, gap
-        residual do gate R4-F4).** Path legado (``agendamentos``/
-        ``payments``) — mantido **somente** para reservas históricas
-        criadas antes de R3-F2/R4-F3 (nenhum caminho de escrita atual gera
-        ``Agendamento`` novo, ver ``AgendamentoService.criar_agendamento``).
-        Use ``POST /admin/pagamentos/booking/{booking_id}/confirmar-sinal``
-        para todo booking novo (core-only desde R4-F3). Marcado
-        ``deprecated=True`` no OpenAPI nesta release; a reescrita completa
-        do admin de pagamentos para booking-first (removendo esta rota)
-        fica para **R4-F6**, condicionada à migração de ``Payment``/
-        ``Schedule`` legado para o core (pré-requisito para o DROP físico
-        de ``agendamentos``/``payments``/``schedules``).
+    .. deprecated:: 2.9.0-r4-f6
+        Path legado (``agendamentos``/``payments``) marcado ``deprecated``
+        em R4-F5 e **removido nesta release** (ADR-024 sunset / RFC-003
+        M10) — retorna sempre ``410 Gone`` com ``successor`` apontando
+        para o path booking-first, mesmo padrão de
+        ``app.core.legacy_gone.LegacyGoneMiddleware`` (R4-F1). A rota
+        permanece registrada no OpenAPI (marcada ``deprecated=True``) só
+        para discoverability — nenhuma reserva/pagamento é lido ou
+        escrito. Use
+        ``POST /admin/pagamentos/booking/{booking_id}/confirmar-sinal``
+        (path primário desde R4-F4, único desde esta release).
+
+    Args:
+        agendamento_id: ID legado (não usado — rota sempre retorna 410).
+        _: Admin autenticado (mantém exigência de auth mesmo para a rota
+            removida).
+
+    Returns:
+        ``JSONResponse`` 410 Gone.
     """
-    try:
-        ag = AgendamentoService(db).confirmar_sinal(agendamento_id)
-        return {"id": ag.id, "status": ag.status.value, "sinal_pago": ag.sinal_pago}
-    except Exception as e:
-        from fastapi import HTTPException, status
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    from fastapi.responses import JSONResponse
+
+    successor = "/admin/pagamentos/booking/{booking_id}/confirmar-sinal"
+    detail = (
+        "Rota legado removida (R4-F6) — use "
+        f"POST {successor}"
+    )
+    return JSONResponse(
+        status_code=410,
+        content={
+            "type": "about:blank",
+            "title": "Gone",
+            "status": 410,
+            "detail": detail,
+            "message": detail,
+            "successor": successor,
+            "enforcement": "gone",
+        },
+        headers={
+            "Deprecation": "true",
+            "Link": f'<{successor}>; rel="successor-version"',
+            "X-CoreFlow-Enforcement": "gone",
+        },
+    )
 
 
 @router.post("/pagamentos/booking/{booking_id}/confirmar-sinal")
