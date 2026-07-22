@@ -37,11 +37,25 @@ class PaymentType(str, enum.Enum):
 class Payment(Base):
     """
     Registro persistido de pagamento vinculado à reserva.
+
+    R4-F6 (bridge Payment→booking_id / ADR-024 sunset): ``agendamento_id``
+    deixou de ser obrigatório — pagamentos de bookings core-only (criados
+    via ``POST /v1/bookings`` desde R3-F2/R4-F3) não têm ``Agendamento``
+    associado. ``booking_id`` (FK nullable ``core_bookings.id``) é o novo
+    vínculo autoritativo nesses casos; ``agendamento_id`` permanece
+    preenchido apenas para pagamentos históricos/legado. Um registro deve
+    ter ao menos um dos dois preenchidos (não validado a nível de schema —
+    responsabilidade de ``PaymentReservationService``).
     """
     __tablename__ = "payments"
 
     id = Column(Integer, primary_key=True, index=True)
-    agendamento_id = Column(Integer, ForeignKey("agendamentos.id"), nullable=False, index=True)
+    agendamento_id = Column(Integer, ForeignKey("agendamentos.id"), nullable=True, index=True)
+    # R4-F6: FK para core_bookings.id — vínculo autoritativo para pagamentos
+    # de bookings core-only (sem Agendamento associado). Nullable para
+    # preservar compatibilidade com pagamentos históricos ligados apenas a
+    # agendamento_id.
+    booking_id = Column(Integer, ForeignKey("core_bookings.id"), nullable=True, index=True)
     tipo = Column(SQLEnum(PaymentType), nullable=False)
     valor = Column(Numeric(10, 2), nullable=False)
     status = Column(SQLEnum(PaymentStatus), default=PaymentStatus.PENDING, nullable=False)

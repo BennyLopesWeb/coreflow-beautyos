@@ -66,6 +66,16 @@ class ScheduleService:
         """
         Cria schedule ao aprovar reserva.
 
+        .. deprecated:: 2.9.0-r4-f6
+            Sem call-site ativo em produção desde R4-F6 (ADR-024 sunset) —
+            ``ReservationService.aceitar_reagendamento`` (único caminho de
+            escrita restante) parou de chamar este método; bookings novos
+            são sempre core-only (``CoreBooking``), sem ``Schedule``
+            associado. Método mantido (não removido — model ``Schedule``
+            preservado, DROP físico adiado para R4-F7) apenas por
+            compatibilidade de referência/import e para dados legado que
+            ainda dependam dele fora do fluxo HTTP padrão.
+
         Args:
             ag: Reserva aprovada.
 

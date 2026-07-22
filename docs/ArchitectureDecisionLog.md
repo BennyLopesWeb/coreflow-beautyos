@@ -16,6 +16,29 @@
 
 ---
 
+## 2026-07-21 — R4-F6 Bridge Payment→booking_id + disponibilidade core-only + 410 admin legado
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F6 M10 (RFC-003) | `payments.agendamento_id` nullable + `payments.booking_id` (migration `cf014_r4_f6_payment_booking_id`); `PaymentReservationService.confirmar_deposito_por_booking` cria/atualiza `Payment` ponte; `DisponibilidadeService.expirar_reservas_pendentes` expira `CoreBooking` pendente via `CancelBookingHandler`; `ReservationService.aceitar_reagendamento` deixa de escrever `Schedule`; `2.9.0-r4-f6` |
+| **Removed (API)** | `POST /admin/pagamentos/{agendamento_id}/confirmar-sinal` | Retorna `410 Gone` (era `deprecated=True` desde R4-F5) — `POST /admin/pagamentos/booking/{booking_id}/confirmar-sinal` é o path único |
+| **Deprecated (method)** | `ScheduleService.criar_para_reserva` | Sem call-site ativo em produção — model `Schedule` mantido (sem DROP) |
+| **Amended** | ADR-024 sunset table | DROP físico de `agendamentos`/`payments`/`schedules` movido explicitamente para **R4-F7** (bloqueado por `Schedule`/`SatisfactionSurvey` ainda referenciarem `agendamentos`) |
+| **Published** | Release + sprint + gate | [2.9.0-r4-f6.md](releases/2.9.0-r4-f6.md) · [R4-F6.md](sprints/R4-F6.md) · [R4-F6-Gate.md](reviews/R4-F6-Gate.md) |
+
+---
+
+## 2026-07-21 — R4-F5 FK booking_id + fechamento do gap operacional
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F5 M9 (RFC-003, novo) | `queue_entries`/`fila` ganham `booking_id` (FK nullable indexada, migration `cf013_r4_f5_booking_id`); `checkin`/`iniciar`/`concluir` avançam `CoreBooking.status` para entradas core-only; `FilaService.aprovar_fila` seta `fila.booking_id`; `2.8.0-r4-f5` |
+| **Deprecated (API)** | `POST /admin/pagamentos/{agendamento_id}/confirmar-sinal` | Marcado `deprecated=True` no OpenAPI (removido — 410 — em R4-F6) |
+| **Amended** | ADR-024 sunset table | DROP físico adiado explicitamente para R4-F6, condicionado à migração de `Payment`/`Schedule` legado para o core |
+| **Published** | Release + sprint + gate | [2.8.0-r4-f5.md](releases/2.8.0-r4-f5.md) · [R4-F5.md](sprints/R4-F5.md) · [R4-F5-Gate.md](reviews/R4-F5-Gate.md) |
+
+---
+
 ## 2026-07-16 — R3-F2 Remove ReservationService booking path delegation
 
 | Evento | Artefato | Notas |

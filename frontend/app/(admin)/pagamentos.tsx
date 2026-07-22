@@ -7,6 +7,7 @@ import {
   RefreshControl,
   Linking,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { adminService } from '../../src/services/adminService';
@@ -95,8 +96,21 @@ export default function AdminPagamentosScreen() {
               <TouchableOpacity
                 style={styles.btnConfirmar}
                 onPress={async () => {
-                  await adminService.confirmarSinal(item.agendamento_id);
-                  loadData();
+                  try {
+                    // R4-F6: rota legado (agendamento_id) removida — responde 410.
+                    // Reservas listadas aqui são sempre pré-R3-F2 (legado histórico);
+                    // bookings novos (core-only) não aparecem nesta tela (débito
+                    // residual — migração da listagem para booking-first fica para
+                    // R4-F7, ver docs/sprints/R4-F6.md).
+                    await adminService.confirmarSinal(item.agendamento_id);
+                    loadData();
+                  } catch (error) {
+                    Alert.alert(
+                      'Confirmação indisponível',
+                      'A confirmação de sinal para reservas legado foi descontinuada (R4-F6). ' +
+                        'Reservas novas usam o fluxo booking-first.',
+                    );
+                  }
                 }}
               >
                 <Text style={styles.btnConfirmarText}>Confirmar sinal recebido</Text>

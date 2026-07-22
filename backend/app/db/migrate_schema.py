@@ -79,6 +79,7 @@ def migrate_schema() -> None:
         _migrar_dlq_replay_columns(cursor)
         _migrar_r2_f1_booking_sync_columns(cursor)
         _migrar_r4_f5_booking_id_columns(cursor)
+        _migrar_r4_f6_payment_booking_id(cursor)
         conn.commit()
         print("✅ Schema migrado com sucesso!")
     except Exception as error:
@@ -553,6 +554,85 @@ def _migrar_r4_f5_booking_id_columns(cursor: sqlite3.Cursor) -> None:
     """
     _add_column_if_missing(cursor, "queue_entries", "booking_id", "INTEGER")
     _add_column_if_missing(cursor, "fila", "booking_id", "INTEGER")
+
+
+def _migrar_r4_f6_payment_booking_id(cursor: sqlite3.Cursor) -> None:
+    """
+    Adiciona ``booking_id`` em ``payments`` e torna ``agendamento_id``
+    opcional (R4-F6 — bridge Payment→booking_id, espelhando
+    ``alembic/versions/cf014_r4_f6_payment_booking_id.py`` para o banco
+    SQLite gerenciado por este script legado).
+
+    SQLite não suporta ``ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL``
+    diretamente. Quando a constraint ``NOT NULL`` de ``agendamento_id``
+    ainda está presente na tabela física, ela é recriada preservando os
+    dados e índices (mesmo padrão de ``_migrar_fila_espera``). Idempotente:
+    sem efeito em bancos já migrados (inclusive os criados via
+    ``Base.metadata.create_all`` em testes, onde o model já nasce nullable).
+
+    Args:
+        cursor: Cursor SQLite ativo.
+    """
+    cursor.execute("PRAGMA table_info(payments)")
+    cols = cursor.fetchall()
+    if not cols:
+        return
+
+    agendamento_notnull = next(
+        (row[3] for row in cols if row[1] == "agendamento_id"), 0
+    )
+    tem_booking_id = any(row[1] == "booking_id" for row in cols)
+
+    if agendamento_notnull:
+        cursor.execute(
+            """
+            CREATE TABLE payments_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agendamento_id INTEGER,
+                booking_id INTEGER,
+                tipo VARCHAR(20) NOT NULL,
+                valor NUMERIC(10,2) NOT NULL,
+                status VARCHAR(20) DEFAULT 'pending' NOT NULL,
+                transaction_id TEXT,
+                comprovante_url TEXT,
+                paid_at DATETIME,
+                deleted_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME,
+                FOREIGN KEY(agendamento_id) REFERENCES agendamentos(id),
+                FOREIGN KEY(booking_id) REFERENCES core_bookings(id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT INTO payments_new (
+                id, agendamento_id, tipo, valor, status, transaction_id,
+                comprovante_url, paid_at, deleted_at, created_at, updated_at
+            )
+            SELECT id, agendamento_id, tipo, valor, status, transaction_id,
+                   comprovante_url, paid_at, deleted_at, created_at, updated_at
+            FROM payments
+            """
+        )
+        cursor.execute("DROP TABLE payments")
+        cursor.execute("ALTER TABLE payments_new RENAME TO payments")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_payments_agendamento_id ON payments (agendamento_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_payments_transaction_id ON payments (transaction_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_payments_booking_id ON payments (booking_id)"
+        )
+        print("✅ Tabela 'payments' migrada — agendamento_id opcional + booking_id (R4-F6)")
+    elif not tem_booking_id:
+        _add_column_if_missing(cursor, "payments", "booking_id", "INTEGER")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_payments_booking_id ON payments (booking_id)"
+        )
+        print("✅ Coluna 'booking_id' adicionada em 'payments' (R4-F6)")
 
 
 def _migrar_dlq_replay_columns(cursor: sqlite3.Cursor) -> None:

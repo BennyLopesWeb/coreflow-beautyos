@@ -6,13 +6,16 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, date
 from typing import List, Optional, Set
 
-from app.models.agendamento import Agendamento, STATUS_OCUPAM_VAGA
+from app.models.agendamento import Agendamento, ReservationStatus, STATUS_OCUPAM_VAGA
 from app.models.tranca import Tranca
 from app.models.service_image import ServiceImage
 from app.schemas.agendamento import HorarioDisponivel
 from app.core.exceptions import NotFoundError, BusinessRuleError
+from app.core.logging_config import get_logger
 from app.utils.service_image_precos import resolver_precos_imagem
 from app.services.agenda_dia_service import AgendaDiaService
+
+logger = get_logger("disponibilidade_service")
 
 # Duração padrão quando consulta admin sem modelo (slot de 30 min)
 DURACAO_PADRAO_MIN = 30
@@ -41,8 +44,25 @@ class DisponibilidadeService:
         """
         Cancela reservas pendentes sem pagamento após prazo de expiração.
 
+        R4-F6: cobre tanto ``Agendamento`` legado (histórico, mantido só
+        para leitura desde R4-F4) quanto ``CoreBooking`` (fonte primária de
+        ocupação desde R4-F4) — bookings core-only pendentes sem sinal
+        pago também expiram, cancelados via ``CancelBookingHandler`` (path
+        core, sem depender de criar/cancelar linha em ``Agendamento``).
+
         Returns:
-            Quantidade de reservas expiradas.
+            Quantidade total de reservas expiradas (legado + core).
+        """
+        count = self._expirar_agendamentos_pendentes()
+        count += self._expirar_core_bookings_pendentes()
+        return count
+
+    def _expirar_agendamentos_pendentes(self) -> int:
+        """
+        Cancela ``Agendamento`` legado pendente sem sinal pago (histórico).
+
+        Returns:
+            Quantidade de agendamentos legados expirados.
         """
         from app.models.agendamento import StatusAgendamento
         from app.services.agendamento_service import AgendamentoService
@@ -60,6 +80,53 @@ class DisponibilidadeService:
         for ag in pendentes:
             svc.cancelar_agendamento(ag.id, liberar_vaga=True, motivo="expirado")
             count += 1
+        return count
+
+    def _expirar_core_bookings_pendentes(self) -> int:
+        """
+        Cancela ``CoreBooking`` pendente sem sinal pago (R4-F6).
+
+        Equivalente ao expirar de ``Agendamento`` legado, mas para bookings
+        core-only: usa ``CancelBookingHandler`` (mesma policy usada por
+        ``POST /v1/bookings/{id}/cancel``) em vez de manipular o ORM
+        diretamente — garante que o evento ``booking.cancelled`` seja
+        publicado e que a policy de cancelamento (sempre permitida para
+        ``PENDING``) seja respeitada. Falhas isoladas em um booking não
+        interrompem a expiração dos demais (best-effort, logado).
+
+        Returns:
+            Quantidade de bookings core expirados.
+        """
+        from app.modules.booking.domain.models import CoreBooking
+        from app.modules.booking.application.commands.cancel_booking import (
+            CancelBookingCommand,
+            CancelBookingHandler,
+        )
+
+        limite = datetime.now() - timedelta(hours=EXPIRACAO_PENDENTE_HORAS)
+        pendentes = self.db.query(CoreBooking).filter(
+            CoreBooking.status == ReservationStatus.PENDING_PAYMENT,
+            CoreBooking.deposit_paid.is_(False),
+            CoreBooking.created_at < limite,
+            CoreBooking.deleted_at.is_(None),
+        ).all()
+
+        handler = CancelBookingHandler(self.db)
+        count = 0
+        for booking in pendentes:
+            try:
+                handler.execute(
+                    CancelBookingCommand(
+                        booking_id=booking.id,
+                        company_id=booking.company_id,
+                        reason="expirado",
+                    )
+                )
+                count += 1
+            except Exception:
+                logger.warning(
+                    "Falha ao expirar CoreBooking id=%s", booking.id, exc_info=True
+                )
         return count
 
     def _duracao_minutos(
@@ -137,11 +204,17 @@ class DisponibilidadeService:
         """
         Calcula conjunto de slots de 30 min ocupados no intervalo (capacidade única).
 
-        R4-F4 (hard sunset / ADR-024 / RFC-003 M8): ``core_bookings`` é a
-        fonte primária de ocupação — nenhum novo booking gera linha em
-        ``agendamentos`` desde R3-F2/R4-F3. A consulta a ``Agendamento``
-        é mantida apenas para cobrir reservas históricas (criadas antes da
-        migração) que ainda estejam com status ativo.
+        R4-F6 (cutover de disponibilidade core-only / ADR-024 / RFC-003 M10):
+        ``core_bookings`` é a **única** fonte de ocupação para bookings
+        novos — nenhum caminho de escrita de produção insere linha em
+        ``agendamentos`` desde R3-F2/R4-F3 (ver
+        ``AgendamentoService.criar_agendamento``, sempre
+        ``BusinessRuleError``). A consulta a ``Agendamento`` legado é
+        mantida **apenas** como leitura de compatibilidade para reservas
+        históricas (criadas antes da migração) que ainda estejam com
+        status ativo — não é mais primária desde R4-F4, e o DROP físico
+        dessa tabela (e desta consulta) fica para **R4-F7**, condicionado à
+        confirmação de que não há mais reservas históricas ativas.
 
         Args:
             data_inicio: Início do expediente.
@@ -149,8 +222,9 @@ class DisponibilidadeService:
 
         Returns:
             Set de datetimes (início de cada slot de 30 min ocupado), união
-            de ``core_bookings`` ativos (primário) e ``agendamentos``
-            históricos ativos (legado, somente leitura).
+            de ``core_bookings`` ativos (fonte primária/autoritativa) e
+            ``agendamentos`` históricos ativos (legado, somente leitura,
+            R4-F7 candidato a remoção).
         """
         from app.modules.booking.domain.models import CoreBooking
 
