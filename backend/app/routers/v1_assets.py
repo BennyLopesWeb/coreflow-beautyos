@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
-from app.modules.asset.application.asset_query_service import AssetQueryService
-from app.modules.asset.application.legacy_sync_service import AssetLegacySyncService
+from app.modules.asset.asset_service import AssetService
+from app.modules.asset.legacy_sync import AssetLegacySyncService
 from app.modules.identity.api.deps import get_tenant_context, get_current_admin_user
 from app.models.user import User
 from app.schemas.coreflow_v1 import AssetResponse
@@ -32,7 +32,7 @@ def listar_assets(
         Lista de core_assets sincronizados.
     """
     AssetLegacySyncService(db).sync_all()
-    return AssetQueryService(db).list_assets(tenant.company_id)
+    return AssetService(db).list_assets(tenant.company_id)
 
 
 @router.get("/{asset_id}", response_model=AssetResponse)
@@ -52,6 +52,6 @@ def obter_asset(
         AssetResponse.
     """
     try:
-        return AssetQueryService(db).get_asset(asset_id, tenant.company_id)
+        return AssetService(db).get_asset(asset_id, tenant.company_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

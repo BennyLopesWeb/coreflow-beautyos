@@ -24,7 +24,7 @@ from app.modules.workflow.domain.models import CoreWorkflowRun  # noqa: F401
 from app.modules.workflow.domain.config_models import CoreWorkflowConfig  # noqa: F401
 from app.modules.order.domain.models import CoreOrder  # noqa: F401
 from app.modules.invoice.domain.models import CoreInvoice  # noqa: F401
-from app.modules.asset.domain.models import CoreAsset  # noqa: F401
+from app.modules.asset.models import CoreAsset  # noqa: F401
 from app.modules.inventory.models import CoreInventory  # noqa: F401
 from app.modules.push.domain.models import CoreDeviceToken  # noqa: F401
 from app.modules.mobile.domain.models import CoreCanaryPromotion  # noqa: F401
@@ -109,7 +109,7 @@ def bootstrap_tenant() -> None:
         from app.services.inventory_seed_service import InventorySeedService
         InventorySeedService(db).ensure_default_items(company.id)
 
-        from app.modules.asset.application.legacy_sync_service import AssetLegacySyncService
+        from app.modules.asset.legacy_sync import AssetLegacySyncService
         asset_stats = AssetLegacySyncService(db).sync_all()
         print(f"✅ Asset/Inventory sync: {asset_stats}")
     finally:

@@ -1,23 +1,32 @@
 """
-Consultas read-only de Asset genérico CoreFlow.
+Serviço read-only de Asset genérico CoreFlow (Support CRUD).
 """
 from typing import List
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.modules.asset.domain.models import CoreAsset
+from app.modules.asset.models import CoreAsset
 
 
-class AssetQueryService:
+class AssetService:
     """
-    Serviço de leitura para core_assets.
+    Consultas de leitura para ``core_assets``.
 
     Args:
         db: Sessão SQLAlchemy.
+
+    Returns:
+        Instâncias usadas pelos routers ``/v1/assets``.
     """
 
     def __init__(self, db: Session):
+        """
+        Inicializa o serviço com a sessão do banco.
+
+        Args:
+            db: Sessão SQLAlchemy ativa.
+        """
         self.db = db
 
     def list_assets(self, company_id: int) -> List[CoreAsset]:
@@ -28,7 +37,7 @@ class AssetQueryService:
             company_id: Tenant.
 
         Returns:
-            Lista de CoreAsset ativos.
+            Lista de CoreAsset ativos (não deletados).
         """
         return (
             self.db.query(CoreAsset)
@@ -46,14 +55,14 @@ class AssetQueryService:
         Obtém ativo por ID com escopo de tenant.
 
         Args:
-            asset_id: ID core_assets.
+            asset_id: ID ``core_assets``.
             company_id: Tenant.
 
         Returns:
-            CoreAsset.
+            CoreAsset encontrado.
 
         Raises:
-            NotFoundError: Se não encontrado.
+            NotFoundError: Se não encontrado no tenant.
         """
         row = (
             self.db.query(CoreAsset)
