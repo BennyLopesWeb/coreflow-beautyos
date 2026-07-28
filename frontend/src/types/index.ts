@@ -229,9 +229,12 @@ export interface PixCobranca {
 }
 
 export interface ComprovanteUploadResponse {
-  agendamento_id: number;
+  /** ID ``core_bookings.id`` (R4-F15). */
+  booking_id: number;
   comprovante_url: string;
   mensagem: string;
+  /** Legado opcional — preenchido só se houver ponte. */
+  agendamento_id?: number | null;
 }
 
 // Financeiro

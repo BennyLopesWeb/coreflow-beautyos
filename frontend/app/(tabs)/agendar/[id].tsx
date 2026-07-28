@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity } from 
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { trancaService } from '../../../src/services/trancaService';
 import { agendamentoService } from '../../../src/services/agendamentoService';
+import { pagamentoService } from '../../../src/services/pagamentoService';
 import { filaService } from '../../../src/services/filaService';
 import { Tranca, TrancaImagem, HorarioDisponivel } from '../../../src/types';
 import { ButtonPrimary } from '../../../src/components/ButtonPrimary';
@@ -244,11 +245,29 @@ export default function AgendarScreen() {
         data_hora: formatLocalDateTime(dataHora),
       });
 
-      // R4-F13: upload comprovante legado (410) descontinuado — reserva core-only.
+      // R4-F15: comprovante via POST /v1/bookings/{id}/comprovante (core-only).
+      if (comprovante) {
+        try {
+          const res = await pagamentoService.enviarComprovante(
+            agendamento.id,
+            comprovante,
+          );
+          showAlert('Comprovante enviado', res.mensagem);
+        } catch (uploadError: unknown) {
+          showAlert(
+            'Aviso',
+            getApiErrorMessage(
+              uploadError,
+              'Reserva criada, mas falhou ao enviar o comprovante.',
+            ),
+          );
+        }
+      }
+
       showAlert(
         'Reserva criada com sucesso',
         comprovante
-          ? 'Reserva criada! O envio de comprovante pelo app foi descontinuado — o salão confirmará o sinal na tela de Pagamentos.'
+          ? 'Comprovante recebido! Após confirmação do sinal, aguarde aprovação da profissional.'
           : 'Reserva criada! Pague o sinal e aguarde aprovação da profissional.',
         () => router.replace('/(tabs)/agendamentos'),
       );

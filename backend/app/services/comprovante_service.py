@@ -1,14 +1,16 @@
 """
-Service para upload e gestão de comprovantes de depósito.
+Service para upload e gestão de comprovantes de depósito (R4-F15 core-only).
 """
 import uuid
 from pathlib import Path
+from typing import Optional
+
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
-from app.models.agendamento import Agendamento
-from app.services.agendamento_service import AgendamentoService
-from app.core.exceptions import ValidationError
+from app.core.exceptions import NotFoundError, ValidationError
+from app.models.payment import Payment, PaymentStatus, PaymentType
+from app.modules.booking.domain.models import CoreBooking
 
 COMPROVANTES_DIR = Path(__file__).resolve().parents[1] / "static" / "comprovantes"
 TIPOS_PERMITIDOS = {
@@ -31,6 +33,9 @@ TAMANHO_MAX_BYTES = 5 * 1024 * 1024
 class ComprovanteService:
     """
     Gerencia envio e armazenamento de comprovantes de depósito do sinal.
+
+    R4-F15: vínculo autoritativo é ``core_bookings`` + ponte ``payments``
+    (``booking_id``); o path legado ``agendamento_id`` foi removido.
     """
 
     def __init__(self, db: Session):
@@ -41,33 +46,44 @@ class ComprovanteService:
             db: Sessão SQLAlchemy ativa.
         """
         self.db = db
-        self.agendamento_service = AgendamentoService(db)
         COMPROVANTES_DIR.mkdir(parents=True, exist_ok=True)
 
-    async def salvar_comprovante(
+    async def salvar_comprovante_por_booking(
         self,
-        agendamento_id: int,
+        booking_id: int,
         arquivo: UploadFile,
+        company_id: Optional[int] = None,
         base_url: str = "http://localhost:8000",
-    ) -> Agendamento:
+    ) -> Payment:
         """
-        Salva comprovante de depósito vinculado a um agendamento.
+        Salva comprovante de depósito vinculado a um ``CoreBooking`` (R4-F15).
+
+        Cria ou atualiza a linha ``payments`` (DEPOSIT/SINAL) com
+        ``comprovante_url``. Não confirma o sinal — isso continua sendo
+        ato do admin via ``confirmar_deposito_por_booking``.
 
         Args:
-            agendamento_id: ID do agendamento.
+            booking_id: ID ``core_bookings.id``.
             arquivo: Arquivo enviado (imagem ou PDF).
+            company_id: Tenant opcional para validação de isolamento.
             base_url: URL base da API para montar link público.
 
         Returns:
-            Agendamento atualizado com comprovante_url.
+            ``Payment`` DEPOSIT atualizado com ``comprovante_url``.
 
         Raises:
-            ValidationError: Se tipo ou tamanho do arquivo forem inválidos.
+            NotFoundError: Booking não encontrado (ou fora do tenant).
+            ValidationError: Sinal já pago, tipo/tamanho inválidos.
         """
-        agendamento = self.agendamento_service.obter_agendamento(agendamento_id)
+        q = self.db.query(CoreBooking).filter(CoreBooking.id == booking_id)
+        if company_id is not None:
+            q = q.filter(CoreBooking.company_id == company_id)
+        booking = q.first()
+        if not booking:
+            raise NotFoundError("Booking", str(booking_id))
 
-        if agendamento.sinal_pago:
-            raise ValidationError("Sinal já foi confirmado para este agendamento")
+        if booking.deposit_paid:
+            raise ValidationError("Sinal já foi confirmado para este booking")
 
         content_type = (arquivo.content_type or "").lower()
         if content_type not in TIPOS_PERMITIDOS:
@@ -78,18 +94,37 @@ class ComprovanteService:
         conteudo = await arquivo.read()
         if len(conteudo) > TAMANHO_MAX_BYTES:
             raise ValidationError("Arquivo muito grande. Máximo: 5 MB.")
-
         if len(conteudo) == 0:
             raise ValidationError("Arquivo vazio.")
 
         ext = EXTENSOES.get(content_type, ".jpg")
-        nome_arquivo = f"agendamento_{agendamento_id}_{uuid.uuid4().hex[:10]}{ext}"
+        nome_arquivo = f"booking_{booking_id}_{uuid.uuid4().hex[:10]}{ext}"
         caminho = COMPROVANTES_DIR / nome_arquivo
-
         with open(caminho, "wb") as f:
             f.write(conteudo)
 
-        agendamento.comprovante_url = f"{base_url}/static/comprovantes/{nome_arquivo}"
+        url = f"{base_url.rstrip('/')}/static/comprovantes/{nome_arquivo}"
+
+        pag = (
+            self.db.query(Payment)
+            .filter(
+                Payment.booking_id == booking_id,
+                Payment.tipo.in_([PaymentType.DEPOSIT, PaymentType.SINAL]),
+                Payment.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if not pag:
+            pag = Payment(
+                booking_id=booking_id,
+                agendamento_id=booking.legacy_agendamento_id,
+                tipo=PaymentType.DEPOSIT,
+                valor=booking.deposit_amount,
+                status=PaymentStatus.PENDING,
+            )
+            self.db.add(pag)
+
+        pag.comprovante_url = url
         self.db.commit()
-        self.db.refresh(agendamento)
-        return agendamento
+        self.db.refresh(pag)
+        return pag

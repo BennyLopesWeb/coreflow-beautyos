@@ -20,8 +20,17 @@ class PagamentoSinalResponse(BaseModel):
 
 
 class ComprovanteUploadResponse(BaseModel):
-    """Resposta após envio de comprovante de depósito."""
-    agendamento_id: int
+    """
+    Resposta após envio de comprovante de depósito (R4-F15).
+
+    Attributes:
+        booking_id: ID ``core_bookings.id`` do vínculo autoritativo.
+        comprovante_url: URL pública do arquivo salvo.
+        mensagem: Texto para exibição ao cliente.
+        agendamento_id: Legado opcional (preenchido só se houver ponte).
+    """
+    booking_id: int
     comprovante_url: str
     mensagem: str
+    agendamento_id: Optional[int] = None
 

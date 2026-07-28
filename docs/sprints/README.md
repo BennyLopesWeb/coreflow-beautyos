@@ -31,7 +31,8 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 | R4-F12 | 2.15.0-r4-f12 | Transfer `payments`/`core_payments` no reschedule — ✅ |
 | R4-F13 | 2.16.0-r4-f13 | Lifecycle ADR-026 complete/no_show/expired + frontend off 410 — ✅ |
 | R4-F14 | 2.17.0-r4-f14 | Remoção routers legado `pagamentos`/`payments` — ✅ |
+| R4-F15 | 2.18.0-r4-f15 | Upload comprovante core-only (`POST /v1/bookings/{id}/comprovante`) — ✅ |
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos: upload comprovante core; CI AWS OIDC
+Próximos: CI AWS OIDC
