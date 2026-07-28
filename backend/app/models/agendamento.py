@@ -43,6 +43,7 @@ class ReservationStatus(str, enum.Enum):
     PAID = "paid"
     CANCELLED = "cancelled"
     RESCHEDULED = "rescheduled"  # R4-F11 / ADR-026 — substituído por novo booking
+    EXPIRED = "expired"  # R4-F13 / ADR-026 — pending sem sinal expirou
     # Legado
     PENDENTE = "pendente"
     CONFIRMADO = "confirmado"

@@ -21,6 +21,9 @@ BOOKING_APPROVED = "booking.approved"
 BOOKING_REJECTED = "booking.rejected"
 BOOKING_CANCELLED = "booking.cancelled"
 BOOKING_RESCHEDULED = "booking.rescheduled"
+BOOKING_COMPLETED = "booking.completed"
+BOOKING_NO_SHOW = "booking.no_show"
+BOOKING_EXPIRED = "booking.expired"
 DEPOSIT_CONFIRMED = "payment.deposit.confirmed"
 PAYMENT_CONFIRMED = "payment.confirmed"
 
@@ -347,6 +350,108 @@ def booking_cancelled(
             "booking_id": booking_id,
             "reason": reason,
             "legacy_agendamento_id": legacy_agendamento_id,
+            "version": version,
+        },
+    )
+
+
+def booking_completed(
+    company_id: int,
+    booking_id: int,
+    reason: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    version: Optional[int] = None,
+) -> DomainEvent:
+    """
+    Factory para evento booking.completed (R4-F13 / ADR-026).
+
+    Args:
+        company_id: Tenant.
+        booking_id: ID core_bookings.
+        reason: Nota opcional.
+        correlation_id: Rastreio HTTP.
+        version: Versão pós-transição.
+
+    Returns:
+        DomainEvent pronto para outbox.
+    """
+    return DomainEvent(
+        event_type=BOOKING_COMPLETED,
+        company_id=company_id,
+        aggregate_id=str(booking_id),
+        aggregate_type="Booking",
+        correlation_id=correlation_id,
+        payload={
+            "booking_id": booking_id,
+            "reason": reason,
+            "version": version,
+        },
+    )
+
+
+def booking_no_show(
+    company_id: int,
+    booking_id: int,
+    reason: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    version: Optional[int] = None,
+) -> DomainEvent:
+    """
+    Factory para evento booking.no_show (R4-F13 / ADR-026).
+
+    Args:
+        company_id: Tenant.
+        booking_id: ID core_bookings.
+        reason: Motivo opcional.
+        correlation_id: Rastreio HTTP.
+        version: Versão pós-transição.
+
+    Returns:
+        DomainEvent pronto para outbox.
+    """
+    return DomainEvent(
+        event_type=BOOKING_NO_SHOW,
+        company_id=company_id,
+        aggregate_id=str(booking_id),
+        aggregate_type="Booking",
+        correlation_id=correlation_id,
+        payload={
+            "booking_id": booking_id,
+            "reason": reason,
+            "version": version,
+        },
+    )
+
+
+def booking_expired(
+    company_id: int,
+    booking_id: int,
+    reason: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    version: Optional[int] = None,
+) -> DomainEvent:
+    """
+    Factory para evento booking.expired (R4-F13 / ADR-026).
+
+    Args:
+        company_id: Tenant.
+        booking_id: ID core_bookings.
+        reason: Motivo opcional.
+        correlation_id: Rastreio HTTP.
+        version: Versão pós-transição.
+
+    Returns:
+        DomainEvent pronto para outbox.
+    """
+    return DomainEvent(
+        event_type=BOOKING_EXPIRED,
+        company_id=company_id,
+        aggregate_id=str(booking_id),
+        aggregate_type="Booking",
+        correlation_id=correlation_id,
+        payload={
+            "booking_id": booking_id,
+            "reason": reason,
             "version": version,
         },
     )

@@ -222,7 +222,7 @@ def test_disponibilidade_marca_slot_ocupado_por_core_booking_sem_agendamento(
 def test_expirar_core_bookings_pendentes_sem_sinal(
     db, default_company, cliente_exemplo, synced_catalog
 ):
-    """expirar_reservas_pendentes cancela CoreBooking pendente/sem sinal pago via CancelBookingHandler."""
+    """expirar_reservas_pendentes marca CoreBooking pendente como expired (R4-F13 / ExpireBookingHandler)."""
     catalog, offering = synced_catalog
     limite = datetime.now() - timedelta(hours=3)
     booking = CoreBooking(
@@ -252,7 +252,7 @@ def test_expirar_core_bookings_pendentes_sem_sinal(
     assert count >= 1
     db.expire_all()
     expirado = db.query(CoreBooking).filter(CoreBooking.id == booking_id).first()
-    assert expirado.status == ReservationStatus.CANCELLED
+    assert expirado.status == ReservationStatus.EXPIRED
 
 
 def test_expirar_nao_cancela_core_booking_recente_ou_com_sinal(

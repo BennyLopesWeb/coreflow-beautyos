@@ -44,11 +44,21 @@ from app.modules.booking.application.commands.reschedule_booking import (
     RescheduleBookingCommand,
     RescheduleBookingHandler,
 )
+from app.modules.booking.application.commands.complete_booking import (
+    CompleteBookingCommand,
+    CompleteBookingHandler,
+)
+from app.modules.booking.application.commands.mark_no_show_booking import (
+    MarkNoShowBookingCommand,
+    MarkNoShowBookingHandler,
+)
 from app.modules.booking.application.booking_query_service import BookingQueryService
 from app.modules.booking.application.booking_response import booking_to_response_dict
 from app.schemas.coreflow_v1 import (
     BookingCancelRequest,
+    BookingCompleteRequest,
     BookingCreateRequest,
+    BookingNoShowRequest,
     BookingRejectRequest,
     BookingRescheduleRequest,
     BookingRescheduleResponse,
@@ -395,6 +405,100 @@ def reagendar_booking(
         raise HTTPException(status_code=409, detail=str(exc.detail))
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc.detail))
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc.detail))
+
+
+@router.post("/{booking_id}/complete", response_model=BookingResponse)
+def completar_booking(
+    booking_id: int,
+    body: BookingCompleteRequest,
+    tenant: TenantContext = Depends(get_tenant_context),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin_user),
+    if_match: Optional[str] = Header(None, alias="If-Match"),
+    correlation_id: Optional[str] = Header(None, alias="X-Correlation-Id"),
+):
+    """
+    Conclui booking (approved/operacional → completed) — R4-F13 / ADR-026.
+
+    Args:
+        booking_id: ID core_bookings.
+        body: Nota opcional.
+        if_match: Versão optimistic lock opcional.
+        correlation_id: Rastreio outbox.
+
+    Returns:
+        BookingResponse atualizado.
+    """
+    handler = CompleteBookingHandler(db)
+    expected = _parse_if_match(if_match)
+    if if_match and expected is None:
+        raise HTTPException(status_code=412, detail="precondition_failed")
+    try:
+        core = handler.execute(
+            CompleteBookingCommand(
+                booking_id=booking_id,
+                company_id=tenant.company_id,
+                reason=body.reason,
+                expected_version=expected,
+                correlation_id=correlation_id or str(uuid.uuid4()),
+            )
+        )
+        return BookingResponse(**booking_to_response_dict(core))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc.detail))
+    except BusinessRuleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc.detail))
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc.detail))
+
+
+@router.post("/{booking_id}/no-show", response_model=BookingResponse)
+def marcar_no_show_booking(
+    booking_id: int,
+    body: BookingNoShowRequest,
+    tenant: TenantContext = Depends(get_tenant_context),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin_user),
+    if_match: Optional[str] = Header(None, alias="If-Match"),
+    correlation_id: Optional[str] = Header(None, alias="X-Correlation-Id"),
+):
+    """
+    Marca no-show (approved → no_show) — R4-F13 / ADR-026.
+
+    Args:
+        booking_id: ID core_bookings.
+        body: Motivo opcional.
+        if_match: Versão optimistic lock opcional.
+        correlation_id: Rastreio outbox.
+
+    Returns:
+        BookingResponse atualizado.
+    """
+    handler = MarkNoShowBookingHandler(db)
+    expected = _parse_if_match(if_match)
+    if if_match and expected is None:
+        raise HTTPException(status_code=412, detail="precondition_failed")
+    try:
+        core = handler.execute(
+            MarkNoShowBookingCommand(
+                booking_id=booking_id,
+                company_id=tenant.company_id,
+                reason=body.reason,
+                expected_version=expected,
+                correlation_id=correlation_id or str(uuid.uuid4()),
+            )
+        )
+        return BookingResponse(**booking_to_response_dict(core))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc.detail))
     except BusinessRuleError as exc:
         raise HTTPException(status_code=409, detail=str(exc.detail))
     except ValidationError as exc:

@@ -16,6 +16,16 @@
 
 ---
 
+## 2026-07-28 — R4-F13 Lifecycle ADR-026 + frontend core paths
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F13 (ADR-026) | `complete`/`no_show`/`expired` + APIs; fila→CompleteBooking; expire via ExpireBooking; frontend off 410 nos fluxos principais; `2.16.0-r4-f13` |
+| **Amended** | ADR-026 | Estados `completed`/`no_show`/`expired` Implemented |
+| **Published** | Release + sprint + gate | [2.16.0-r4-f13.md](releases/2.16.0-r4-f13.md) · [R4-F13.md](sprints/R4-F13.md) · [R4-F13-Gate.md](reviews/R4-F13-Gate.md) |
+
+---
+
 ## 2026-07-22 — R4-F12 Transfer Payment no reschedule
 
 | Evento | Artefato | Notas |

@@ -128,6 +128,28 @@ class BookingRescheduleRequest(BaseModel):
     resource_id: Optional[int] = None
 
 
+class BookingCompleteRequest(BaseModel):
+    """
+    Body para conclusão de booking (R4-F13 / ADR-026).
+
+    Attributes:
+        reason: Nota opcional.
+    """
+
+    reason: Optional[str] = None
+
+
+class BookingNoShowRequest(BaseModel):
+    """
+    Body para no-show (R4-F13 / ADR-026).
+
+    Attributes:
+        reason: Motivo opcional.
+    """
+
+    reason: Optional[str] = None
+
+
 class BookingResponse(BaseModel):
     """
     Resposta de booking genérico.
