@@ -16,6 +16,15 @@
 
 ---
 
+## 2026-07-28 — R4-F17 Terraform GitHub OIDC IAM
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F17 | Módulo `github-oidc` + stack `ci-oidc` + `terraform-ci-oidc.sh`; `2.20.0-r4-f17` |
+| **Published** | Release + sprint + gate | [2.20.0-r4-f17.md](releases/2.20.0-r4-f17.md) · [R4-F17.md](sprints/R4-F17.md) · [R4-F17-Gate.md](reviews/R4-F17-Gate.md) |
+
+---
+
 ## 2026-07-28 — R4-F16 CI AWS OIDC
 
 | Evento | Artefato | Notas |

@@ -16,8 +16,8 @@ ACTIONS = REPO_ROOT / ".github" / "actions"
 
 
 def test_app_version_r4_f16():
-    """APP_VERSION marca R4-F16 (CI AWS OIDC)."""
-    assert settings.APP_VERSION == "2.19.0-r4-f16"
+    """APP_VERSION avançou de R4-F16 (pin exato relaxado em R4-F17+)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_oidc_composite_action_existe():
