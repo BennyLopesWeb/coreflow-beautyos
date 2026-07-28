@@ -41,19 +41,66 @@ export const agendamentoService = {
   },
 
   /**
-   * Lista todos os agendamentos (admin)
+   * Lista bookings do tenant via CoreFlow v1 (R4-F13).
+   *
+   * Successor de `GET /agenda/agendamentos` (410 Gone desde R4-F1).
    */
   listar: async (): Promise<Agendamento[]> => {
-    const response = await api.get<Agendamento[]>('/agenda/agendamentos');
-    return response.data;
+    const response = await api.get<
+      Array<{
+        id: number;
+        customer_id: number;
+        scheduled_at: string;
+        status: string;
+        payment_status: string;
+        deposit_paid: boolean;
+        price_total: string | number;
+        deposit_amount: string | number;
+        notes?: string | null;
+      }>
+    >('/v1/bookings');
+    return response.data.map((b) => ({
+      id: b.id,
+      cliente_id: b.customer_id,
+      tranca_id: 0,
+      data_hora: b.scheduled_at,
+      sinal_pago: b.deposit_paid,
+      status: b.status as Agendamento['status'],
+      status_pagamento: b.payment_status as Agendamento['status_pagamento'],
+      valor_total_reserva: String(b.price_total),
+      valor_sinal_reserva: String(b.deposit_amount),
+      observacoes: b.notes ?? undefined,
+    }));
   },
 
   /**
-   * Busca um agendamento por ID
+   * Busca booking por ID via CoreFlow v1 (R4-F13).
    */
   buscarPorId: async (id: number): Promise<Agendamento> => {
-    const response = await api.get<Agendamento>(`/agenda/agendamentos/${id}`);
-    return response.data;
+    const response = await api.get<{
+      id: number;
+      customer_id: number;
+      scheduled_at: string;
+      status: string;
+      payment_status: string;
+      deposit_paid: boolean;
+      price_total: string | number;
+      deposit_amount: string | number;
+      notes?: string | null;
+    }>(`/v1/bookings/${id}`);
+    const b = response.data;
+    return {
+      id: b.id,
+      cliente_id: b.customer_id,
+      tranca_id: 0,
+      data_hora: b.scheduled_at,
+      sinal_pago: b.deposit_paid,
+      status: b.status as Agendamento['status'],
+      status_pagamento: b.payment_status as Agendamento['status_pagamento'],
+      valor_total_reserva: String(b.price_total),
+      valor_sinal_reserva: String(b.deposit_amount),
+      observacoes: b.notes ?? undefined,
+    };
   },
 
   /**

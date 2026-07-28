@@ -327,3 +327,54 @@ class BookingDomainService:
         """
         booking.reschedule(reason)
         return booking
+
+    def complete(self, booking: Booking, reason: Optional[str] = None) -> Booking:
+        """
+        Conclui atendimento (approved → completed) — ADR-026 / R4-F13.
+
+        Args:
+            booking: Aggregate em approved (ou operacional mapeado).
+            reason: Nota opcional.
+
+        Returns:
+            Aggregate mutado.
+
+        Raises:
+            InvalidBookingStateTransitionError: Estado inválido.
+        """
+        booking.complete(reason)
+        return booking
+
+    def mark_no_show(self, booking: Booking, reason: Optional[str] = None) -> Booking:
+        """
+        Marca no-show (approved → no_show) — ADR-026 / R4-F13.
+
+        Args:
+            booking: Aggregate em approved.
+            reason: Motivo opcional.
+
+        Returns:
+            Aggregate mutado.
+
+        Raises:
+            InvalidBookingStateTransitionError: Estado inválido.
+        """
+        booking.mark_no_show(reason)
+        return booking
+
+    def expire(self, booking: Booking, reason: Optional[str] = None) -> Booking:
+        """
+        Expira pending sem pagamento (pending → expired) — ADR-026 / R4-F13.
+
+        Args:
+            booking: Aggregate em pending.
+            reason: Motivo opcional.
+
+        Returns:
+            Aggregate mutado.
+
+        Raises:
+            InvalidBookingStateTransitionError: Estado inválido.
+        """
+        booking.expire(reason)
+        return booking

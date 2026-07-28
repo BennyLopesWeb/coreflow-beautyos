@@ -416,7 +416,38 @@ class QueueEntryService:
         entry.status = QueueEntryStatus.COMPLETED
 
         if entry.booking_id:
-            self._avancar_booking_core(entry, ReservationStatus.COMPLETED)
+            # R4-F13: conclui via state machine canônica (evento booking.completed)
+            from app.modules.booking.application.commands.complete_booking import (
+                CompleteBookingCommand,
+                CompleteBookingHandler,
+            )
+            from app.modules.booking.domain.models import CoreBooking
+
+            booking = (
+                self.db.query(CoreBooking)
+                .filter(CoreBooking.id == entry.booking_id)
+                .first()
+            )
+            if booking:
+                try:
+                    CompleteBookingHandler(self.db).execute(
+                        CompleteBookingCommand(
+                            booking_id=booking.id,
+                            company_id=booking.company_id,
+                            reason="concluido_via_fila",
+                        )
+                    )
+                    entry = self._obter(entry_id)
+                    entry.status = QueueEntryStatus.COMPLETED
+                except Exception:
+                    logger.warning(
+                        "Falha CompleteBooking para booking_id=%s — fallback ORM",
+                        entry.booking_id,
+                        exc_info=True,
+                    )
+                    self._avancar_booking_core(entry, ReservationStatus.COMPLETED)
+            else:
+                self._avancar_booking_core(entry, ReservationStatus.COMPLETED)
         elif entry.agendamento_id:
             logger.warning(
                 "QueueEntry id=%s com agendamento_id legado (%s) sem booking_id — "

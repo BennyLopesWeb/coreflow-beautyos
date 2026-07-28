@@ -49,22 +49,24 @@ export const reservationService = {
   },
 
   obter: async (id: number): Promise<Reservation> => {
-    const response = await api.get<Reservation>(`/reservations/${id}`);
+    const response = await api.get<Reservation>(`/v1/bookings/${id}`);
     return response.data;
   },
 
   criar: async (data: ReservationCreate): Promise<Reservation> => {
-    const response = await api.post<Reservation>('/reservations', data);
+    const response = await api.post<Reservation>('/v1/bookings', data);
     return response.data;
   },
 
   aprovar: async (id: number): Promise<Reservation> => {
-    const response = await api.put<Reservation>(`/reservations/${id}/approve`);
+    const response = await api.post<Reservation>(`/v1/bookings/${id}/approve`);
     return response.data;
   },
 
   rejeitar: async (id: number, motivo: string): Promise<Reservation> => {
-    const response = await api.put<Reservation>(`/reservations/${id}/reject`, { motivo });
+    const response = await api.post<Reservation>(`/v1/bookings/${id}/reject`, {
+      reason: motivo,
+    });
     return response.data;
   },
 
@@ -106,13 +108,26 @@ export const reservationService = {
   },
 
   concluir: async (id: number): Promise<Reservation> => {
-    const response = await api.put<Reservation>(`/reservations/${id}/complete`);
+    const response = await api.post<Reservation>(`/v1/bookings/${id}/complete`, {});
     return response.data;
   },
 
   cancelar: async (id: number, motivo?: string): Promise<Reservation> => {
-    const response = await api.delete<Reservation>(`/reservations/${id}`, {
-      params: motivo ? { motivo } : {},
+    const response = await api.post<Reservation>(`/v1/bookings/${id}/cancel`, {
+      reason: motivo,
+    });
+    return response.data;
+  },
+
+  /**
+   * Marca no-show (R4-F13 / ADR-026).
+   *
+   * @param id - ID core_bookings.
+   * @param motivo - Motivo opcional.
+   */
+  marcarNoShow: async (id: number, motivo?: string): Promise<Reservation> => {
+    const response = await api.post<Reservation>(`/v1/bookings/${id}/no-show`, {
+      reason: motivo,
     });
     return response.data;
   },

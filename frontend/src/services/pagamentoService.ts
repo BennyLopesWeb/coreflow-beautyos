@@ -38,39 +38,22 @@ export const pagamentoService = {
   },
 
   /**
-   * Envia comprovante de depósito do sinal.
+   * Upload de comprovante legado descontinuado (R4-F13).
    *
-   * @param {number} agendamentoId - ID do agendamento.
-   * @param {ComprovanteArquivo} arquivo - Arquivo selecionado pelo usuário.
-   * @returns {Promise<ComprovanteUploadResponse>} Resposta com URL do comprovante.
+   * A rota `/pagamentos/comprovante/*` responde 410. O admin confirma o
+   * sinal via `POST /admin/pagamentos/booking/{id}/confirmar-sinal`.
+   *
+   * @param _bookingId - ID do booking (ignorado).
+   * @param _arquivo - Arquivo (ignorado).
+   * @returns Nunca — sempre rejeita com mensagem clara.
    */
   enviarComprovante: async (
-    agendamentoId: number,
-    arquivo: ComprovanteArquivo,
+    _bookingId: number,
+    _arquivo: ComprovanteArquivo,
   ): Promise<ComprovanteUploadResponse> => {
-    const formData = new FormData();
-
-    if (Platform.OS === 'web' && arquivo.file) {
-      formData.append('arquivo', arquivo.file, arquivo.name);
-    } else if (Platform.OS === 'web') {
-      const response = await fetch(arquivo.uri);
-      const blob = await response.blob();
-      formData.append('arquivo', blob, arquivo.name);
-    } else {
-      formData.append('arquivo', {
-        uri: arquivo.uri,
-        name: arquivo.name,
-        type: arquivo.type,
-      } as unknown as Blob);
-    }
-
-    const response = await api.post<ComprovanteUploadResponse>(
-      `/pagamentos/comprovante/${agendamentoId}`,
-      formData,
-      {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      },
+    throw new Error(
+      'Upload de comprovante legado foi descontinuado. ' +
+        'Aguarde a confirmação do sinal pelo salão (Pagamentos).',
     );
-    return response.data;
   },
 };

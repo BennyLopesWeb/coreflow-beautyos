@@ -63,20 +63,18 @@ class DisponibilidadeService:
         Cancela ``CoreBooking`` pendente sem sinal pago (R4-F6).
 
         Equivalente ao expirar de ``Agendamento`` legado, mas para bookings
-        core-only: usa ``CancelBookingHandler`` (mesma policy usada por
-        ``POST /v1/bookings/{id}/cancel``) em vez de manipular o ORM
-        diretamente — garante que o evento ``booking.cancelled`` seja
-        publicado e que a policy de cancelamento (sempre permitida para
-        ``PENDING``) seja respeitada. Falhas isoladas em um booking não
-        interrompem a expiração dos demais (best-effort, logado).
+        core-only: usa ``ExpireBookingHandler`` (R4-F13 / ADR-026 —
+        ``pending → expired`` + evento ``booking.expired``) em vez de
+        cancelar. Falhas isoladas em um booking não interrompem a
+        expiração dos demais (best-effort, logado).
 
         Returns:
             Quantidade de bookings core expirados.
         """
         from app.modules.booking.domain.models import CoreBooking
-        from app.modules.booking.application.commands.cancel_booking import (
-            CancelBookingCommand,
-            CancelBookingHandler,
+        from app.modules.booking.application.commands.expire_booking import (
+            ExpireBookingCommand,
+            ExpireBookingHandler,
         )
 
         limite = datetime.now() - timedelta(hours=EXPIRACAO_PENDENTE_HORAS)
@@ -87,12 +85,12 @@ class DisponibilidadeService:
             CoreBooking.deleted_at.is_(None),
         ).all()
 
-        handler = CancelBookingHandler(self.db)
+        handler = ExpireBookingHandler(self.db)
         count = 0
         for booking in pendentes:
             try:
                 handler.execute(
-                    CancelBookingCommand(
+                    ExpireBookingCommand(
                         booking_id=booking.id,
                         company_id=booking.company_id,
                         reason="expirado",

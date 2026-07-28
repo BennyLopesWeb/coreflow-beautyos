@@ -55,13 +55,33 @@ export const queueService = {
   concluir: async (id: number) => api.put(`/queue/${id}/complete`),
 };
 
+/**
+ * Pagamentos de reserva — paths booking-first (R4-F13).
+ *
+ * Successors de `/payments/deposit` e `/payments/final` (410 desde R4-F10).
+ */
 export const paymentReservationService = {
-  confirmarDeposito: async (agendamento_id: number, transaction_id?: string) =>
-    api.post('/payments/deposit/admin', { agendamento_id, transaction_id }),
+  /**
+   * Confirma sinal em booking core-only.
+   *
+   * @param bookingId - ID ``core_bookings``.
+   */
+  confirmarDeposito: async (bookingId: number, _transaction_id?: string) =>
+    api.post(`/admin/pagamentos/booking/${bookingId}/confirmar-sinal`),
 
-  confirmarFinal: async (agendamento_id: number, transaction_id?: string) =>
-    api.post('/payments/final', { agendamento_id, transaction_id }),
+  /**
+   * Confirma pagamento final em booking core-only.
+   *
+   * @param bookingId - ID ``core_bookings``.
+   */
+  confirmarFinal: async (bookingId: number, _transaction_id?: string) =>
+    api.post(`/admin/pagamentos/booking/${bookingId}/confirmar-final`),
 
-  listar: async (reservation_id: number) =>
-    api.get(`/payments/reservation/${reservation_id}`),
+  /**
+   * Lista pagamentos sync por booking_id.
+   *
+   * @param bookingId - ID ``core_bookings``.
+   */
+  listar: async (bookingId: number) =>
+    api.get('/v1/payments', { params: { booking_id: bookingId } }),
 };

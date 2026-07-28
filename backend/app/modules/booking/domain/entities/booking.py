@@ -212,3 +212,73 @@ class Booking:
         if reason:
             prefix = self.notes or ""
             self.notes = f"{prefix} | {reason}".strip(" |") if prefix else reason
+
+    def complete(self, reason: Optional[str] = None) -> None:
+        """
+        Transição approved → completed (ADR-026 / R4-F13).
+
+        Estados operacionais ORM (``in_service``/``checked_in``) são
+        mapeados para ``APPROVED`` no repositório, permitindo concluir
+        após o fluxo da fila.
+
+        Args:
+            reason: Nota opcional.
+
+        Returns:
+            None
+
+        Raises:
+            InvalidBookingStateTransitionError: Se status != approved.
+        """
+        from app.modules.booking.domain.exceptions import InvalidBookingStateTransitionError
+
+        if self.status != BookingLifecycleStatus.APPROVED:
+            raise InvalidBookingStateTransitionError()
+        self.status = BookingLifecycleStatus.COMPLETED
+        if reason:
+            prefix = self.notes or ""
+            self.notes = f"{prefix} | {reason}".strip(" |") if prefix else reason
+
+    def mark_no_show(self, reason: Optional[str] = None) -> None:
+        """
+        Transição approved → no_show (ADR-026 / R4-F13).
+
+        Args:
+            reason: Motivo opcional.
+
+        Returns:
+            None
+
+        Raises:
+            InvalidBookingStateTransitionError: Se status != approved.
+        """
+        from app.modules.booking.domain.exceptions import InvalidBookingStateTransitionError
+
+        if self.status != BookingLifecycleStatus.APPROVED:
+            raise InvalidBookingStateTransitionError()
+        self.status = BookingLifecycleStatus.NO_SHOW
+        if reason:
+            prefix = self.notes or ""
+            self.notes = f"{prefix} | {reason}".strip(" |") if prefix else reason
+
+    def expire(self, reason: Optional[str] = None) -> None:
+        """
+        Transição pending → expired (ADR-026 / R4-F13).
+
+        Args:
+            reason: Motivo opcional (ex.: timeout sem sinal).
+
+        Returns:
+            None
+
+        Raises:
+            InvalidBookingStateTransitionError: Se status != pending.
+        """
+        from app.modules.booking.domain.exceptions import InvalidBookingStateTransitionError
+
+        if self.status != BookingLifecycleStatus.PENDING:
+            raise InvalidBookingStateTransitionError()
+        self.status = BookingLifecycleStatus.EXPIRED
+        if reason:
+            prefix = self.notes or ""
+            self.notes = f"{prefix} | {reason}".strip(" |") if prefix else reason

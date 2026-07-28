@@ -97,18 +97,13 @@ export default function AdminPagamentosScreen() {
                 style={styles.btnConfirmar}
                 onPress={async () => {
                   try {
-                    // R4-F6: rota legado (agendamento_id) removida — responde 410.
-                    // Reservas listadas aqui são sempre pré-R3-F2 (legado histórico);
-                    // bookings novos (core-only) não aparecem nesta tela (débito
-                    // residual — migração da listagem para booking-first fica para
-                    // R4-F7, ver docs/sprints/R4-F6.md).
-                    await adminService.confirmarSinal(item.agendamento_id);
+                    // R4-F13: listar_pagamentos já expõe core_bookings.id em agendamento_id
+                    await adminService.confirmarSinalBooking(item.agendamento_id);
                     loadData();
                   } catch (error) {
                     Alert.alert(
-                      'Confirmação indisponível',
-                      'A confirmação de sinal para reservas legado foi descontinuada (R4-F6). ' +
-                        'Reservas novas usam o fluxo booking-first.',
+                      'Erro',
+                      'Não foi possível confirmar o sinal. Tente novamente.',
                     );
                   }
                 }}

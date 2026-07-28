@@ -20,6 +20,9 @@ class BookingLifecycleStatus(str, Enum):
     REJECTED = "rejected"
     CANCELLED = "cancelled"
     RESCHEDULED = "rescheduled"
+    COMPLETED = "completed"
+    NO_SHOW = "no_show"
+    EXPIRED = "expired"
 
 
 class SyncStatus(str, Enum):

@@ -25,6 +25,9 @@ _LIFECYCLE_TO_ORM = {
     BookingLifecycleStatus.REJECTED: ReservationStatus.REJECTED,
     BookingLifecycleStatus.CANCELLED: ReservationStatus.CANCELLED,
     BookingLifecycleStatus.RESCHEDULED: ReservationStatus.RESCHEDULED,
+    BookingLifecycleStatus.COMPLETED: ReservationStatus.COMPLETED,
+    BookingLifecycleStatus.NO_SHOW: ReservationStatus.NO_SHOW,
+    BookingLifecycleStatus.EXPIRED: ReservationStatus.EXPIRED,
 }
 
 _ORM_TO_LIFECYCLE = {
@@ -32,11 +35,19 @@ _ORM_TO_LIFECYCLE = {
     ReservationStatus.PENDING_APPROVAL: BookingLifecycleStatus.PENDING,
     ReservationStatus.WAITING_TIME_CONFIRMATION: BookingLifecycleStatus.PENDING,
     ReservationStatus.APPROVED: BookingLifecycleStatus.APPROVED,
+    # Operacionais da fila → lifecycle APPROVED (podem complete/no_show)
+    ReservationStatus.IN_QUEUE: BookingLifecycleStatus.APPROVED,
+    ReservationStatus.CHECKED_IN: BookingLifecycleStatus.APPROVED,
+    ReservationStatus.IN_SERVICE: BookingLifecycleStatus.APPROVED,
     ReservationStatus.REJECTED: BookingLifecycleStatus.REJECTED,
     ReservationStatus.CANCELLED: BookingLifecycleStatus.CANCELLED,
     ReservationStatus.RESCHEDULED: BookingLifecycleStatus.RESCHEDULED,
+    ReservationStatus.COMPLETED: BookingLifecycleStatus.COMPLETED,
+    ReservationStatus.NO_SHOW: BookingLifecycleStatus.NO_SHOW,
+    ReservationStatus.EXPIRED: BookingLifecycleStatus.EXPIRED,
     ReservationStatus.PENDENTE: BookingLifecycleStatus.PENDING,
     ReservationStatus.CONFIRMADO: BookingLifecycleStatus.APPROVED,
+    ReservationStatus.CONCLUIDO: BookingLifecycleStatus.COMPLETED,
 }
 
 
@@ -152,6 +163,16 @@ class SqlAlchemyCoreBookingRepository:
         if booking.status == BookingLifecycleStatus.CANCELLED:
             row.payment_status = StatusPagamento.CANCELLED
             row.deleted_at = row.deleted_at or datetime.utcnow()
+        if booking.status == BookingLifecycleStatus.EXPIRED:
+            # Terminal sem soft-delete — libera slot; payment permanece pending
+            row.deleted_at = row.deleted_at or datetime.utcnow()
+        if booking.status in (
+            BookingLifecycleStatus.COMPLETED,
+            BookingLifecycleStatus.NO_SHOW,
+            BookingLifecycleStatus.RESCHEDULED,
+        ):
+            # Terminais operacionais: não soft-delete (auditoria/histórico)
+            pass
         row.price_total = booking.pricing.price_total
         row.deposit_pct = booking.pricing.deposit_pct
         row.deposit_amount = booking.pricing.deposit_amount

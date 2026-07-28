@@ -23,10 +23,10 @@ Estados de booking estavam implícitos no legado. Core exige máquina de estados
 | `approved` | Confirmado | ✅ F2 |
 | `rejected` | Recusado pelo operador | ✅ F2 |
 | `cancelled` | Cancelado (cliente ou operador) | ✅ F2b |
-| `completed` | Serviço realizado | 🔜 R3 |
-| `no_show` | Cliente não compareceu | 🔜 R3 |
+| `completed` | Serviço realizado | ✅ R4-F13 |
+| `no_show` | Cliente não compareceu | ✅ R4-F13 |
 | `rescheduled` | Substituído por novo booking | ✅ R4-F11 |
-| `expired` | Pending expirou (timeout) | 🔜 R3 |
+| `expired` | Pending expirou (timeout) | ✅ R4-F13 |
 
 ### Diagrama (completo; R2 subset destacado)
 
@@ -63,10 +63,10 @@ stateDiagram-v2
 
 | De | Para | Evento |
 |----|------|--------|
-| `approved` | `completed` | `booking.completed` |
-| `approved` | `no_show` | `booking.no_show` |
+| `approved` | `completed` | `booking.completed` ✅ R4-F13 |
+| `approved` | `no_show` | `booking.no_show` ✅ R4-F13 |
 | `approved` | `rescheduled` | `booking.rescheduled` + new `booking.created` ✅ R4-F11 |
-| `pending` | `expired` | `booking.expired` |
+| `pending` | `expired` | `booking.expired` ✅ R4-F13 |
 
 ### Regras globais
 

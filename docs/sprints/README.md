@@ -29,7 +29,8 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 | R4-F10 | 2.13.0-r4-f10 | Pagamento final core-only + 410 `/payments/deposit\|final` — ✅ |
 | R4-F11 | 2.14.0-r4-f11 | Reagendamento core-only (`POST /v1/bookings/{id}/reschedule`) — ✅ |
 | R4-F12 | 2.15.0-r4-f12 | Transfer `payments`/`core_payments` no reschedule — ✅ |
+| R4-F13 | 2.16.0-r4-f13 | Lifecycle ADR-026 complete/no_show/expired + frontend off 410 — ✅ |
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos: `completed`/`no_show`/`expired` (ADR-026); limpeza routers `pagamentos.py`/`payments.py`
+Próximos: limpeza routers `pagamentos.py`/`payments.py`; upload comprovante core; CI AWS OIDC
