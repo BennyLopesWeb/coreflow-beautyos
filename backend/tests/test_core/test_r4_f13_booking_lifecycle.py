@@ -28,8 +28,8 @@ from app.shared.events.outbox import CoreEventOutbox
 
 
 def test_app_version_r4_f13():
-    """APP_VERSION marca R4-F13 (lifecycle complete/no_show/expired)."""
-    assert settings.APP_VERSION == "2.16.0-r4-f13"
+    """APP_VERSION avançou de R4-F13 (pin exato relaxado em R4-F14+)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def _booking_entity(status: BookingLifecycleStatus) -> Booking:

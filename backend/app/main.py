@@ -20,7 +20,7 @@ from app.core.error_handler import (
 )
 from app.modules.identity.api.auth_router import router as auth_router
 from app.modules.identity.api.companies_router import router as companies_router
-from app.routers import trancas, agendamentos, pagamentos, fila, financeiro, webhook, clientes, notifications, admin, reservations, queue, payments, plugins, v1_catalogs, v1_bookings, v1_scheduling, v1_customers, v1_payments, v1_waitlist, v1_ai, v1_workflows, v1_orders, v1_invoices, v1_assets, v1_inventory, v1_marketplace, v1_devices, v1_outbox, v1_mobile, v1_events, v1_platform, well_known
+from app.routers import trancas, agendamentos, fila, financeiro, webhook, clientes, notifications, admin, reservations, queue, plugins, v1_catalogs, v1_bookings, v1_scheduling, v1_customers, v1_payments, v1_waitlist, v1_ai, v1_workflows, v1_orders, v1_invoices, v1_assets, v1_inventory, v1_marketplace, v1_devices, v1_outbox, v1_mobile, v1_events, v1_platform, well_known
 from app.core.legacy_telemetry import LegacyTelemetryMiddleware
 from app.core.telemetry import setup_telemetry
 
@@ -96,7 +96,8 @@ app.include_router(v1_scheduling.scheduling_router)
 app.include_router(clientes.router)
 app.include_router(trancas.router)
 app.include_router(agendamentos.router)
-app.include_router(pagamentos.router)
+# R4-F14: routers legado pagamentos.py / payments.py removidos —
+# LegacyGoneMiddleware responde 410 em /pagamentos* e /payments*.
 app.include_router(fila.router)
 app.include_router(financeiro.router)
 app.include_router(webhook.router)
@@ -104,7 +105,6 @@ app.include_router(notifications.router)
 app.include_router(admin.router)
 app.include_router(reservations.router)
 app.include_router(queue.router)
-app.include_router(payments.router)
 
 # Arquivos estáticos (imagens de tranças)
 _static_dir = Path(__file__).resolve().parents[1] / "static"

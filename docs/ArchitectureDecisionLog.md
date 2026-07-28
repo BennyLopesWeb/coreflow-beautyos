@@ -16,6 +16,15 @@
 
 ---
 
+## 2026-07-28 — R4-F14 Remoção routers pagamento legado
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F14 | Remove `routers/pagamentos.py` e `routers/payments.py`; LegacyGone cobre `/pagamentos` e `/payments`; `2.17.0-r4-f14` |
+| **Published** | Release + sprint + gate | [2.17.0-r4-f14.md](releases/2.17.0-r4-f14.md) · [R4-F14.md](sprints/R4-F14.md) · [R4-F14-Gate.md](reviews/R4-F14-Gate.md) |
+
+---
+
 ## 2026-07-28 — R4-F13 Lifecycle ADR-026 + frontend core paths
 
 | Evento | Artefato | Notas |
