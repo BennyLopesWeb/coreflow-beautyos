@@ -16,6 +16,15 @@
 
 ---
 
+## 2026-07-28 — R4-F15 Upload comprovante core-only
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F15 | `POST /v1/bookings/{id}/comprovante` → `payments` DEPOSIT + `comprovante_url`; FE restore upload; legado 410; `2.18.0-r4-f15` |
+| **Published** | Release + sprint + gate | [2.18.0-r4-f15.md](releases/2.18.0-r4-f15.md) · [R4-F15.md](sprints/R4-F15.md) · [R4-F15-Gate.md](reviews/R4-F15-Gate.md) |
+
+---
+
 ## 2026-07-28 — R4-F14 Remoção routers pagamento legado
 
 | Evento | Artefato | Notas |

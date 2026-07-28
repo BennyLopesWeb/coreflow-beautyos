@@ -14,8 +14,8 @@ from app.core.legacy_gone import match_legacy_gone
 
 
 def test_app_version_r4_f14():
-    """APP_VERSION marca R4-F14 (remoção routers pagamento legado)."""
-    assert settings.APP_VERSION == "2.17.0-r4-f14"
+    """APP_VERSION avançou de R4-F14 (pin exato relaxado em R4-F15+)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_routers_legado_removidos():

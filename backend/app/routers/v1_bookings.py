@@ -4,7 +4,17 @@ Router API v1 — Bookings (metamodelo CoreFlow + CQRS).
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 
 from app.db.session import get_db
 from sqlalchemy.orm import Session
@@ -23,6 +33,8 @@ from app.core.exceptions import (
 )
 from app.modules.identity.api.deps import get_tenant_context, get_current_admin_user
 from app.models.user import User
+from app.schemas.pagamento import ComprovanteUploadResponse
+from app.services.comprovante_service import ComprovanteService
 from app.shared.kernel.tenant import TenantContext
 from app.modules.booking.application.commands.create_booking import (
     CreateBookingCommand,
@@ -501,5 +513,54 @@ def marcar_no_show_booking(
         raise HTTPException(status_code=409, detail=str(exc.detail))
     except BusinessRuleError as exc:
         raise HTTPException(status_code=409, detail=str(exc.detail))
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc.detail))
+
+
+@router.post(
+    "/{booking_id}/comprovante",
+    response_model=ComprovanteUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def enviar_comprovante_booking(
+    booking_id: int,
+    request: Request,
+    arquivo: UploadFile = File(
+        ..., description="Comprovante de depósito (JPG, PNG, WEBP ou PDF)"
+    ),
+    tenant: TenantContext = Depends(get_tenant_context),
+    db: Session = Depends(get_db),
+):
+    """
+    Envia comprovante de depósito para um booking core (R4-F15).
+
+    Fluxo do cliente após ``POST /v1/bookings``. Não confirma o sinal —
+    apenas anexa a URL em ``payments`` (DEPOSIT) para o admin revisar.
+
+    Args:
+        booking_id: ID ``core_bookings.id``.
+        request: Request FastAPI (base URL para montar link público).
+        arquivo: Multipart do comprovante.
+        tenant: Tenant resolvido (público ou autenticado).
+        db: Sessão SQLAlchemy.
+
+    Returns:
+        ComprovanteUploadResponse com ``booking_id`` e ``comprovante_url``.
+    """
+    try:
+        pag = await ComprovanteService(db).salvar_comprovante_por_booking(
+            booking_id=booking_id,
+            arquivo=arquivo,
+            company_id=tenant.company_id,
+            base_url=str(request.base_url).rstrip("/"),
+        )
+        return ComprovanteUploadResponse(
+            booking_id=booking_id,
+            comprovante_url=pag.comprovante_url or "",
+            mensagem="Comprovante recebido! Aguarde a confirmação do sinal pelo salão.",
+            agendamento_id=pag.agendamento_id,
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc.detail))
