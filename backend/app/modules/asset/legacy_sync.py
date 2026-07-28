@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.logging_config import get_logger
 from app.models.inventory_item import InventoryItem
-from app.modules.asset.domain.models import CoreAsset
+from app.modules.asset.models import CoreAsset
 from app.modules.inventory.models import CoreInventory
 
 logger = get_logger("asset_sync")
@@ -23,6 +23,12 @@ class AssetLegacySyncService:
     """
 
     def __init__(self, db: Session):
+        """
+        Inicializa o sync com a sessão do banco.
+
+        Args:
+            db: Sessão SQLAlchemy ativa.
+        """
         self.db = db
 
     def sync_all(self) -> int:
@@ -71,10 +77,10 @@ class AssetLegacySyncService:
 
     def _upsert(self, item: InventoryItem) -> Optional[Tuple[CoreAsset, CoreInventory]]:
         """
-        Cria ou atualiza core_asset e core_inventory.
+        Cria ou atualiza ``core_asset`` e ``core_inventory``.
 
         Args:
-            item: Registro legado.
+            item: Registro legado ``InventoryItem``.
 
         Returns:
             Tupla (CoreAsset, CoreInventory).

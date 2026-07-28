@@ -42,7 +42,7 @@
 | Módulo | Tipo | Wave | Status |
 |--------|------|------|--------|
 | `inventory` | **CRUD** | 1 | ✅ DONE |
-| `asset` | **CRUD** | 1 | TODO (P3) |
+| `asset` | **CRUD** | 1 | DONE (P3) |
 | `invoice` | **CRUD** | 1 | TODO (P4) |
 | `order` | **CRUD** | 1 | TODO (P5) |
 | `waitlist` | **CRUD** | 2 | TODO (P7) |

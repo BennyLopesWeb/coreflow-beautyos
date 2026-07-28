@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
-from app.modules.asset.application.legacy_sync_service import AssetLegacySyncService
+from app.modules.asset.legacy_sync import AssetLegacySyncService
 from app.modules.inventory.inventory_service import InventoryService
 from app.modules.identity.api.deps import get_tenant_context, get_current_admin_user
 from app.models.user import User

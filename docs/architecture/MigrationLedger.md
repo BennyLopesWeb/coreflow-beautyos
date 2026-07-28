@@ -1,7 +1,7 @@
 # Migration Ledger — Support CRUD Simplification
 
 **Versão processo:** v3  
-**Última atualização:** 2026-07-16  
+**Última atualização:** 2026-07-28  
 **Fonte única de verdade** da migração arquitetural Support → Flat.
 
 **Nota R2-F3b:** `catalog` e `customer` saíram do pipeline flatten — ver emenda ModuleTieringPolicy v1.1 (CORE-SUPPORT).
@@ -16,7 +16,7 @@ Classificação oficial: [ModuleTieringPolicy.md](./ModuleTieringPolicy.md)
 |--------|------|------|----------|--------|--------|--------------|
 | `inventory` | CRUD | 1 | P1 | **DONE** | `7b3328a` | Flat |
 | `customer` | CORE-SUPPORT | — | — | **KEEP** (F3b) | — | Hexagonal lite — flatten Wave 1 DONE revertido de tier |
-| `asset` | CRUD | 1 | P3 | TODO | — | CRUD Flat (target) |
+| `asset` | CRUD | 1 | P3 | **DONE** | (PR) | Flat |
 | `invoice` | CRUD | 1 | P4 | TODO | — | CRUD Flat (target) |
 | `order` | CRUD | 1 | P5 | TODO | — | CRUD Flat (target) |
 | `catalog` | CORE-SUPPORT | — | — | **KEEP** (F3b) | — | Hexagonal lite — flatten Wave 2 **CANCELLED** |
@@ -216,44 +216,43 @@ Antes do commit em `catalog` ou `payments` (read):
 
 ---
 
-## P3 asset — STEP 0 (pré-aprovado, não executado)
+## P3 asset — DONE (APPROVED P3 via “Prossiga”)
 
-**Inbound (9 arquivos):**
+**Estrutura flat:**
 
-| Consumer | Symbol |
-|----------|--------|
-| `routers/v1_assets.py` | `AssetQueryService`, `AssetLegacySyncService` |
-| `routers/v1_inventory.py` | `AssetLegacySyncService` |
-| `db/init_db.py` | `CoreAsset`, `AssetLegacySyncService` |
-| `alembic/env.py` | `CoreAsset` |
-| `tests/conftest.py` | `CoreAsset` |
-| `tests/test_cf10_*.py` | `CoreAsset`, `AssetLegacySyncService` |
-| `modules/inventory` (indirect) | sync via inventory router only |
+```
+modules/asset/
+├── models.py          # CoreAsset
+├── asset_service.py   # AssetService (ex-AssetQueryService)
+└── legacy_sync.py     # AssetLegacySyncService
+```
 
-**Outbound:**
+### Architecture Debt — asset
 
-| Target | Purpose |
-|--------|---------|
-| `app.models.inventory_item` | Legacy sync source |
-| `app.modules.inventory.models` | Creates `CoreInventory` on sync |
-| `app.core.logging_config` | Logger |
+**Removed:**
+- [x] application/ layer
+- [x] domain/ layer
+- [x] fake ports / adapters
+- [x] AssetQueryService nome legado (→ `AssetService`)
 
-**Public symbols:** `CoreAsset`, `AssetQueryService`, `AssetLegacySyncService`
+**Remaining (expected for CRUD):**
+- `legacy_sync.py` até runner P0 unificado
 
-**Coupling:** inbound 9, outbound 3, package depth 3 → target 2
-
-**Aguardando:** `APPROVED P3`
+| Métrica | Before | After |
+|---------|--------|-------|
+| Package depth | 3 (`asset.domain.models`) | 1 (`asset.models`) |
+| Prohibited paths | domain/application | 0 |
+| Architecture Lint | — | PASS |
 
 ---
 
-## Comparação P1 vs P2 — padrão validado
+## Comparação P1 / P2 / P3 — padrão validado
 
-| Critério | P1 | P2 |
-|----------|:--:|:--:|
-| Architecture Score ~43% | ✅ | ✅ |
-| 0 prohibited paths | ✅ | ✅ |
-| 318 tests PASS | ✅ | ✅ |
-| 0 aliases | ✅ | ✅ |
-| Core untouched | ✅ | ✅ |
+| Critério | P1 | P2 | P3 |
+|----------|:--:|:--:|:--:|
+| Architecture Score ~43% | ✅ | ✅ | ✅ |
+| 0 prohibited paths | ✅ | ✅ | ✅ |
+| 0 aliases | ✅ | ✅ | ✅ |
+| Core untouched | ✅ | ✅ | ✅ |
 
-**Padrão aprovado para P3+.**
+**Padrão aprovado para P4+ (`invoice`).**
