@@ -33,7 +33,8 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 | R4-F14 | 2.17.0-r4-f14 | Remoção routers legado `pagamentos`/`payments` — ✅ |
 | R4-F15 | 2.18.0-r4-f15 | Upload comprovante core-only (`POST /v1/bookings/{id}/comprovante`) — ✅ |
 | R4-F16 | 2.19.0-r4-f16 | CI AWS OIDC (terraform/cdn/drift sem access keys) — ✅ |
+| R4-F17 | 2.20.0-r4-f17 | Terraform módulo/stack GitHub OIDC IAM — ✅ |
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos: provisionar IAM Role OIDC na AWS + remover secrets estáticos no GitHub
+Próximos: `./scripts/terraform-ci-oidc.sh apply` na AWS + secret `AWS_ROLE_ARN` + remover keys estáticas
