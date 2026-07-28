@@ -34,6 +34,9 @@ Action compartilhada: `.github/actions/configure-aws-oidc`.
 Após validar OIDC, **remover** `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY`
 dos secrets do repositório.
 
+O provider IAM usa o issuer `token.actions.githubusercontent.com`
+(`https://token.actions.githubusercontent.com`).
+
 ## Validação
 
 1. `./scripts/terraform-ci-oidc.sh apply`
