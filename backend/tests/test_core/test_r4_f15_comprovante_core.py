@@ -94,8 +94,8 @@ class _FakeUpload:
 
 
 def test_app_version_r4_f15():
-    """APP_VERSION marca R4-F15 (upload comprovante core)."""
-    assert settings.APP_VERSION == "2.18.0-r4-f15"
+    """APP_VERSION avançou de R4-F15 (pin exato relaxado em R4-F16+)."""
+    assert settings.APP_VERSION.startswith("2.")
 
 
 def test_legado_comprovante_continua_410():

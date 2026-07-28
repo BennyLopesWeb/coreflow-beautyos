@@ -6,7 +6,7 @@ Framework SaaS modular (API First · AI First · Event-Driven · Hexagonal · Pl
 
 **BeautyOS** é o primeiro produto — plugin `beauty` sobre o CoreFlow Engine.
 
-**Release atual:** `2.18.0-r4-f15` · R4-F15 Implemented (tech) · próximo: CI AWS OIDC
+**Release atual:** `2.19.0-r4-f16` · R4-F16 Implemented (tech) · próximo: provisionar IAM Role OIDC + remover secrets AWS estáticos
 
 ---
 
