@@ -18,12 +18,21 @@ on:
 jobs:
   export-and-sync:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     defaults:
       run:
         working-directory: backend
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure AWS (OIDC)
+        uses: ./.github/actions/configure-aws-oidc
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -49,8 +58,6 @@ jobs:
           CDN_S3_BUCKET: ${{ secrets.CDN_S3_BUCKET }}
           CDN_S3_REGION: ${{ secrets.CDN_S3_REGION }}
           CDN_CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CDN_CLOUDFRONT_DISTRIBUTION_ID }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           python -c "
           from app.modules.mobile.application.cdn_s3_sync_service import CdnS3SyncService

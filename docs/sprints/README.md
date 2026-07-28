@@ -32,7 +32,8 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 | R4-F13 | 2.16.0-r4-f13 | Lifecycle ADR-026 complete/no_show/expired + frontend off 410 — ✅ |
 | R4-F14 | 2.17.0-r4-f14 | Remoção routers legado `pagamentos`/`payments` — ✅ |
 | R4-F15 | 2.18.0-r4-f15 | Upload comprovante core-only (`POST /v1/bookings/{id}/comprovante`) — ✅ |
+| R4-F16 | 2.19.0-r4-f16 | CI AWS OIDC (terraform/cdn/drift sem access keys) — ✅ |
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos: CI AWS OIDC
+Próximos: provisionar IAM Role OIDC na AWS + remover secrets estáticos no GitHub

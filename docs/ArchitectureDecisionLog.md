@@ -16,6 +16,15 @@
 
 ---
 
+## 2026-07-28 — R4-F16 CI AWS OIDC
+
+| Evento | Artefato | Notas |
+|--------|----------|-------|
+| **Implemented (tech)** | R4-F16 | Workflows terraform/cdn/drift via OIDC (`AWS_ROLE_ARN`); remove access keys estáticas; `2.19.0-r4-f16` |
+| **Published** | Release + sprint + gate | [2.19.0-r4-f16.md](releases/2.19.0-r4-f16.md) · [R4-F16.md](sprints/R4-F16.md) · [R4-F16-Gate.md](reviews/R4-F16-Gate.md) · [github-aws-oidc.md](ops/github-aws-oidc.md) |
+
+---
+
 ## 2026-07-28 — R4-F15 Upload comprovante core-only
 
 | Evento | Artefato | Notas |
