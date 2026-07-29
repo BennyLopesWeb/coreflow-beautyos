@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional, Set, FrozenSet
 
-from app.models.agendamento import ReservationStatus, STATUS_OCUPAM_VAGA
+from app.models.agendamento import ReservationStatus, StatusPagamento, STATUS_OCUPAM_VAGA
 from app.models.tranca import Tranca
 from app.models.service_image import ServiceImage
 from app.schemas.agendamento import HorarioDisponivel
@@ -33,6 +33,15 @@ _EXPIRATION_SAFE_ORM_STATUSES: FrozenSet[ReservationStatus] = frozenset(
 )
 _EXPIRATION_SAFE_STATUS_VALUES: FrozenSet[str] = frozenset(
     s.value for s in _EXPIRATION_SAFE_ORM_STATUSES
+)
+
+# payment_status do booking que evidenciam dinheiro recebido (FIX-EXPIRATION-02C).
+_PROTECTED_BOOKING_PAYMENT_STATUS_VALUES: FrozenSet[str] = frozenset(
+    {
+        StatusPagamento.PARTIALLY_PAID.value,
+        StatusPagamento.CONFIRMED.value,
+        StatusPagamento.PAID.value,
+    }
 )
 
 
@@ -134,25 +143,172 @@ class DisponibilidadeService:
             return None
         return ensure_utc(raw)
 
+    def _booking_payment_status_value(self, booking) -> Optional[str]:
+        """
+        Normaliza ``payment_status`` do booking para string canônica.
+
+        Args:
+            booking: Instância ``CoreBooking`` (ou stub de teste).
+
+        Returns:
+            Valor string do status, ou ``None`` se ausente.
+        """
+        status = getattr(booking, "payment_status", None)
+        if status is None:
+            return None
+        if hasattr(status, "value"):
+            return str(status.value)
+        return str(status)
+
+    def _load_booking_ids_with_active_payment_rows(
+        self, booking_ids: List[int]
+    ) -> Set[int]:
+        """
+        Identifica bookings com linha financeira ativa em ``payments`` ou
+        ``core_payments`` (FIX-EXPIRATION-02C).
+
+        Considera ativo apenas status comprovadamente recebidos
+        (``paid``/``pago``/``processando`` em ``Payment``; ``paid`` em
+        ``CorePayment``). Ignora pending/failed/refunded/cancelado e
+        soft-deleted. Em erro de consulta, propaga a exceção para o
+        chamador aplicar fail-closed.
+
+        Args:
+            booking_ids: IDs de ``core_bookings`` a inspecionar.
+
+        Returns:
+            Conjunto de ``booking_id`` com evidência financeira ativa.
+
+        Raises:
+            Exception: Qualquer falha de consulta ao banco.
+        """
+        from app.models.payment import Payment, PaymentStatus
+        from app.modules.payments.models import CorePayment, CorePaymentStatus
+
+        if not booking_ids:
+            return set()
+
+        active_payment_statuses = (
+            PaymentStatus.PAID,
+            PaymentStatus.PAGO,
+            # Fail-closed: processamento em andamento é evidência ambígua.
+            PaymentStatus.PROCESSANDO,
+        )
+        protected: Set[int] = set()
+
+        payment_rows = (
+            self.db.query(Payment.booking_id)
+            .filter(
+                Payment.booking_id.in_(booking_ids),
+                Payment.deleted_at.is_(None),
+                Payment.status.in_(active_payment_statuses),
+            )
+            .distinct()
+            .all()
+        )
+        for (booking_id,) in payment_rows:
+            if booking_id is not None:
+                protected.add(int(booking_id))
+
+        core_rows = (
+            self.db.query(CorePayment.booking_id)
+            .filter(
+                CorePayment.booking_id.in_(booking_ids),
+                CorePayment.deleted_at.is_(None),
+                CorePayment.status == CorePaymentStatus.PAID,
+            )
+            .distinct()
+            .all()
+        )
+        for (booking_id,) in core_rows:
+            if booking_id is not None:
+                protected.add(int(booking_id))
+
+        return protected
+
+    def _has_any_protected_payment(
+        self,
+        booking,
+        *,
+        payment_row_protected_ids: Optional[Set[int]] = None,
+    ) -> bool:
+        """
+        Indica se o booking possui qualquer evidência de pagamento que
+        bloqueia expiração automática (FIX-EXPIRATION-02C).
+
+        Fontes (fail-closed):
+        - ``deposit_paid=True``;
+        - ``payment_status`` em partially_paid/confirmed/paid;
+        - linha ativa em ``payments`` / ``core_payments`` (quando o
+          conjunto pré-carregado estiver disponível, ou via consulta).
+
+        Não altera dados financeiros. Erro de consulta → protegido.
+
+        Args:
+            booking: Candidato à expiração.
+            payment_row_protected_ids: IDs com linhas ativas pré-carregadas
+                neste lote. Se ``None``, consulta sob demanda.
+
+        Returns:
+            ``True`` se a reserva deve ser preservada (não expirar).
+        """
+        company_id = getattr(booking, "company_id", None)
+        booking_id = getattr(booking, "id", None)
+
+        try:
+            if bool(getattr(booking, "deposit_paid", False)):
+                return True
+
+            pay_status = self._booking_payment_status_value(booking)
+            if pay_status in _PROTECTED_BOOKING_PAYMENT_STATUS_VALUES:
+                return True
+
+            if booking_id is None:
+                # Sem id: não dá para cruzar financeiro com segurança.
+                logger.warning(
+                    "Expiração: booking sem id — tratado como protegido "
+                    "(fail-closed) company_id=%s",
+                    company_id,
+                )
+                return True
+
+            if payment_row_protected_ids is not None:
+                return int(booking_id) in payment_row_protected_ids
+
+            return int(booking_id) in self._load_booking_ids_with_active_payment_rows(
+                [int(booking_id)]
+            )
+        except Exception:
+            logger.warning(
+                "Falha ao avaliar evidência financeira booking_id=%s "
+                "company_id=%s — expiração ignorada (fail-closed)",
+                booking_id,
+                company_id,
+                exc_info=True,
+            )
+            return True
+
     def _expirar_core_bookings_pendentes(self) -> int:
         """
-        Expira ``CoreBooking`` elegível sem sinal pago (FIX-EXPIRATION-02A/02B/02C).
+        Expira ``CoreBooking`` elegível sem evidência de pagamento
+        (FIX-EXPIRATION-02A/02B/02C).
 
-        Candidatos SQL: status PENDING-like seguros, ``deposit_paid=False``
-        (incondicional nesta etapa), não soft-deleted. Por tenant, aplica
-        ``BookingPolicyResolver``: ``enabled``, ``after_hours``, ``reference``
-        e ``eligible_statuses``.
+        Candidatos SQL: status PENDING-like seguros, não soft-deleted.
+        Por tenant: ``enabled``, ``after_hours``, ``reference``,
+        ``eligible_statuses``. Antes do handler, aplica proteção financeira
+        via ``_has_any_protected_payment`` (deposit_paid, payment_status,
+        Payment/CorePayment).
 
         Comparação exclusiva: ``reference_ts < now - after_hours``.
 
         FIX-EXPIRATION-02C: ``require_unpaid_deposit=false`` é lido, mas
-        **não** remove a proteção de depósito pago — bookings com sinal
-        exigem o fluxo de reagendamento protegido (``FIX-RESCHEDULE-*``),
-        ainda inexistente. ``touch_payment_status`` permanece sem efeito.
-        ``payment_status`` não é lido nem alterado aqui.
+        **não** amplia elegibilidade — qualquer evidência de pagamento
+        bloqueia até existir ``FIX-RESCHEDULE-*``. ``touch_payment_status``
+        permanece sem efeito. ``payment_status`` é lido só para proteção;
+        nunca alterado aqui.
 
-        Falhas isoladas (resolve, booking sem tenant, handler) não interrompem
-        o lote — best-effort com log.
+        Falhas isoladas (resolve, booking sem tenant, handler, financeiro)
+        não interrompem o lote — best-effort com log.
 
         Returns:
             Quantidade de bookings core expirados neste ciclo.
@@ -165,18 +321,32 @@ class DisponibilidadeService:
         from app.modules.booking.domain.policy.resolver import BookingPolicyResolver
 
         # Pré-filtro: só status com caminho seguro até ExpireBookingHandler.
-        # eligible_statuses e reference são avaliados por tenant após resolve.
-        # FIX-EXPIRATION-02C: deposit_paid=False é sempre obrigatório —
-        # require_unpaid_deposit=false NÃO alarga este conjunto.
+        # Proteção financeira (deposit/payment_status/Payment/CorePayment)
+        # é aplicada por booking antes do handler — fail-closed.
         pendentes = (
             self.db.query(CoreBooking)
             .filter(
                 CoreBooking.status.in_(list(_EXPIRATION_SAFE_ORM_STATUSES)),
-                CoreBooking.deposit_paid.is_(False),
                 CoreBooking.deleted_at.is_(None),
             )
             .all()
         )
+
+        booking_ids = [
+            int(b.id) for b in pendentes if getattr(b, "id", None) is not None
+        ]
+        try:
+            payment_row_protected_ids = self._load_booking_ids_with_active_payment_rows(
+                booking_ids
+            )
+        except Exception:
+            logger.warning(
+                "Falha ao pré-carregar evidências financeiras do lote de "
+                "expiração — todos os candidatos tratados como protegidos "
+                "(fail-closed)",
+                exc_info=True,
+            )
+            payment_row_protected_ids = set(booking_ids)
 
         handler = ExpireBookingHandler(self.db)
         resolver = BookingPolicyResolver(self.db)
@@ -220,18 +390,16 @@ class DisponibilidadeService:
                 if not expiration.enabled:
                     continue
 
-                # FIX-EXPIRATION-02C — trava de segurança intencional.
-                # Lê require_unpaid_deposit apenas para deixar explícito que
-                # false NÃO remove a proteção contra deposit_paid=True.
-                # Bookings com sinal/pagamento parcial exigem o fluxo de
-                # reagendamento protegido (FIX-RESCHEDULE-*), inexistente hoje.
-                # Nenhum efeito adicional: o filtro SQL permanece deposit_paid=False.
+                # FIX-EXPIRATION-02C — require_unpaid_deposit=false NÃO amplia
+                # elegibilidade até FIX-RESCHEDULE-*. Qualquer evidência de
+                # pagamento continua bloqueando a expiração.
                 if expiration.require_unpaid_deposit is False:
                     pass
 
-                # Cinto de segurança: nunca expirar depósito pago, mesmo se o
-                # pré-filtro SQL for alterado indevidamente no futuro.
-                if bool(booking.deposit_paid):
+                if self._has_any_protected_payment(
+                    booking,
+                    payment_row_protected_ids=payment_row_protected_ids,
+                ):
                     continue
 
                 if not self._expiration_status_is_eligible(
