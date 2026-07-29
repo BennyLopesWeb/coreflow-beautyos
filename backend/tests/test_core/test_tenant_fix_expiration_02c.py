@@ -603,13 +603,14 @@ def test_18_erro_consulta_protege_lote_continua(
         price_total=Decimal("300.00"),
     )
 
-    def _boom(self, booking_ids):
+    def _boom(self, booking_ids, *, company_id=None):
         """
         Simula falha de snapshot financeiro.
 
         Args:
             self: Service.
             booking_ids: IDs.
+            company_id: Tenant do lote (ignorado no mock).
 
         Raises:
             RuntimeError: Sempre.
@@ -628,7 +629,7 @@ def test_18_erro_consulta_protege_lote_continua(
     monkeypatch.setattr(
         DisponibilidadeService,
         "_load_payment_activation_snapshots",
-        lambda self, ids: {
+        lambda self, ids, *, company_id=None: {
             bid: {"paid_cents": 0, "has_processing": False, "has_paid_rows": False}
             for bid in ids
         },
