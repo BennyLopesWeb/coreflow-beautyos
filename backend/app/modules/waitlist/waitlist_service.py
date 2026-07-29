@@ -1,5 +1,5 @@
 """
-Consultas read-only de Waitlist genérico CoreFlow.
+Serviço read-only de Waitlist genérico CoreFlow (Support CRUD).
 """
 from datetime import date
 from typing import List, Optional
@@ -7,18 +7,24 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.modules.waitlist.domain.models import CoreWaitlist, CoreWaitlistStatus
+from app.modules.waitlist.models import CoreWaitlist, CoreWaitlistStatus
 
 
-class WaitlistQueryService:
+class WaitlistService:
     """
-    Serviço de leitura para core_waitlist.
+    Consultas de leitura para ``core_waitlist`` (Support CRUD).
 
     Args:
         db: Sessão SQLAlchemy.
     """
 
     def __init__(self, db: Session):
+        """
+        Inicializa o serviço com a sessão do banco.
+
+        Args:
+            db: Sessão SQLAlchemy ativa.
+        """
         self.db = db
 
     def list_waitlist(

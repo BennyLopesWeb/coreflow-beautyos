@@ -20,7 +20,7 @@ Classificação oficial: [ModuleTieringPolicy.md](./ModuleTieringPolicy.md)
 | `invoice` | CRUD | 1 | P4 | **DONE** | `a7532ea` | Flat |
 | `order` | CRUD | 1 | P5 | **DONE** | `12e691e` | Flat |
 | `catalog` | CORE-SUPPORT | — | — | **KEEP** (F3b) | — | Hexagonal lite — flatten Wave 2 **CANCELLED** |
-| `waitlist` | CRUD | 2 | P7 | TODO | — | CRUD Flat (target) |
+| `waitlist` | CRUD | 2 | P7 | **DONE** | (pending) | Flat |
 | `payments` (read) | CRUD | 2 | P8 | TODO | — | CRUD Flat (target) — **sensitive** |
 | `platform` | OPS | 3 | P9 | TODO | — | OPS thin |
 | `observability` | OPS | 3 | P10 | TODO | — | OPS thin |
@@ -271,4 +271,12 @@ modules/asset/
 
 **Remaining:** `legacy_sync.py` (sync via `core_bookings`)
 
-**Padrão aprovado para P7+ (`waitlist`).** Wave 1 CRUD completa (inventory/asset/invoice/order).
+### Architecture Debt — waitlist (P7)
+
+**Removed:**
+- [x] application/ / domain/ / commands/ nesting
+- [x] `WaitlistQueryService` → `WaitlistService`
+
+**Remaining:** `legacy_sync.py` + `promote_waitlist.py` (handler na raiz flat)
+
+**Padrão aprovado para P8+ (`payments` read — sensível).**

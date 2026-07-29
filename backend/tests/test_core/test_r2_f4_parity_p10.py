@@ -6,8 +6,8 @@ import pytest
 from app.models.fila import Fila, StatusFila
 from app.modules.catalog.application.legacy_sync_service import LegacySyncService
 from app.modules.customer.legacy_sync import CustomerLegacySyncService
-from app.modules.waitlist.application.legacy_sync_service import WaitlistLegacySyncService
-from app.modules.waitlist.domain.models import CoreWaitlist, CoreWaitlistStatus
+from app.modules.waitlist.legacy_sync import WaitlistLegacySyncService
+from app.modules.waitlist.models import CoreWaitlist, CoreWaitlistStatus
 from app.plugins.beauty.hooks import on_waitlist_promoted as beauty_hook
 from app.core.plugin.registry import plugin_registry
 
