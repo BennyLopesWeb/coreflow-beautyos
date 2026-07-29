@@ -1,7 +1,8 @@
 """
-Port de provedor de pagamento — Hexagonal Architecture v3.0.
+Contrato de provedor de pagamento (PIX/cartão) — Support CRUD flat (P8).
 
-O domain/application depende desta interface; adapters concretos ficam em infrastructure.
+Protocolo estável para futuros adapters (Mercado Pago, Asaas, etc.).
+Escrita de depósito/confirmação continua em ``PaymentReservationService`` (legado bridge).
 """
 from decimal import Decimal
 from typing import Optional, Protocol

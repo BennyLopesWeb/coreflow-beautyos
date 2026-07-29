@@ -21,7 +21,7 @@ Classificação oficial: [ModuleTieringPolicy.md](./ModuleTieringPolicy.md)
 | `order` | CRUD | 1 | P5 | **DONE** | `12e691e` | Flat |
 | `catalog` | CORE-SUPPORT | — | — | **KEEP** (F3b) | — | Hexagonal lite — flatten Wave 2 **CANCELLED** |
 | `waitlist` | CRUD | 2 | P7 | **DONE** | `65f658b` | Flat |
-| `payments` (read) | CRUD | 2 | P8 | TODO | — | CRUD Flat (target) — **sensitive** |
+| `payments` (read) | CRUD | 2 | P8 | **DONE** | `bd1e43b` | Flat — **sensitive** |
 | `platform` | OPS | 3 | P9 | TODO | — | OPS thin |
 | `observability` | OPS | 3 | P10 | TODO | — | OPS thin |
 | `ai` | OPS | 3 | P12 | TODO | — | OPS thin |
@@ -279,4 +279,17 @@ modules/asset/
 
 **Remaining:** `legacy_sync.py` + `promote_waitlist.py` (handler na raiz flat)
 
-**Padrão aprovado para P8+ (`payments` read — sensível).**
+### Architecture Debt — payments read (P8)
+
+**Dependency Contract (gate sensível):**
+- Public: `CorePayment`, `PaymentService`, `PaymentLegacySyncService`, `PaymentProviderPort`
+- Booking consumer: `reschedule_booking` (import path-only `CorePayment`); approve usa `PaymentQueryPort` no booking (não neste módulo)
+- Fake `ports/` folder removida; protocolo em `payment_provider.py` na raiz
+
+**Removed:**
+- [x] application/ / domain/ / ports/ nesting
+- [x] `PaymentQueryService` → `PaymentService`
+
+**Remaining:** `legacy_sync.py` + `PaymentProviderPort` (contrato futuro, 0 adapters)
+
+**Padrão aprovado para Wave 3 OPS.**
