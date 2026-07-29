@@ -51,6 +51,13 @@ class Payment(Base):
     ``Integer`` simples, sem constraint) — mesma mudança aplicada em
     ``Schedule``/``SatisfactionSurvey``/``Fila``/``QueueEntry``/
     ``Financeiro``/``NotificationLog`` nesta release.
+
+    SEPARATE-PAYMENT-EVIDENCE-01 — semântica de ``valor``:
+
+    - com status ``paid``/``pago``: valor efetivamente liquidado;
+    - com status ``pending`` criado por comprovante: placeholder ``0.00``
+      (evidência; **não** é ``deposit_amount`` nem valor recebido);
+    - ``EffectivePaidSnapshot`` só soma status pagos.
     """
     __tablename__ = "payments"
 
