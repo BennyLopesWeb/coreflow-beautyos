@@ -322,7 +322,7 @@ class RescheduleBookingHandler:
             Quantidade de linhas ``payments`` reatribuídas.
         """
         from app.models.payment import Payment
-        from app.modules.payments.domain.models import CorePayment
+        from app.modules.payments.models import CorePayment
 
         moved = (
             self.db.query(Payment)

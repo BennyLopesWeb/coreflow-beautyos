@@ -18,7 +18,7 @@ from app.modules.scheduling.domain.models import (  # noqa: F401
 from app.modules.customer.models import CoreCustomer  # noqa: F401
 from app.shared.events.outbox import CoreEventOutbox  # noqa: F401
 from app.shared.events.kafka_dlq import CoreEventDlq  # noqa: F401
-from app.modules.payments.domain.models import CorePayment  # noqa: F401
+from app.modules.payments.models import CorePayment  # noqa: F401
 from app.modules.waitlist.models import CoreWaitlist  # noqa: F401
 from app.modules.workflow.domain.models import CoreWorkflowRun  # noqa: F401
 from app.modules.workflow.domain.config_models import CoreWorkflowConfig  # noqa: F401
@@ -86,9 +86,7 @@ def bootstrap_tenant() -> None:
         customer_stats = CustomerLegacySyncService(db).sync_all()
         print(f"✅ Customer sync: {customer_stats}")
 
-        from app.modules.payments.application.legacy_sync_service import (
-            PaymentLegacySyncService,
-        )
+        from app.modules.payments.legacy_sync import PaymentLegacySyncService
         payment_stats = PaymentLegacySyncService(db).sync_all()
         print(f"✅ Payment sync: {payment_stats}")
 

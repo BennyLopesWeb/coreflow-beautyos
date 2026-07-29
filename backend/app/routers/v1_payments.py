@@ -11,8 +11,8 @@ from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.modules.identity.api.deps import get_tenant_context, get_current_admin_user
 from app.models.user import User
-from app.modules.payments.application.legacy_sync_service import PaymentLegacySyncService
-from app.modules.payments.application.payment_query_service import PaymentQueryService
+from app.modules.payments.legacy_sync import PaymentLegacySyncService
+from app.modules.payments.payment_service import PaymentService
 from app.schemas.coreflow_v1 import PaymentResponse
 from app.shared.kernel.tenant import TenantContext
 
@@ -38,7 +38,7 @@ def listar_payments(
         Lista de core_payments.
     """
     PaymentLegacySyncService(db).sync_all()
-    svc = PaymentQueryService(db)
+    svc = PaymentService(db)
     if booking_id is not None:
         return svc.list_by_booking(booking_id, tenant.company_id)
     if legacy_agendamento_id is not None:
@@ -68,6 +68,6 @@ def obter_payment(
         PaymentResponse.
     """
     try:
-        return PaymentQueryService(db).get_payment(payment_id, tenant.company_id)
+        return PaymentService(db).get_payment(payment_id, tenant.company_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

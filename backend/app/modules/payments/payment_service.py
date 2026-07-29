@@ -1,23 +1,29 @@
 """
-Consultas read-only de Payment genérico CoreFlow.
+Serviço read-only de Payment genérico CoreFlow (Support CRUD — P8).
 """
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.modules.payments.domain.models import CorePayment
+from app.modules.payments.models import CorePayment
 
 
-class PaymentQueryService:
+class PaymentService:
     """
-    Serviço de leitura para core_payments.
+    Consultas de leitura para ``core_payments``.
 
     Args:
         db: Sessão SQLAlchemy.
     """
 
     def __init__(self, db: Session):
+        """
+        Inicializa o serviço com a sessão do banco.
+
+        Args:
+            db: Sessão SQLAlchemy ativa.
+        """
         self.db = db
 
     def list_by_booking(

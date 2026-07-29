@@ -23,7 +23,7 @@ from app.modules.scheduling.domain.models import (  # noqa: F401
 )
 from app.modules.customer.models import CoreCustomer  # noqa: F401
 from app.shared.events.outbox import CoreEventOutbox  # noqa: F401
-from app.modules.payments.domain.models import CorePayment  # noqa: F401
+from app.modules.payments.models import CorePayment  # noqa: F401
 from app.modules.waitlist.models import CoreWaitlist  # noqa: F401
 from app.modules.workflow.domain.models import CoreWorkflowRun  # noqa: F401
 from app.modules.workflow.domain.config_models import CoreWorkflowConfig  # noqa: F401

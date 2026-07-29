@@ -14,8 +14,8 @@ import pytest
 from app.core.config import settings
 from app.models.payment import Payment, PaymentStatus, PaymentType
 from app.modules.booking.domain.models import CoreBooking
-from app.modules.payments.application.legacy_sync_service import PaymentLegacySyncService
-from app.modules.payments.domain.models import CorePayment
+from app.modules.payments.legacy_sync import PaymentLegacySyncService
+from app.modules.payments.models import CorePayment
 from app.services.payment_reservation_service import PaymentReservationService
 
 

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.logging_config import get_logger
 from app.models.payment import Payment, PaymentStatus, PaymentType
 from app.modules.booking.domain.models import CoreBooking
-from app.modules.payments.domain.models import (
+from app.modules.payments.models import (
     CorePayment,
     CorePaymentStatus,
     CorePaymentType,
