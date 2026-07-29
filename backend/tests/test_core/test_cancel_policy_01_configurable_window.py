@@ -29,6 +29,7 @@ from app.modules.booking.infrastructure.adapters.cancel_policy_adapter import (
 from app.models.company import Company, CompanyPlan, CompanySegment
 
 
+from tests.helpers_ledger import seed_ledger_deposit
 def _booking(
     *,
     status: BookingLifecycleStatus = BookingLifecycleStatus.APPROVED,
@@ -466,6 +467,7 @@ def test_28_http_409_cancel_policy_violation(
     )
     assert create.status_code == 201, create.text
     booking_id = create.json()["id"]
+    seed_ledger_deposit(db, booking_id)
     PaymentReservationService(db).confirmar_deposito_por_booking(
         booking_id, company_id=cliente_exemplo.company_id
     )

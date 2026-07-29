@@ -20,6 +20,9 @@ from app.modules.booking.domain.policy.activation import (
     calculate_minimum_activation_cents,
     money_to_cents,
 )
+from app.modules.booking.domain.policy.paid_amount import (
+    get_effective_paid_snapshot,
+)
 from app.services.financeiro_service import FinanceiroService
 
 logger = get_logger("payment_reservation_service")
@@ -177,20 +180,25 @@ class PaymentReservationService:
                 "Booking cancelado ou estornado não pode ter pagamento confirmado"
             )
 
-    def _assert_minimum_activation_met(self, booking: "CoreBooking") -> None:
+    def _assert_minimum_activation_met(
+        self, booking: "CoreBooking", *, company_id: int
+    ) -> None:
         """
-        Garante que o valor de entrada do booking atinge o mínimo de ativação.
+        Garante que o ledger reconciliado atinge o mínimo de ativação.
 
-        Recalcula o mínimo a partir de ``price_total`` no servidor. O valor
-        considerado pago nesta confirmação é ``deposit_amount`` (sinal
-        configurado no snapshot do booking).
+        ``deposit_amount`` do booking é cotação comercial e **não** entra
+        nesta apuração. Fail-closed se a consulta financeira falhar, se
+        houver ``processando``, ou se ``Payment`` e ``CorePayment``
+        divergirem materialmente.
 
         Args:
             booking: ``CoreBooking`` candidato à ativação.
+            company_id: Tenant efetivo.
 
         Raises:
-            ValidationError: Total do serviço inválido.
-            MinimumDepositNotMetError: Entrada abaixo do mínimo.
+            ValidationError: Total inválido, falha de consulta, processing
+                ou divergência de fontes.
+            MinimumDepositNotMetError: Ledger reconciliado abaixo do mínimo.
         """
         total_cents = money_to_cents(booking.price_total)
         if total_cents is None or total_cents <= 0:
@@ -198,37 +206,58 @@ class PaymentReservationService:
                 "Não é possível ativar a reserva: preço total inválido."
             )
         minimum = calculate_minimum_activation_cents(total_cents)
-        paid_cents = money_to_cents(booking.deposit_amount) or 0
-        if paid_cents < minimum:
+        try:
+            snap = get_effective_paid_snapshot(
+                self.db,
+                booking_id=int(booking.id),
+                company_id=int(company_id),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Falha ao apurar ledger booking_id=%s company_id=%s — "
+                "ativação bloqueada (fail-closed)",
+                booking.id,
+                company_id,
+                exc_info=True,
+            )
+            raise ValidationError(
+                "Não foi possível consultar o ledger financeiro para ativação."
+            ) from exc
+
+        if snap.has_processing:
+            raise ValidationError(
+                "Há pagamento em processamento; a reserva não pode ser ativada."
+            )
+        if snap.has_source_divergence or not snap.is_reconciled:
+            raise ValidationError(
+                "Divergência entre Payment e CorePayment; ativação bloqueada "
+                "para análise manual."
+            )
+        if snap.paid_cents < minimum:
             raise MinimumDepositNotMetError(minimum)
 
     def confirmar_deposito_por_booking(
         self, booking_id: int, company_id: int
     ) -> "CoreBooking":
         """
-        Confirma sinal diretamente em booking core-only, sem ``Agendamento`` (R4-F2/R4-F3).
+        Confirma sinal em booking core-only quando o ledger já cobre o mínimo.
 
-        Path preferencial desde R4-F3 (dual-write outbound removido
-        definitivamente) e path **único** de escrita de sinal desde R4-F6
-        para bookings novos: não existe projeção legado (``agendamentos``)
-        para o booking, então a confirmação do sinal atualiza
-        ``CoreBooking.deposit_paid`` diretamente — é isso que
-        ``PaymentQueryPort.is_deposit_confirmed`` consulta para liberar o
-        approve (ADR-028).
+        Path preferencial desde R4-F3 / R4-F6: atualiza
+        ``CoreBooking.deposit_paid`` (consulta de approve, ADR-028).
 
-        R4-F6 (bridge Payment→booking_id): além de atualizar o booking,
-        cria/atualiza (best-effort, nunca bloqueia a confirmação) uma linha
-        em ``payments`` vinculada por ``booking_id`` — paridade de
-        auditoria/relatórios com o path legado, sem exigir
-        ``agendamento_id``.
+        RECONCILE-DEPOSIT-SOURCES-01 — semântica explícita:
 
-        R4-F9: na primeira confirmação, registra entrada em ``Financeiro``
-        via ``FinanceiroService.registrar_entrada_automatica`` (best-effort;
-        falha não reverte ``deposit_paid``).
+        - ``deposit_amount`` = cotação comercial do sinal (não é pagamento);
+        - este endpoint **não** registra recebimento manual nem faz upsert
+          de ``Payment`` a partir do snapshot;
+        - apenas confirma pagamentos **já existentes** no ledger
+          (``Payment`` / ``CorePayment``) se reconciliados e >= mínimo.
 
-        FIX-04: exige ``company_id`` e filtra na query SQL; bloqueia
-        cancelado/estornado (409); se ``deposit_paid`` já for ``True``,
-        retorna o booking sem reprocessar Payment nem Financeiro.
+        R4-F9: na primeira confirmação bem-sucedida, registra entrada em
+        ``Financeiro`` (best-effort; falha não reverte ``deposit_paid``).
+
+        FIX-04: exige ``company_id``; bloqueia cancelado/estornado (409);
+        se ``deposit_paid`` já for ``True``, retorna sem efeitos colaterais.
 
         Args:
             booking_id: ID ``core_bookings.id``.
@@ -240,8 +269,10 @@ class PaymentReservationService:
         Raises:
             NotFoundError: Booking não encontrado neste tenant.
             ConflictError: Booking cancelado/estornado.
-            ValidationError: Preço total inválido.
-            MinimumDepositNotMetError: Entrada abaixo do mínimo de ativação.
+            ValidationError: Total inválido, falha de ledger, processing ou
+                divergência de fontes.
+            MinimumDepositNotMetError: Ledger abaixo do mínimo (valores
+                permanecem para análise manual; booking não ativa).
         """
         row = self._obter_booking_do_tenant(booking_id, company_id)
         self._assert_booking_confirmavel(row)
@@ -250,14 +281,10 @@ class PaymentReservationService:
         if bool(row.deposit_paid):
             return row
 
-        # FIX-BOOKING-MIN-DEPOSIT-QUOTE-01: ativação exige mínimo recalculado
-        # no servidor (nunca confiar em valor enviado pelo cliente).
-        self._assert_minimum_activation_met(row)
+        self._assert_minimum_activation_met(row, company_id=company_id)
 
         row.deposit_paid = True
         row.payment_status = StatusPagamento.PARTIALLY_PAID
-
-        self._upsert_payment_por_booking(row)
 
         self.db.commit()
         self.db.refresh(row)
@@ -280,21 +307,16 @@ class PaymentReservationService:
 
     def _upsert_payment_por_booking(self, booking) -> Optional[Payment]:
         """
-        Cria ou atualiza o ``Payment`` (R4-F6 bridge) vinculado a um ``CoreBooking``.
+        Bridge legado R4-F6: cria/atualiza ``Payment`` de depósito.
 
-        Nice-to-have de paridade/auditoria: mantém uma linha em ``payments``
-        (histórico contábil, sync legado, relatórios) mesmo para bookings
-        core-only, vinculada por ``booking_id`` em vez de ``agendamento_id``.
-        Best-effort: erros aqui não devem interromper
-        ``confirmar_deposito_por_booking`` (a fonte de verdade do sinal é
-        ``CoreBooking.deposit_paid``, já persistido antes desta chamada).
+        Mantido para outros fluxos/compatibilidade. **Não** é chamado por
+        ``confirmar_deposito_por_booking`` (cotação ≠ recebimento).
 
         Args:
-            booking: ``CoreBooking`` com ``deposit_paid`` já marcado ``True``.
+            booking: ``CoreBooking`` com dados de depósito.
 
         Returns:
-            Payment persistido (criado ou atualizado), ou ``None`` em caso
-            de erro não fatal (logado, não propagado).
+            Payment persistido, ou ``None`` em erro não fatal.
         """
         try:
             pag = (
@@ -302,6 +324,7 @@ class PaymentReservationService:
                 .filter(
                     Payment.booking_id == booking.id,
                     Payment.tipo.in_([PaymentType.DEPOSIT, PaymentType.SINAL]),
+                    Payment.deleted_at.is_(None),
                 )
                 .first()
             )

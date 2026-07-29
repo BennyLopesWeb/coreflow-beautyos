@@ -22,6 +22,7 @@ from app.shared.events.outbox import CoreEventOutbox, OutboxStatus
 from decimal import Decimal
 
 
+from tests.helpers_ledger import seed_ledger_deposit
 def _slot_for_day(db, catalog, offering, days_ahead: int) -> datetime:
     """
     Retorna primeiro slot disponível para testes de paridade.
@@ -130,6 +131,7 @@ def _create_booking_with_deposit(client, db, synced_catalog, cliente_exemplo, bo
         .filter(CoreBooking.id == booking["id"])
         .scalar()
     )
+    seed_ledger_deposit(db, booking["id"])
     PaymentReservationService(db).confirmar_deposito_por_booking(
         booking["id"], company_id=company_id
     )
@@ -270,6 +272,7 @@ def test_p08_deposit_confirmed_enables_approve_core_only_path(
         .filter(CoreBooking.id == booking["id"])
         .scalar()
     )
+    seed_ledger_deposit(db, booking["id"])
     PaymentReservationService(db).confirmar_deposito_por_booking(
         booking["id"], company_id=company_id
     )

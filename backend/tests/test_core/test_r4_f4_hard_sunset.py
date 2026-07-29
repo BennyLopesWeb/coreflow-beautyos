@@ -38,6 +38,7 @@ import pytest
 from app.core.config import settings
 from app.core.exceptions import BusinessRuleError, NotFoundError
 from app.modules.booking.domain.models import CoreBooking
+from tests.helpers_ledger import seed_ledger_deposit
 from app.schemas.agendamento import AgendamentoCreate
 from app.schemas.fila import FilaAprovarRequest
 from app.services.agendamento_service import AgendamentoService
@@ -221,6 +222,7 @@ def test_confirmar_sinal_admin_booking_endpoint(
     booking = _create_booking(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=65
     )
+    seed_ledger_deposit(db, booking["id"])
 
     response = client.post(
         f"/admin/pagamentos/booking/{booking['id']}/confirmar-sinal",

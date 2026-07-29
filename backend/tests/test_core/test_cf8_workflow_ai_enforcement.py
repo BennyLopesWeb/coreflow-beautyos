@@ -10,6 +10,7 @@ from app.shared.events.outbox import CoreEventOutbox, OutboxStatus
 from app.core.config import settings
 
 
+from tests.helpers_ledger import seed_ledger_deposit
 def _slot_disponivel(db, tranca_id: int, service_image_id: int) -> datetime:
     """
     Retorna primeiro horário disponível para testes.
@@ -62,6 +63,7 @@ def test_v1_approve_booking(
     booking = create_resp.json()
     assert booking["legacy_agendamento_id"] is None
 
+    seed_ledger_deposit(db, booking["id"])
     PaymentReservationService(db).confirmar_deposito_por_booking(
         booking["id"], company_id=cliente_exemplo.company_id
     )

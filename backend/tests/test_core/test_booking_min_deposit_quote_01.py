@@ -23,9 +23,35 @@ from app.modules.booking.domain.policy.activation import (
 )
 from app.modules.booking.domain.value_objects.booking_types import SyncStatus
 from app.schemas.coreflow_v1 import BookingResponse, OfferingResponse
+from app.models.payment import Payment, PaymentStatus, PaymentType
 from app.services.company_service import CompanyService
 from app.services.disponibilidade_service import DisponibilidadeService
 from app.services.payment_reservation_service import PaymentReservationService
+
+
+def _ledger_deposit(db, booking_id: int, valor: Decimal) -> Payment:
+    """
+    Registra Payment PAID de depósito no ledger (fonte canônica).
+
+    Args:
+        db: Sessão.
+        booking_id: ID do booking.
+        valor: Valor pago em reais.
+
+    Returns:
+        Payment persistido.
+    """
+    pag = Payment(
+        booking_id=booking_id,
+        tipo=PaymentType.DEPOSIT,
+        valor=valor,
+        status=PaymentStatus.PAID,
+        paid_at=datetime.utcnow(),
+    )
+    db.add(pag)
+    db.commit()
+    db.refresh(pag)
+    return pag
 
 
 def test_01_02_03_formula_shared():
@@ -242,29 +268,31 @@ def test_18_19_20_deposit_confirm_min_and_reject(
     db, default_company, cliente_exemplo, synced_catalog
 ):
     """Exatamente no mínimo aceita; abaixo rejeita com mínimo no erro."""
-    # R$300, depósito snapshot = R$60 → ativa
+    # R$300, ledger = R$60 → ativa (deposit_amount é só cotação)
     ok = _create_booking(
         db,
         default_company,
         cliente_exemplo,
         synced_catalog,
         price_total=Decimal("300.00"),
-        deposit_amount=Decimal("60.00"),
+        deposit_amount=Decimal("90.00"),
     )
+    _ledger_deposit(db, ok.id, Decimal("60.00"))
     svc = PaymentReservationService(db)
     updated = svc.confirmar_deposito_por_booking(ok.id, default_company.id)
     assert updated.deposit_paid is True
     assert updated.payment_status == StatusPagamento.PARTIALLY_PAID
 
-    # R$300, depósito = R$59.99 → rejeita
+    # R$300, ledger = R$59.99 → rejeita
     low = _create_booking(
         db,
         default_company,
         cliente_exemplo,
         synced_catalog,
         price_total=Decimal("300.00"),
-        deposit_amount=Decimal("59.99"),
+        deposit_amount=Decimal("90.00"),
     )
+    _ledger_deposit(db, low.id, Decimal("59.99"))
     with pytest.raises(MinimumDepositNotMetError) as exc:
         svc.confirmar_deposito_por_booking(low.id, default_company.id)
     detail = exc.value.detail
@@ -354,6 +382,7 @@ def test_23_tenant_isolation_confirm(
         deposit_amount=Decimal("100.00"),
     )
     svc = PaymentReservationService(db)
+    _ledger_deposit(db, booking_a.id, Decimal("60.00"))
     with pytest.raises(Exception):
         # cross-tenant
         svc.confirmar_deposito_por_booking(booking_b.id, default_company.id)
@@ -367,14 +396,14 @@ def test_23_tenant_isolation_confirm(
 def test_24_25_26_pending_refunded_soft_deleted_do_not_activate_via_flags(
     db, default_company, cliente_exemplo, synced_catalog
 ):
-    """Ativação só via confirmar_deposito com deposit_amount >= mínimo."""
+    """Ativação exige ledger >= mínimo (cotação sozinha não basta)."""
     booking = _create_booking(
         db,
         default_company,
         cliente_exemplo,
         synced_catalog,
         price_total=Decimal("300.00"),
-        deposit_amount=Decimal("10.00"),  # abaixo
+        deposit_amount=Decimal("90.00"),  # cotação alta, sem ledger
     )
     svc = PaymentReservationService(db)
     with pytest.raises(MinimumDepositNotMetError):
@@ -395,6 +424,7 @@ def test_27_retry_confirm_idempotent(
         price_total=Decimal("300.00"),
         deposit_amount=Decimal("60.00"),
     )
+    _ledger_deposit(db, booking.id, Decimal("60.00"))
     svc = PaymentReservationService(db)
     first = svc.confirmar_deposito_por_booking(booking.id, default_company.id)
     second = svc.confirmar_deposito_por_booking(booking.id, default_company.id)
@@ -471,8 +501,9 @@ def test_admin_confirm_returns_400_structured(
         cliente_exemplo,
         synced_catalog,
         price_total=Decimal("800.00"),
-        deposit_amount=Decimal("99.99"),
+        deposit_amount=Decimal("100.00"),
     )
+    _ledger_deposit(db, booking.id, Decimal("99.99"))
     resp = client.post(
         f"/admin/pagamentos/booking/{booking.id}/confirmar-sinal",
         headers=_auth_headers(admin, default_company),

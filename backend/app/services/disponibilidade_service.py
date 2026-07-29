@@ -19,6 +19,10 @@ from app.modules.booking.domain.policy.activation import (
     calculate_minimum_activation_cents,
     money_to_cents,
 )
+from app.modules.booking.domain.policy.paid_amount import (
+    load_effective_paid_snapshots,
+    snapshots_as_dicts,
+)
 
 logger = get_logger("disponibilidade_service")
 
@@ -192,19 +196,17 @@ class DisponibilidadeService:
         return calculate_minimum_activation_cents(total_service_cents)
 
     def _load_payment_activation_snapshots(
-        self, booking_ids: List[int]
+        self, booking_ids: List[int], *, company_id: Optional[int] = None
     ) -> Dict[int, Dict[str, Any]]:
         """
         Pré-carrega somas pagas e flags de processamento por booking.
 
-        Conta para ativação apenas ``Payment`` com status ``paid``/``pago`` e
-        ``CorePayment`` com status ``paid`` (não soft-deleted). Usa
-        ``max(soma_payments, soma_core_payments)`` para evitar dupla contagem
-        Strangler Fig. ``processando`` não entra na soma, mas marca
-        ``has_processing`` (fail-closed na expiração).
+        Delega à política compartilhada ``load_effective_paid_snapshots``
+        (RECONCILE-DEPOSIT-SOURCES-01) — mesma fonte da ativação.
 
         Args:
             booking_ids: IDs de ``core_bookings``.
+            company_id: Tenant opcional para filtrar ``CorePayment``.
 
         Returns:
             Mapa ``booking_id → {paid_cents, has_processing, has_paid_rows}``.
@@ -212,100 +214,11 @@ class DisponibilidadeService:
         Raises:
             Exception: Falha de consulta (caller aplica fail-closed).
         """
-        from app.models.payment import Payment, PaymentStatus
-        from app.modules.payments.models import CorePayment, CorePaymentStatus
-
-        snapshots: Dict[int, Dict[str, Any]] = {
-            int(bid): {
-                "paid_cents_payments": 0,
-                "paid_cents_core": 0,
-                "has_processing": False,
-                "has_paid_rows": False,
-            }
-            for bid in booking_ids
-        }
-        if not booking_ids:
-            return {}
-
-        payment_rows = (
-            self.db.query(Payment)
-            .filter(
-                Payment.booking_id.in_(booking_ids),
-                Payment.deleted_at.is_(None),
+        return snapshots_as_dicts(
+            load_effective_paid_snapshots(
+                self.db, booking_ids, company_id=company_id
             )
-            .all()
         )
-        for row in payment_rows:
-            booking_id = row.booking_id
-            if booking_id is None:
-                continue
-            bid = int(booking_id)
-            snap = snapshots.setdefault(
-                bid,
-                {
-                    "paid_cents_payments": 0,
-                    "paid_cents_core": 0,
-                    "has_processing": False,
-                    "has_paid_rows": False,
-                },
-            )
-            status = row.status
-            status_val = status.value if hasattr(status, "value") else str(status)
-            if status_val == PaymentStatus.PROCESSANDO.value:
-                snap["has_processing"] = True
-                continue
-            if status_val not in (
-                PaymentStatus.PAID.value,
-                PaymentStatus.PAGO.value,
-            ):
-                continue
-            cents = self._money_to_cents(row.valor)
-            if cents is None:
-                continue
-            snap["paid_cents_payments"] += cents
-            snap["has_paid_rows"] = True
-
-        core_rows = (
-            self.db.query(CorePayment)
-            .filter(
-                CorePayment.booking_id.in_(booking_ids),
-                CorePayment.deleted_at.is_(None),
-            )
-            .all()
-        )
-        for row in core_rows:
-            booking_id = row.booking_id
-            if booking_id is None:
-                continue
-            bid = int(booking_id)
-            snap = snapshots.setdefault(
-                bid,
-                {
-                    "paid_cents_payments": 0,
-                    "paid_cents_core": 0,
-                    "has_processing": False,
-                    "has_paid_rows": False,
-                },
-            )
-            status = row.status
-            status_val = status.value if hasattr(status, "value") else str(status)
-            if status_val != CorePaymentStatus.PAID.value:
-                continue
-            cents = self._money_to_cents(row.amount)
-            if cents is None:
-                continue
-            snap["paid_cents_core"] += cents
-            snap["has_paid_rows"] = True
-
-        result: Dict[int, Dict[str, Any]] = {}
-        for bid, snap in snapshots.items():
-            paid = max(int(snap["paid_cents_payments"]), int(snap["paid_cents_core"]))
-            result[bid] = {
-                "paid_cents": paid,
-                "has_processing": bool(snap["has_processing"]),
-                "has_paid_rows": bool(snap["has_paid_rows"]),
-            }
-        return result
 
     def _has_minimum_activation_payment(
         self,
@@ -352,28 +265,36 @@ class DisponibilidadeService:
 
             if payment_snapshots is None:
                 payment_snapshots = self._load_payment_activation_snapshots(
-                    [int(booking_id)]
+                    [int(booking_id)],
+                    company_id=int(company_id) if company_id is not None else None,
                 )
             snap = payment_snapshots.get(
                 int(booking_id),
                 {"paid_cents": 0, "has_processing": False, "has_paid_rows": False},
             )
+            # Fonte canônica: ledger. deposit_amount é cotação comercial e
+            # não entra na soma.
             paid_cents = int(snap.get("paid_cents") or 0)
-
-            # deposit_paid + deposit_amount como fallback de valor pago no booking.
-            if bool(getattr(booking, "deposit_paid", False)):
-                deposit_cents = self._money_to_cents(
-                    getattr(booking, "deposit_amount", None)
-                )
-                if deposit_cents is not None:
-                    paid_cents = max(paid_cents, deposit_cents)
 
             if snap.get("has_processing"):
                 logger.info(
                     "Expiração: booking_id=%s company_id=%s com pagamento "
-                    "processando — fail-closed (não conta na ativação)",
+                    "processando — fail-closed (não conta como pago)",
                     booking_id,
                     company_id,
+                )
+                return True
+
+            if snap.get("has_source_divergence") or not snap.get(
+                "is_reconciled", True
+            ):
+                logger.warning(
+                    "Expiração: booking_id=%s company_id=%s divergência "
+                    "Payment(%s) vs CorePayment(%s) — fail-closed",
+                    booking_id,
+                    company_id,
+                    snap.get("payment_cents"),
+                    snap.get("core_payment_cents"),
                 )
                 return True
 
