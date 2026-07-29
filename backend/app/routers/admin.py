@@ -201,12 +201,27 @@ def listar_pagamentos(
 def listar_agenda_admin(
     data: Optional[date] = Query(None, description="Filtrar por data (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
+    tenant: TenantContext = Depends(get_tenant_context),
+    identity: IdentityApplicationService = Depends(get_identity_service),
+    credentials: HTTPAuthorizationCredentials = Depends(_require_bearer_credentials),
 ):
     """
     Lista agendamentos para gestão admin, com opção de filtro por data.
+
+    FIX-02b-list: exige Bearer (401), tenant efetivo (403 sem fallback
+    ``salao-demo``) e filtra ``CoreBooking.company_id`` /
+    ``Fila.company_id`` na SQL do service.
     """
-    return AdminService(db).listar_agendamentos(data_ref=data)
+    current_user = _resolve_admin_for_payment_mutation(identity, credentials, tenant)
+    if not _has_effective_company(identity, current_user, credentials):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant não associado ao usuário",
+        )
+    return AdminService(db).listar_agendamentos(
+        company_id=tenant.company_id,
+        data_ref=data,
+    )
 
 
 @router.patch("/agenda/{agendamento_id}/status", response_model=AgendamentoAdminItem)
@@ -263,9 +278,12 @@ def atualizar_status_agenda(
             detail=str(exc),
         )
 
-    # Preferir projeção da listagem quando o booking ainda não foi soft-deleted.
+    # Preferir projeção da listagem tenant-scoped quando não soft-deleted.
     if booking.deleted_at is None:
-        items = service.listar_agendamentos(data_ref=booking.scheduled_at.date())
+        items = service.listar_agendamentos(
+            company_id=tenant.company_id,
+            data_ref=booking.scheduled_at.date(),
+        )
         for item in items:
             if item.id == agendamento_id:
                 return item
