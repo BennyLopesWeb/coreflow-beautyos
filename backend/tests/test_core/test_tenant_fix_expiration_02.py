@@ -874,7 +874,8 @@ def test_25_api_booking_policy_persiste_reference_e_statuses(
                 "reference": "scheduled_at",
                 "eligible_statuses": ["pending_payment"],
                 "after_hours": 2,
-            }
+            },
+            "reason": "teste expiration reference/eligible",
         },
         headers=_auth_headers(admin, default_company),
     )

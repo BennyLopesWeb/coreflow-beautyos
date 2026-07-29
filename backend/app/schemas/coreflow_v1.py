@@ -1,7 +1,7 @@
 """
 Schemas API v1 — Catalog e Offering (metamodelo CoreFlow).
 """
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, computed_field, model_validator
 from typing import Any, Dict, List, Optional
 from datetime import datetime, date, time
 from decimal import Decimal
@@ -74,31 +74,30 @@ class OfferingResponse(BaseModel):
     active: bool
     legacy_service_image_id: Optional[int] = None
     currency: str = "BRL"
+    minimum_activation_cents: Optional[int] = None
+    minimum_activation_amount: Optional[Decimal] = None
 
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def minimum_activation_cents(self) -> Optional[int]:
+    @model_validator(mode="after")
+    def _fill_activation_quote(self) -> "OfferingResponse":
         """
-        Mínimo de entrada em centavos a partir de ``price_total``.
-
-        Returns:
-            Centavos, ou ``None`` se o preço for inválido.
-        """
-        return minimum_activation_from_price_total(self.price_total)
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def minimum_activation_amount(self) -> Optional[Decimal]:
-        """
-        Mínimo de entrada em reais (2 casas).
+        Preenche mínimo legado se o serializador não injetou a política vigente.
 
         Returns:
-            Decimal, ou ``None`` se o mínimo não puder ser calculado.
+            Self com quote preenchida.
         """
-        cents = self.minimum_activation_cents
-        if cents is None:
-            return None
-        return cents_to_decimal(cents)
+        if self.minimum_activation_cents is None:
+            cents = minimum_activation_from_price_total(self.price_total)
+            object.__setattr__(self, "minimum_activation_cents", cents)
+        if (
+            self.minimum_activation_amount is None
+            and self.minimum_activation_cents is not None
+        ):
+            object.__setattr__(
+                self,
+                "minimum_activation_amount",
+                cents_to_decimal(self.minimum_activation_cents),
+            )
+        return self
 
     class Config:
         from_attributes = True
@@ -221,31 +220,30 @@ class BookingResponse(BaseModel):
     offering_name: Optional[str] = None
     created_at: datetime
     currency: str = "BRL"
+    minimum_activation_cents: Optional[int] = None
+    minimum_activation_amount: Optional[Decimal] = None
 
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def minimum_activation_cents(self) -> Optional[int]:
+    @model_validator(mode="after")
+    def _fill_activation_quote(self) -> "BookingResponse":
         """
-        Mínimo de entrada em centavos a partir de ``price_total``.
-
-        Returns:
-            Centavos, ou ``None`` se o preço for inválido.
-        """
-        return minimum_activation_from_price_total(self.price_total)
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def minimum_activation_amount(self) -> Optional[Decimal]:
-        """
-        Mínimo de entrada em reais (2 casas).
+        Usa snapshot persistido quando informado; senão fallback legado.
 
         Returns:
-            Decimal, ou ``None`` se o mínimo não puder ser calculado.
+            Self com quote preenchida.
         """
-        cents = self.minimum_activation_cents
-        if cents is None:
-            return None
-        return cents_to_decimal(cents)
+        if self.minimum_activation_cents is None:
+            cents = minimum_activation_from_price_total(self.price_total)
+            object.__setattr__(self, "minimum_activation_cents", cents)
+        if (
+            self.minimum_activation_amount is None
+            and self.minimum_activation_cents is not None
+        ):
+            object.__setattr__(
+                self,
+                "minimum_activation_amount",
+                cents_to_decimal(self.minimum_activation_cents),
+            )
+        return self
 
     @computed_field  # type: ignore[prop-decorator]
     @property

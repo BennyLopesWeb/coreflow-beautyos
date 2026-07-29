@@ -268,6 +268,17 @@ class CreateBookingHandler:
             )
             booking = repository.save(booking)
 
+            from app.modules.booking.domain.policy.activation_persist import (
+                persist_activation_snapshot_on_booking,
+            )
+
+            persist_activation_snapshot_on_booking(
+                self.db,
+                booking_id=int(booking.id),
+                company_id=int(command.company_id),
+                price_total=booking.pricing.price_total,
+            )
+
             booking.mark_core_only_synced()
             booking = repository.save(booking)
 

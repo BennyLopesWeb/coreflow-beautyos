@@ -63,15 +63,46 @@ def listar_offerings(
     """
     Lista offerings (variantes comerciais) de um catálogo.
 
+    Quote de entrada mínima usa a política vigente do tenant autenticado
+    (nunca ``company_id`` arbitrário do cliente).
+
     Args:
         catalog_id: ID core_catalogs.
 
     Returns:
         Lista de offerings ativos.
     """
+    from app.modules.booking.domain.policy.activation import (
+        calculate_minimum_activation_cents,
+        cents_to_decimal,
+        money_to_cents,
+    )
+    from app.modules.booking.domain.policy.resolver import BookingPolicyResolver
+
     try:
-        return CatalogQueryService(db).list_offerings(
+        if tenant.company_id is None:
+            raise HTTPException(status_code=403, detail="Tenant não associado")
+        rows = CatalogQueryService(db).list_offerings(
             catalog_id, tenant.company_id, active_only=True
         )
+        policy = BookingPolicyResolver(db).resolve(int(tenant.company_id))
+        result = []
+        for row in rows:
+            dto = OfferingResponse.model_validate(row)
+            total = money_to_cents(row.price_total)
+            if total is not None and total > 0:
+                minimum = calculate_minimum_activation_cents(
+                    total, activation=policy.activation
+                )
+                dto = dto.model_copy(
+                    update={
+                        "minimum_activation_cents": minimum,
+                        "minimum_activation_amount": cents_to_decimal(minimum),
+                    }
+                )
+            result.append(dto)
+        return result
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=404, detail=str(exc))

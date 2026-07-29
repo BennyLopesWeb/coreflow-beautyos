@@ -307,6 +307,117 @@ class ManualStatusPolicy(BaseModel):
         return normalized
 
 
+ActivationMode = Literal["percentage_with_cap", "tiered_percentage"]
+
+
+class ActivationPolicy(BaseModel):
+    """
+    Política de entrada mínima para ativação (CONFIG-DEPOSIT-POLICY-01).
+
+    Attributes:
+        mode: ``percentage_with_cap`` ou ``tiered_percentage``.
+        currency: Moeda ISO (somente BRL na v1).
+        percentage: Percentual do modo com teto (0–100).
+        cap_cents: Teto em centavos (obrigatório em percentage_with_cap).
+        standard_percentage: Percentual abaixo do limiar (tiered).
+        high_value_threshold_cents: Limiar de alto valor em centavos.
+        high_value_percentage: Percentual a partir do limiar (>= standard).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mode: ActivationMode = "percentage_with_cap"
+    currency: Literal["BRL"] = "BRL"
+    percentage: int | None = None
+    cap_cents: int | None = None
+    standard_percentage: int | None = None
+    high_value_threshold_cents: int | None = None
+    high_value_percentage: int | None = None
+
+    @model_validator(mode="after")
+    def _validate_mode_contract(self) -> "ActivationPolicy":
+        """
+        Valida campos obrigatórios por modo.
+
+        Returns:
+            Instância validada.
+
+        Raises:
+            ValueError: Contrato do modo violado.
+        """
+        if self.currency != "BRL":
+            raise ValueError("currency deve ser BRL nesta versão")
+
+        if self.mode == "percentage_with_cap":
+            if self.percentage is None or self.cap_cents is None:
+                raise ValueError(
+                    "percentage_with_cap exige percentage e cap_cents"
+                )
+            if not (0 <= int(self.percentage) <= 100):
+                raise ValueError("percentage deve estar entre 0 e 100")
+            if int(self.cap_cents) < 0:
+                raise ValueError("cap_cents não pode ser negativo")
+            if any(
+                v is not None
+                for v in (
+                    self.standard_percentage,
+                    self.high_value_threshold_cents,
+                    self.high_value_percentage,
+                )
+            ):
+                raise ValueError(
+                    "campos de faixa não são permitidos em percentage_with_cap"
+                )
+            return self
+
+        if self.mode == "tiered_percentage":
+            if (
+                self.standard_percentage is None
+                or self.high_value_threshold_cents is None
+                or self.high_value_percentage is None
+            ):
+                raise ValueError(
+                    "tiered_percentage exige standard_percentage, "
+                    "high_value_threshold_cents e high_value_percentage"
+                )
+            if not (0 <= int(self.standard_percentage) <= 100):
+                raise ValueError("standard_percentage deve estar entre 0 e 100")
+            if not (0 <= int(self.high_value_percentage) <= 100):
+                raise ValueError(
+                    "high_value_percentage deve estar entre 0 e 100"
+                )
+            if int(self.high_value_threshold_cents) <= 0:
+                raise ValueError("high_value_threshold_cents deve ser > 0")
+            if int(self.high_value_percentage) < int(self.standard_percentage):
+                raise ValueError(
+                    "high_value_percentage deve ser >= standard_percentage"
+                )
+            if self.cap_cents is not None and int(self.cap_cents) < 0:
+                raise ValueError("cap_cents não pode ser negativo")
+            if self.percentage is not None:
+                raise ValueError(
+                    "percentage não é permitido em tiered_percentage"
+                )
+            return self
+
+        raise ValueError(f"mode de ativação inválido: {self.mode}")
+
+
+def default_activation_policy() -> ActivationPolicy:
+    """
+    Default de instalação: 20% com teto de R$ 100,00.
+
+    Returns:
+        ``ActivationPolicy`` legado equivalente.
+    """
+    return ActivationPolicy(
+        mode="percentage_with_cap",
+        currency="BRL",
+        percentage=20,
+        cap_cents=10_000,
+    )
+
+
 class BookingPolicy(BaseModel):
     """
     Documento canônico imutável de políticas de booking.
@@ -317,6 +428,7 @@ class BookingPolicy(BaseModel):
         reversal_cancelled: Reversão de cancelado.
         reversal_expired: Reversão de expirado.
         manual_status: Alteração manual de status.
+        activation: Entrada mínima para ativação.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -326,6 +438,7 @@ class BookingPolicy(BaseModel):
     reversal_cancelled: ReversalPolicy = Field(default_factory=ReversalPolicy)
     reversal_expired: ReversalPolicy = Field(default_factory=ReversalPolicy)
     manual_status: ManualStatusPolicy = Field(default_factory=ManualStatusPolicy)
+    activation: ActivationPolicy = Field(default_factory=default_activation_policy)
 
     def to_public_dict(self) -> dict:
         """

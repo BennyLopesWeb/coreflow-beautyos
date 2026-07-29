@@ -9,7 +9,7 @@ from typing import Any, Dict, Mapping, Tuple
 from pydantic import ValidationError
 
 from app.modules.booking.domain.policy.defaults import defaults_as_dict
-from app.modules.booking.domain.policy.schemas import BookingPolicy
+from app.modules.booking.domain.policy.schemas import ActivationPolicy, BookingPolicy
 
 
 def deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> Dict[str, Any]:
@@ -18,6 +18,10 @@ def deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> Dict[str
 
     Listas e escalares do override substituem integralmente o valor base.
     Dicts aninhados são mesclados recursivamente.
+
+    Exceção (CONFIG-DEPOSIT-POLICY-01): o grupo ``activation`` é substituído
+    por completo quando o override informa um ``mode`` diferente do base,
+    para não misturar campos mutuamente exclusivos entre modos.
 
     Args:
         base: Documento base (defaults).
@@ -28,6 +32,17 @@ def deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> Dict[str
     """
     result: Dict[str, Any] = deepcopy(dict(base))
     for key, value in override.items():
+        if (
+            key == "activation"
+            and key in result
+            and isinstance(result[key], dict)
+            and isinstance(value, dict)
+        ):
+            base_mode = result[key].get("mode")
+            new_mode = value.get("mode")
+            if new_mode is not None and new_mode != base_mode:
+                result[key] = deepcopy(value)
+                continue
         if (
             key in result
             and isinstance(result[key], dict)
@@ -72,6 +87,11 @@ def merge_and_validate(
     if not override:
         return parse_booking_policy(base), None
     try:
+        # Validar o grupo ``activation`` do override em isolamento: não completar
+        # campos obrigatórios do modo a partir dos defaults da plataforma.
+        activation_override = override.get("activation")
+        if isinstance(activation_override, dict):
+            ActivationPolicy.model_validate(activation_override)
         merged = deep_merge(base, override)
         return parse_booking_policy(merged), None
     except ValidationError as exc:

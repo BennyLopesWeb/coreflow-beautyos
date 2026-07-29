@@ -84,6 +84,7 @@ class BookingPolicyAdminService:
         *,
         actor_user_id: Optional[int],
         reason: Optional[str] = None,
+        expected_version: Optional[int] = None,
     ) -> BookingPolicyAdminResponse:
         """
         Substitui o documento de override do tenant (semântica PUT).
@@ -112,6 +113,7 @@ class BookingPolicyAdminService:
             merge_with_existing=False,
             actor_user_id=actor_user_id,
             reason=reason,
+            expected_version=expected_version,
         )
 
     def patch_override(
@@ -121,6 +123,7 @@ class BookingPolicyAdminService:
         *,
         actor_user_id: Optional[int],
         reason: Optional[str] = None,
+        expected_version: Optional[int] = None,
     ) -> BookingPolicyAdminResponse:
         """
         Mescla o patch no override existente (semântica PATCH).
@@ -147,6 +150,7 @@ class BookingPolicyAdminService:
             merge_with_existing=True,
             actor_user_id=actor_user_id,
             reason=reason,
+            expected_version=expected_version,
         )
 
     def deactivate_override(
@@ -206,6 +210,7 @@ class BookingPolicyAdminService:
         merge_with_existing: bool,
         actor_user_id: Optional[int],
         reason: Optional[str],
+        expected_version: Optional[int] = None,
     ) -> BookingPolicyAdminResponse:
         """
         Valida, persiste e audita create/update do override.
@@ -216,25 +221,40 @@ class BookingPolicyAdminService:
             merge_with_existing: True=PATCH, False=PUT.
             actor_user_id: Ator.
             reason: Motivo.
+            expected_version: Se informado e houver override ativo, exige match.
 
         Returns:
             Resposta com política efetiva.
 
         Raises:
             ValidationError: Documento inválido.
-            ConflictError: Violação de unicidade.
+            ConflictError: Violação de unicidade ou versão desatualizada.
         """
         self._require_company_id(company_id)
         if document is None or not isinstance(document, Mapping):
             raise ValidationError("Documento de política inválido")
         if "company_id" in document:
             raise ValidationError("company_id não é aceito no body")
+        if not reason or not str(reason).strip():
+            raise ValidationError("reason é obrigatório para alterar a política")
 
         incoming = deepcopy(dict(document))
         row = self._get_row_any(company_id)
         previous_override: Dict[str, Any] = {}
         if row is not None and isinstance(row.policy_json, dict):
             previous_override = dict(row.policy_json)
+
+        if (
+            expected_version is not None
+            and row is not None
+            and bool(row.is_active)
+        ):
+            current_version = int(row.version or 0)
+            if current_version != int(expected_version):
+                raise ConflictError(
+                    "Versão da política desatualizada "
+                    f"(esperado {expected_version}, atual {current_version})"
+                )
 
         if merge_with_existing and row is not None and row.is_active:
             candidate_override = deep_merge(previous_override, incoming)

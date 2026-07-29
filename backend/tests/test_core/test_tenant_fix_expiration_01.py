@@ -551,7 +551,10 @@ def test_15_put_booking_policy_reflete_no_lote(
     admin = _create_admin(db, "exp01-api@test.local", default_company)
     resp = client.put(
         "/admin/booking-policy",
-        json={"expiration": {"after_hours": 6}},
+        json={
+            "expiration": {"after_hours": 6},
+            "reason": "teste expiration after_hours=6",
+        },
         headers=_auth_headers(admin, default_company),
     )
     assert resp.status_code == 200, resp.text

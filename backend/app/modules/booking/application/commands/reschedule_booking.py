@@ -183,6 +183,16 @@ class RescheduleBookingHandler:
             )
             new_booking.mark_core_only_synced()
             new_booking = repository.save(new_booking)
+            from app.modules.booking.domain.policy.activation_persist import (
+                persist_activation_snapshot_on_booking,
+            )
+
+            persist_activation_snapshot_on_booking(
+                self.db,
+                booking_id=int(new_booking.id),
+                company_id=int(command.company_id),
+                price_total=new_booking.pricing.price_total,
+            )
             self.db.flush()
 
             new_row = self._apply_payment_parity(

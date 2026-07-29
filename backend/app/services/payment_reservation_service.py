@@ -205,7 +205,16 @@ class PaymentReservationService:
             raise ValidationError(
                 "Não é possível ativar a reserva: preço total inválido."
             )
-        minimum = calculate_minimum_activation_cents(total_cents)
+        from app.modules.booking.domain.policy.activation import (
+            resolve_booking_minimum_activation_cents,
+        )
+
+        try:
+            minimum = resolve_booking_minimum_activation_cents(booking)
+        except ValueError as exc:
+            raise ValidationError(
+                "Não é possível ativar a reserva: preço total inválido."
+            ) from exc
         try:
             snap = get_effective_paid_snapshot(
                 self.db,

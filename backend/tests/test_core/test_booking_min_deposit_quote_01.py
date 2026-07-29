@@ -101,10 +101,12 @@ def test_12_no_float_in_formula():
     import inspect
     from app.modules.booking.domain.policy import activation as mod
 
-    src = inspect.getsource(mod.calculate_minimum_activation_cents)
-    assert "float(" not in src
-    assert "//" in src
-    assert "*" in src
+    calc_src = inspect.getsource(mod.calculate_minimum_activation_cents)
+    ceil_src = inspect.getsource(mod._ceil_percent)
+    assert "float(" not in calc_src
+    assert "float(" not in ceil_src
+    assert "//" in ceil_src
+    assert "*" in ceil_src
 
 
 def test_13_16_booking_response_exposes_minimum():

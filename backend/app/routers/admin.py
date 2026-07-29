@@ -711,10 +711,11 @@ def substituir_booking_policy(
             body.to_override_dict(),
             actor_user_id=current_user.id,
             reason=body.reason,
+            expected_version=body.expected_version,
         )
     except ValidationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=exc.detail,
         ) from exc
     except ConflictError as exc:
@@ -724,7 +725,7 @@ def substituir_booking_policy(
         ) from exc
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
 
@@ -750,10 +751,11 @@ def mesclar_booking_policy(
             body.to_override_dict(),
             actor_user_id=current_user.id,
             reason=body.reason,
+            expected_version=body.expected_version,
         )
     except ValidationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=exc.detail,
         ) from exc
     except ConflictError as exc:
@@ -763,7 +765,7 @@ def mesclar_booking_policy(
         ) from exc
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
 
