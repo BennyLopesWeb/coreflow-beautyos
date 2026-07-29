@@ -9,6 +9,10 @@ from app.models import *  # Importa todos os models para que sejam registrados
 # Metamodelo CoreFlow (Sprint 1)
 from app.modules.catalog.domain.models import CoreCatalog, CoreOffering  # noqa: F401
 from app.modules.booking.domain.models import CoreBooking  # noqa: F401
+from app.modules.booking.domain.policy.models import (  # noqa: F401
+    BookingPolicyAudit,
+    BookingPolicyConfig,
+)
 from app.modules.scheduling.domain.models import (  # noqa: F401
     CoreLocation,
     CoreResource,
