@@ -2,7 +2,7 @@
 import sqlalchemy as sa
 from alembic import op
 
-revision = "cf018_booking_activation_snapshot"
+revision = "cf018_booking_act_snap"
 down_revision = "cf017_booking_policy_config"
 branch_labels = None
 depends_on = None

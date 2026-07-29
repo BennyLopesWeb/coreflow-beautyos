@@ -602,7 +602,7 @@ def _migrar_config_deposit_policy_01_activation_snapshot(
     """
     Adiciona snapshot de política de ativação em ``core_bookings``.
 
-    Espelha ``cf018_booking_activation_snapshot`` para SQLite local.
+    Espelha ``cf018_booking_act_snap`` para SQLite local.
     Sem backfill — bookings legados permanecem NULL.
 
     Args:
