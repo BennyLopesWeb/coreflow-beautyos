@@ -136,15 +136,20 @@ class DisponibilidadeService:
 
     def _expirar_core_bookings_pendentes(self) -> int:
         """
-        Expira ``CoreBooking`` elegível sem sinal pago (FIX-EXPIRATION-02A/02B).
+        Expira ``CoreBooking`` elegível sem sinal pago (FIX-EXPIRATION-02A/02B/02C).
 
-        Candidatos SQL: status PENDING-like seguros, ``deposit_paid=False``,
-        não soft-deleted. Por tenant, aplica ``BookingPolicyResolver``:
-        ``enabled``, ``after_hours``, ``reference`` e ``eligible_statuses``.
+        Candidatos SQL: status PENDING-like seguros, ``deposit_paid=False``
+        (incondicional nesta etapa), não soft-deleted. Por tenant, aplica
+        ``BookingPolicyResolver``: ``enabled``, ``after_hours``, ``reference``
+        e ``eligible_statuses``.
 
         Comparação exclusiva: ``reference_ts < now - after_hours``.
-        ``require_unpaid_deposit`` e ``touch_payment_status`` permanecem
-        no comportamento fixo (depósito não pago sempre exigido).
+
+        FIX-EXPIRATION-02C: ``require_unpaid_deposit=false`` é lido, mas
+        **não** remove a proteção de depósito pago — bookings com sinal
+        exigem o fluxo de reagendamento protegido (``FIX-RESCHEDULE-*``),
+        ainda inexistente. ``touch_payment_status`` permanece sem efeito.
+        ``payment_status`` não é lido nem alterado aqui.
 
         Falhas isoladas (resolve, booking sem tenant, handler) não interrompem
         o lote — best-effort com log.
@@ -161,7 +166,8 @@ class DisponibilidadeService:
 
         # Pré-filtro: só status com caminho seguro até ExpireBookingHandler.
         # eligible_statuses e reference são avaliados por tenant após resolve.
-        # require_unpaid_deposit permanece fixo (sempre depósito não pago).
+        # FIX-EXPIRATION-02C: deposit_paid=False é sempre obrigatório —
+        # require_unpaid_deposit=false NÃO alarga este conjunto.
         pendentes = (
             self.db.query(CoreBooking)
             .filter(
@@ -212,6 +218,20 @@ class DisponibilidadeService:
                 policy = policy_by_company[company_id]
                 expiration = policy.expiration
                 if not expiration.enabled:
+                    continue
+
+                # FIX-EXPIRATION-02C — trava de segurança intencional.
+                # Lê require_unpaid_deposit apenas para deixar explícito que
+                # false NÃO remove a proteção contra deposit_paid=True.
+                # Bookings com sinal/pagamento parcial exigem o fluxo de
+                # reagendamento protegido (FIX-RESCHEDULE-*), inexistente hoje.
+                # Nenhum efeito adicional: o filtro SQL permanece deposit_paid=False.
+                if expiration.require_unpaid_deposit is False:
+                    pass
+
+                # Cinto de segurança: nunca expirar depósito pago, mesmo se o
+                # pré-filtro SQL for alterado indevidamente no futuro.
+                if bool(booking.deposit_paid):
                     continue
 
                 if not self._expiration_status_is_eligible(
