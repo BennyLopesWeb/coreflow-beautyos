@@ -54,27 +54,38 @@ class AdminService:
         """
         self.db = db
 
-    def obter_dashboard(self) -> AdminDashboardResponse:
+    def obter_dashboard(self, company_id: int) -> AdminDashboardResponse:
         """
-        Monta resumo agregado para o dashboard admin.
+        Monta resumo agregado para o dashboard admin do tenant.
+
+        FIX-02a: cada agregação filtra ``company_id`` na cláusula SQL
+        (Cliente, CoreBooking, Fila, Financeiro) — sem post-filter e sem
+        fallback ``salao-demo``.
+
+        Args:
+            company_id: Tenant efetivo (``companies.id``). Obrigatório;
+                registros com ``company_id`` nulo não entram nas métricas.
 
         Returns:
             AdminDashboardResponse com totais de clientes, agenda,
-            fila, pagamentos e receita do mês corrente.
+            fila, pagamentos e receita do mês corrente do tenant.
         """
         hoje = date.today()
         inicio_mes = datetime(hoje.year, hoje.month, 1)
         fim_mes = datetime(hoje.year, hoje.month + 1, 1) if hoje.month < 12 else datetime(hoje.year + 1, 1, 1)
 
         total_clientes = self.db.query(func.count(Cliente.id)).filter(
-            Cliente.deleted_at.is_(None)
+            Cliente.company_id == company_id,
+            Cliente.deleted_at.is_(None),
         ).scalar() or 0
 
         total_agendamentos = self.db.query(func.count(CoreBooking.id)).filter(
-            CoreBooking.deleted_at.is_(None)
+            CoreBooking.company_id == company_id,
+            CoreBooking.deleted_at.is_(None),
         ).scalar() or 0
 
         agendamentos_pendentes = self.db.query(func.count(CoreBooking.id)).filter(
+            CoreBooking.company_id == company_id,
             CoreBooking.status.in_([
                 ReservationStatus.PENDING_PAYMENT,
                 ReservationStatus.PENDING_APPROVAL,
@@ -84,6 +95,7 @@ class AdminService:
         ).scalar() or 0
 
         aguardando_aprovacao = self.db.query(func.count(CoreBooking.id)).filter(
+            CoreBooking.company_id == company_id,
             CoreBooking.status.in_([
                 ReservationStatus.PENDING_APPROVAL,
                 ReservationStatus.WAITING_TIME_CONFIRMATION,
@@ -92,6 +104,7 @@ class AdminService:
         ).scalar() or 0
 
         agendamentos_confirmados = self.db.query(func.count(CoreBooking.id)).filter(
+            CoreBooking.company_id == company_id,
             CoreBooking.status == ReservationStatus.APPROVED,
             CoreBooking.deleted_at.is_(None),
         ).scalar() or 0
@@ -100,6 +113,7 @@ class AdminService:
         fim_hoje = datetime.combine(hoje, datetime.max.time())
 
         agendamentos_hoje = self.db.query(func.count(CoreBooking.id)).filter(
+            CoreBooking.company_id == company_id,
             CoreBooking.scheduled_at >= inicio_hoje,
             CoreBooking.scheduled_at <= fim_hoje,
             CoreBooking.deleted_at.is_(None),
@@ -107,11 +121,13 @@ class AdminService:
         ).scalar() or 0
 
         fila_hoje = self.db.query(func.count(Fila.id)).filter(
+            Fila.company_id == company_id,
             Fila.data == hoje,
             Fila.status.in_(STATUS_FILA_ATIVOS),
         ).scalar() or 0
 
         pagamentos_pendentes = self.db.query(func.count(CoreBooking.id)).filter(
+            CoreBooking.company_id == company_id,
             CoreBooking.deposit_paid.is_(False),
             CoreBooking.status.in_([
                 ReservationStatus.PENDING_PAYMENT,
@@ -121,11 +137,13 @@ class AdminService:
         ).scalar() or 0
 
         pagamentos_confirmados = self.db.query(func.count(CoreBooking.id)).filter(
+            CoreBooking.company_id == company_id,
             CoreBooking.deposit_paid.is_(True),
             CoreBooking.deleted_at.is_(None),
         ).scalar() or 0
 
         receita_mes = self.db.query(func.coalesce(func.sum(Financeiro.valor), 0)).filter(
+            Financeiro.company_id == company_id,
             Financeiro.tipo == TipoMovimento.ENTRADA,
             Financeiro.data >= inicio_mes,
             Financeiro.data < fim_mes,
@@ -133,6 +151,7 @@ class AdminService:
         ).scalar() or Decimal("0")
 
         saidas_mes = self.db.query(func.coalesce(func.sum(Financeiro.valor), 0)).filter(
+            Financeiro.company_id == company_id,
             Financeiro.tipo == TipoMovimento.SAIDA,
             Financeiro.data >= inicio_mes,
             Financeiro.data < fim_mes,

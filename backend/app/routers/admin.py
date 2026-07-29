@@ -135,12 +135,33 @@ def _resolve_admin_for_payment_mutation(
 @router.get("/dashboard", response_model=AdminDashboardResponse)
 def obter_dashboard(
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
+    tenant: TenantContext = Depends(get_tenant_context),
+    identity: IdentityApplicationService = Depends(get_identity_service),
+    credentials: HTTPAuthorizationCredentials = Depends(_require_bearer_credentials),
 ):
     """
-    Retorna métricas agregadas para o dashboard administrativo.
+    Retorna métricas agregadas para o dashboard administrativo do tenant.
+
+    FIX-02a: exige Bearer (401), tenant efetivo (403 sem fallback
+    ``salao-demo``) e agrega Cliente/CoreBooking/Fila/Financeiro com
+    ``company_id == tenant.company_id`` na SQL.
+
+    Args:
+        db: Sessão SQLAlchemy.
+        tenant: Contexto de tenant da requisição.
+        identity: Serviço Identity (membership / JWT).
+        credentials: Bearer token (obrigatório).
+
+    Returns:
+        AdminDashboardResponse com métricas apenas do tenant ativo.
     """
-    return AdminService(db).obter_dashboard()
+    current_user = _resolve_admin_for_payment_mutation(identity, credentials, tenant)
+    if not _has_effective_company(identity, current_user, credentials):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant não associado ao usuário",
+        )
+    return AdminService(db).obter_dashboard(tenant.company_id)
 
 
 @router.get("/trancas", response_model=List[TrancaResponse])
