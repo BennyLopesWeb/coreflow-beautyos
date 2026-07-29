@@ -48,7 +48,9 @@ class BookingPolicyOverrideRequest(BaseModel):
         reversal_cancelled: Patch de reversão de cancelado.
         reversal_expired: Patch de reversão de expirado.
         manual_status: Patch de status manual.
-        reason: Motivo opcional para auditoria.
+        activation: Patch do grupo de entrada mínima.
+        expected_version: Versão otimista do override ativo (409 se divergir).
+        reason: Motivo obrigatório para auditoria.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -58,14 +60,19 @@ class BookingPolicyOverrideRequest(BaseModel):
     reversal_cancelled: Optional[Dict[str, Any]] = None
     reversal_expired: Optional[Dict[str, Any]] = None
     manual_status: Optional[Dict[str, Any]] = None
-    reason: Optional[str] = Field(default=None, max_length=500)
+    activation: Optional[Dict[str, Any]] = None
+    expected_version: Optional[int] = Field(default=None, ge=1)
+    reason: str = Field(..., min_length=1, max_length=500)
 
     def to_override_dict(self) -> Dict[str, Any]:
         """
-        Extrai o documento de override sem metadados de auditoria.
+        Extrai o documento de override sem metadados de auditoria/concorrência.
 
         Returns:
             Dict apenas com grupos de política presentes no payload.
         """
-        data = self.model_dump(exclude_none=True, exclude={"reason"})
+        data = self.model_dump(
+            exclude_none=True,
+            exclude={"reason", "expected_version"},
+        )
         return data

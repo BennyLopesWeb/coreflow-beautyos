@@ -3,7 +3,7 @@ Entidade ORM Booking genérico CoreFlow.
 
 Tabela ``core_bookings`` espelha ``agendamentos`` via Strangler Fig.
 """
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Numeric, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Numeric, Text, UniqueConstraint, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.base import Base
@@ -61,6 +61,9 @@ class CoreBooking(Base):
     deposit_amount = Column(Numeric(10, 2), nullable=False)
     remaining_amount = Column(Numeric(10, 2), nullable=False)
     deposit_paid = Column(Boolean, default=False, nullable=False)
+    # CONFIG-DEPOSIT-POLICY-01 — snapshot imutável do mínimo de ativação
+    minimum_activation_cents = Column(Integer, nullable=True)
+    activation_policy_snapshot = Column(JSON, nullable=True)
     notes = Column(String(255), nullable=True)
     legacy_agendamento_id = Column(Integer, nullable=True, index=True)
     sync_status = Column(String(255), default="synced", nullable=False)

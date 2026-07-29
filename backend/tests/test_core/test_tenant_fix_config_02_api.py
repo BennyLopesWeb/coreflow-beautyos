@@ -133,7 +133,7 @@ def test_02_put_sem_bearer_401(client):
     """PUT sem Bearer → 401."""
     resp = client.put(
         "/admin/booking-policy",
-        json={"cancellation": {"approved_min_hours_before": 48}},
+        json={"cancellation": {"approved_min_hours_before": 48}, "reason": "teste config"},
     )
     assert resp.status_code == 401, resp.text
 
@@ -182,7 +182,7 @@ def test_06_09_tenant_a_isola_de_b(client, db, default_company):
 
     resp_b = client.put(
         "/admin/booking-policy",
-        json={"cancellation": {"approved_min_hours_before": 72}},
+        json={"cancellation": {"approved_min_hours_before": 72}, "reason": "teste config"},
         headers=_auth_headers(admin_b, company_b),
     )
     assert resp_b.status_code == 200, resp_b.text
@@ -199,7 +199,7 @@ def test_06_09_tenant_a_isola_de_b(client, db, default_company):
 
     resp_a_put = client.put(
         "/admin/booking-policy",
-        json={"cancellation": {"approved_min_hours_before": 36}},
+        json={"cancellation": {"approved_min_hours_before": 36}, "reason": "teste config"},
         headers=_auth_headers(admin_a, default_company),
     )
     assert resp_a_put.status_code == 200, resp_a_put.text
@@ -222,6 +222,7 @@ def test_10_company_id_no_body_rejeitado(client, db, default_company):
         json={
             "company_id": 999,
             "cancellation": {"approved_min_hours_before": 48},
+            "reason": "teste config",
         },
         headers=_auth_headers(admin, default_company),
     )
@@ -285,7 +286,7 @@ def test_14_16_17_get_com_override_sem_side_effect(client, db, default_company):
     admin = _create_user(db, "cfg02-getov@test.local", company=default_company)
     put = client.put(
         "/admin/booking-policy",
-        json={"cancellation": {"approved_min_hours_before": 48}},
+        json={"cancellation": {"approved_min_hours_before": 48}, "reason": "teste config"},
         headers=_auth_headers(admin, default_company),
     )
     assert put.status_code == 200
@@ -323,6 +324,7 @@ def test_18_21_patch_parcial_preserva_e_reflete(
         json={
             "cancellation": {"approved_min_hours_before": 48},
             "expiration": {"after_hours": 6},
+            "reason": "teste config",
         },
         headers=headers,
     )
@@ -330,7 +332,7 @@ def test_18_21_patch_parcial_preserva_e_reflete(
 
     r2 = client.patch(
         "/admin/booking-policy",
-        json={"cancellation": {"approved_min_hours_before": 36}},
+        json={"cancellation": {"approved_min_hours_before": 36}, "reason": "teste config"},
         headers=headers,
     )
     assert r2.status_code == 200, r2.text
@@ -352,12 +354,13 @@ def test_19_20_put_substitui_override(client, db, default_company):
         json={
             "cancellation": {"approved_min_hours_before": 48},
             "expiration": {"after_hours": 8},
+            "reason": "teste config",
         },
         headers=headers,
     )
     r2 = client.put(
         "/admin/booking-policy",
-        json={"cancellation": {"approved_min_hours_before": 30}},
+        json={"cancellation": {"approved_min_hours_before": 30}, "reason": "teste config"},
         headers=headers,
     )
     assert r2.status_code == 200, r2.text
@@ -370,17 +373,17 @@ def test_19_20_put_substitui_override(client, db, default_company):
 def test_22_26_27_payload_invalido_nao_persiste_nem_audita(
     client, db, default_company
 ):
-    """Valores inválidos → 400; banco e auditoria intactos."""
+    """Valores inválidos → 422; banco e auditoria intactos."""
     admin = _create_user(db, "cfg02-bad@test.local", company=default_company)
     headers = _auth_headers(admin, default_company)
     audits_before = _count_audits(db, default_company.id)
 
     resp = client.put(
         "/admin/booking-policy",
-        json={"expiration": {"after_hours": 0}},
+        json={"expiration": {"after_hours": 0}, "reason": "teste config"},
         headers=headers,
     )
-    assert resp.status_code == 400, resp.text
+    assert resp.status_code == 422, resp.text
     assert _count_audits(db, default_company.id) == audits_before
     assert (
         db.query(BookingPolicyConfig)
@@ -397,21 +400,21 @@ def test_24_25_tipo_e_chave_desconhecida(client, db, default_company):
 
     r_type = client.patch(
         "/admin/booking-policy",
-        json={"cancellation": {"approved_min_hours_before": "vinte"}},
+        json={"cancellation": {"approved_min_hours_before": "vinte"}, "reason": "teste config"},
         headers=headers,
     )
-    assert r_type.status_code == 400, r_type.text
+    assert r_type.status_code == 422, r_type.text
 
     r_extra = client.patch(
         "/admin/booking-policy",
-        json={"expiration": {"after_hours": 6, "hack_flag": True}},
+        json={"expiration": {"after_hours": 6, "hack_flag": True}, "reason": "teste config"},
         headers=headers,
     )
-    assert r_extra.status_code == 400, r_extra.text
+    assert r_extra.status_code == 422, r_extra.text
 
     r_top = client.put(
         "/admin/booking-policy",
-        json={"unknown_group": {"x": 1}},
+        json={"unknown_group": {"x": 1}, "reason": "teste config"},
         headers=headers,
     )
     assert r_top.status_code == 422, r_top.text
@@ -463,12 +466,12 @@ def test_30_32_delete_volta_defaults_e_isola(client, db, default_company):
 
     client.put(
         "/admin/booking-policy",
-        json={"cancellation": {"approved_min_hours_before": 60}},
+        json={"cancellation": {"approved_min_hours_before": 60}, "reason": "teste config"},
         headers=_auth_headers(admin_b, company_b),
     )
     client.put(
         "/admin/booking-policy",
-        json={"cancellation": {"approved_min_hours_before": 50}},
+        json={"cancellation": {"approved_min_hours_before": 50}, "reason": "teste config"},
         headers=_auth_headers(admin_a, default_company),
     )
     audits_before = _count_audits(db, default_company.id)
@@ -507,7 +510,7 @@ def test_34_override_via_api_consumido_pelo_resolver(client, db, default_company
     admin = _create_user(db, "cfg02-res@test.local", company=default_company)
     client.put(
         "/admin/booking-policy",
-        json={"cancellation": {"approved_min_hours_before": 55}},
+        json={"cancellation": {"approved_min_hours_before": 55}, "reason": "teste config"},
         headers=_auth_headers(admin, default_company),
     )
     policy = BookingPolicyResolver(db).resolve(default_company.id)

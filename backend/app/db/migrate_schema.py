@@ -116,6 +116,7 @@ def migrate_schema() -> None:
             _migrar_r4_f5_booking_id_columns(cursor)
             _migrar_r4_f6_payment_booking_id(cursor)
             _migrar_r4_f7_decouple_agendamento_fks(cursor)
+            _migrar_config_deposit_policy_01_activation_snapshot(cursor)
         else:
             # Colunas/tabelas novas que os passos acima criariam mesmo sem
             # ``agendamentos`` física (dependências de outras releases que
@@ -130,6 +131,7 @@ def migrate_schema() -> None:
             _migrar_r2_f1_booking_sync_columns(cursor)
             _migrar_r4_f5_booking_id_columns(cursor)
             _migrar_r4_f6_payment_booking_id(cursor)
+            _migrar_config_deposit_policy_01_activation_snapshot(cursor)
 
         _migrar_r4_f8_drop_agendamentos(cursor)
         conn.commit()
@@ -592,6 +594,32 @@ def _migrar_r2_f1_booking_sync_columns(cursor: sqlite3.Cursor) -> None:
     )
     _add_column_if_missing(cursor, "core_bookings", "version", "INTEGER DEFAULT 1")
     print("✅ Colunas sync_status/version adicionadas em core_bookings (R2-F1)")
+
+
+def _migrar_config_deposit_policy_01_activation_snapshot(
+    cursor: sqlite3.Cursor,
+) -> None:
+    """
+    Adiciona snapshot de política de ativação em ``core_bookings``.
+
+    Espelha ``cf018_booking_activation_snapshot`` para SQLite local.
+    Sem backfill — bookings legados permanecem NULL.
+
+    Args:
+        cursor: Cursor SQLite ativo.
+    """
+    if not _tabela_existe(cursor, "core_bookings"):
+        return
+    _add_column_if_missing(
+        cursor, "core_bookings", "minimum_activation_cents", "INTEGER"
+    )
+    _add_column_if_missing(
+        cursor, "core_bookings", "activation_policy_snapshot", "JSON"
+    )
+    print(
+        "✅ Colunas minimum_activation_cents/activation_policy_snapshot "
+        "em core_bookings (CONFIG-DEPOSIT-POLICY-01)"
+    )
 
 
 def _migrar_r4_f5_booking_id_columns(cursor: sqlite3.Cursor) -> None:

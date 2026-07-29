@@ -1,14 +1,20 @@
 """
 Serialização de CoreBooking para resposta API / cache idempotência.
 """
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+from app.modules.booking.domain.policy.activation import (
+    cents_to_decimal,
+    resolve_booking_minimum_activation_cents,
+)
 from app.schemas.coreflow_v1 import BookingResponse
 
 
 def booking_to_response_dict(booking) -> Dict[str, Any]:
     """
     Converte CoreBooking ORM para dict JSON-serializável (BookingResponse).
+
+    Prefere ``minimum_activation_cents`` / snapshot do booking; legado se ausente.
 
     Args:
         booking: Instância CoreBooking com relações opcionais carregadas.
@@ -22,6 +28,12 @@ def booking_to_response_dict(booking) -> Dict[str, Any]:
         if hasattr(booking.payment_status, "value")
         else booking.payment_status
     )
+    min_cents: Optional[int] = None
+    try:
+        min_cents = resolve_booking_minimum_activation_cents(booking)
+    except ValueError:
+        min_cents = None
+
     dto = BookingResponse(
         id=booking.id,
         company_id=booking.company_id,
@@ -41,5 +53,9 @@ def booking_to_response_dict(booking) -> Dict[str, Any]:
         catalog_name=booking.catalog.name if booking.catalog else None,
         offering_name=booking.offering.name if booking.offering else None,
         created_at=booking.created_at,
+        minimum_activation_cents=min_cents,
+        minimum_activation_amount=(
+            cents_to_decimal(min_cents) if min_cents is not None else None
+        ),
     )
     return dto.model_dump(mode="json")

@@ -311,7 +311,14 @@ class DisponibilidadeService:
                 )
                 return True
 
-            minimum = self._get_minimum_activation_cents(total_cents)
+            from app.modules.booking.domain.policy.activation import (
+                resolve_booking_minimum_activation_cents,
+            )
+
+            try:
+                minimum = resolve_booking_minimum_activation_cents(booking)
+            except ValueError:
+                minimum = self._get_minimum_activation_cents(total_cents)
             if paid_cents >= minimum:
                 logger.info(
                     "Expiração: booking_id=%s company_id=%s ativo "
