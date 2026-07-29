@@ -5,6 +5,13 @@ Tabela dedicada ``booking_policy_config``: ``CoreWorkflowConfig`` só armazena
 ``workflow_id`` + ``enabled`` (e permite ``company_id`` nulo), sem documento JSON
 de política nem auditoria — inadequado para este caso.
 """
+from app.modules.booking.domain.policy.activation import (
+    calculate_minimum_activation_cents,
+    cents_to_decimal,
+    meets_minimum_activation,
+    minimum_activation_from_price_total,
+    money_to_cents,
+)
 from app.modules.booking.domain.policy.audit import record_policy_change
 from app.modules.booking.domain.policy.cancel_window import (
     can_cancel_approved,
@@ -26,9 +33,14 @@ __all__ = [
     "BookingPolicyAudit",
     "BookingPolicyConfig",
     "BookingPolicyResolver",
+    "calculate_minimum_activation_cents",
     "can_cancel_approved",
+    "cents_to_decimal",
     "get_installation_defaults",
     "get_safe_fallback_policy",
     "may_cancel_for_lifecycle",
+    "meets_minimum_activation",
+    "minimum_activation_from_price_total",
+    "money_to_cents",
     "record_policy_change",
 ]

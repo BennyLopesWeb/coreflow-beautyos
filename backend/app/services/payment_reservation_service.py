@@ -8,8 +8,18 @@ from typing import Optional, List
 
 from app.models.payment import Payment, PaymentStatus, PaymentType
 from app.models.agendamento import ReservationStatus, StatusPagamento
-from app.core.exceptions import NotFoundError, BusinessRuleError, ConflictError
+from app.core.exceptions import (
+    NotFoundError,
+    BusinessRuleError,
+    ConflictError,
+    MinimumDepositNotMetError,
+    ValidationError,
+)
 from app.core.logging_config import get_logger
+from app.modules.booking.domain.policy.activation import (
+    calculate_minimum_activation_cents,
+    money_to_cents,
+)
 from app.services.financeiro_service import FinanceiroService
 
 logger = get_logger("payment_reservation_service")
@@ -167,6 +177,31 @@ class PaymentReservationService:
                 "Booking cancelado ou estornado não pode ter pagamento confirmado"
             )
 
+    def _assert_minimum_activation_met(self, booking: "CoreBooking") -> None:
+        """
+        Garante que o valor de entrada do booking atinge o mínimo de ativação.
+
+        Recalcula o mínimo a partir de ``price_total`` no servidor. O valor
+        considerado pago nesta confirmação é ``deposit_amount`` (sinal
+        configurado no snapshot do booking).
+
+        Args:
+            booking: ``CoreBooking`` candidato à ativação.
+
+        Raises:
+            ValidationError: Total do serviço inválido.
+            MinimumDepositNotMetError: Entrada abaixo do mínimo.
+        """
+        total_cents = money_to_cents(booking.price_total)
+        if total_cents is None or total_cents <= 0:
+            raise ValidationError(
+                "Não é possível ativar a reserva: preço total inválido."
+            )
+        minimum = calculate_minimum_activation_cents(total_cents)
+        paid_cents = money_to_cents(booking.deposit_amount) or 0
+        if paid_cents < minimum:
+            raise MinimumDepositNotMetError(minimum)
+
     def confirmar_deposito_por_booking(
         self, booking_id: int, company_id: int
     ) -> "CoreBooking":
@@ -205,6 +240,8 @@ class PaymentReservationService:
         Raises:
             NotFoundError: Booking não encontrado neste tenant.
             ConflictError: Booking cancelado/estornado.
+            ValidationError: Preço total inválido.
+            MinimumDepositNotMetError: Entrada abaixo do mínimo de ativação.
         """
         row = self._obter_booking_do_tenant(booking_id, company_id)
         self._assert_booking_confirmavel(row)
@@ -212,6 +249,10 @@ class PaymentReservationService:
         # Idempotência (FIX-04): estado alvo já atingido — sem efeitos colaterais.
         if bool(row.deposit_paid):
             return row
+
+        # FIX-BOOKING-MIN-DEPOSIT-QUOTE-01: ativação exige mínimo recalculado
+        # no servidor (nunca confiar em valor enviado pelo cliente).
+        self._assert_minimum_activation_met(row)
 
         row.deposit_paid = True
         row.payment_status = StatusPagamento.PARTIALLY_PAID
