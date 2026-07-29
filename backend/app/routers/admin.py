@@ -1,14 +1,21 @@
 """
 Router administrativo — dashboard, pagamentos, agenda, CRM e agente IA.
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from datetime import date
 from typing import List, Optional
 
 from app.db.session import get_db
-from app.core.dependencies import get_current_admin_user as get_current_admin
+from app.core.dependencies import get_current_admin_user as get_current_admin, security
+from app.modules.identity.api.deps import (
+    get_tenant_context,
+    get_identity_service,
+)
+from app.modules.identity.application.identity_service import IdentityApplicationService
 from app.models.user import User
+from app.shared.kernel.tenant import TenantContext
 from app.schemas.admin import (
     AdminDashboardResponse,
     PagamentoAdminItem,
@@ -28,6 +35,31 @@ from app.services.agenda_dia_service import AgendaDiaService
 from app.services.agendamento_service import AgendamentoService
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+def _has_effective_company(
+    identity: IdentityApplicationService,
+    user: User,
+    credentials: HTTPAuthorizationCredentials,
+) -> bool:
+    """
+    Indica se o admin possui tenant efetivo (JWT ``company_id`` ou membership).
+
+    Evita que o fallback de ``get_tenant_context`` para ``salao-demo``
+    exponha listagens a usuários sem vínculo de empresa.
+
+    Args:
+        identity: Serviço Identity.
+        user: Usuário autenticado.
+        credentials: Bearer token da requisição.
+
+    Returns:
+        True se há ``company_id`` no JWT ou membership primário.
+    """
+    payload = identity.tokens.decode(credentials.credentials) or {}
+    if payload.get("company_id"):
+        return True
+    return identity.get_primary_membership(user.id) is not None
 
 
 @router.get("/dashboard", response_model=AdminDashboardResponse)
@@ -55,12 +87,23 @@ def listar_trancas_admin(
 @router.get("/pagamentos", response_model=List[PagamentoAdminItem])
 def listar_pagamentos(
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
+    tenant: TenantContext = Depends(get_tenant_context),
+    current_user: User = Depends(get_current_admin),
+    identity: IdentityApplicationService = Depends(get_identity_service),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
     """
-    Lista todos os agendamentos com status de pagamento do sinal.
+    Lista agendamentos com status de pagamento do sinal do tenant ativo.
+
+    Isolamento: ``CoreBooking.company_id == tenant.company_id`` (query SQL).
+    Sem tenant efetivo (JWT/membership) → 403 (sem fallback silencioso).
     """
-    return AdminService(db).listar_pagamentos()
+    if not _has_effective_company(identity, current_user, credentials):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant não associado ao usuário",
+        )
+    return AdminService(db).listar_pagamentos(tenant.company_id)
 
 
 @router.get("/agenda", response_model=List[AgendamentoAdminItem])

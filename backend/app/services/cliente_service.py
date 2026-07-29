@@ -18,9 +18,27 @@ class ClienteService:
     def __init__(self, db: Session):
         self.db = db
     
-    def listar_clientes(self) -> List[Cliente]:
-        """Lista todos os clientes (não deletados)"""
-        return self.db.query(Cliente).filter(Cliente.deleted_at.is_(None)).all()
+    def listar_clientes(self, company_id: int) -> List[Cliente]:
+        """
+        Lista clientes do tenant (não deletados).
+
+        Isolamento multi-tenant: filtra ``Cliente.company_id`` na query
+        SQLAlchemy. Registros com ``company_id IS NULL`` são excluídos.
+
+        Args:
+            company_id: ID da empresa (tenant) ativa na requisição.
+
+        Returns:
+            Lista de ``Cliente`` do tenant.
+        """
+        return (
+            self.db.query(Cliente)
+            .filter(
+                Cliente.deleted_at.is_(None),
+                Cliente.company_id == company_id,
+            )
+            .all()
+        )
     
     def buscar_por_id(self, cliente_id: int) -> Optional[Cliente]:
         """Busca cliente por ID (não deletado)"""
