@@ -25,7 +25,7 @@ from app.modules.waitlist.domain.models import CoreWaitlist  # noqa: F401
 from app.modules.workflow.domain.models import CoreWorkflowRun  # noqa: F401
 from app.modules.workflow.domain.config_models import CoreWorkflowConfig  # noqa: F401
 from app.modules.order.domain.models import CoreOrder  # noqa: F401
-from app.modules.invoice.domain.models import CoreInvoice  # noqa: F401
+from app.modules.invoice.models import CoreInvoice  # noqa: F401
 from app.models.inventory_item import InventoryItem  # noqa: F401
 from app.modules.asset.models import CoreAsset  # noqa: F401
 from app.modules.inventory.models import CoreInventory  # noqa: F401

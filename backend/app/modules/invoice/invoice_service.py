@@ -1,23 +1,29 @@
 """
-Consultas read-only de Invoice genérico CoreFlow.
+Serviço read-only de Invoice genérico CoreFlow (Support CRUD).
 """
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.modules.invoice.domain.models import CoreInvoice
+from app.modules.invoice.models import CoreInvoice
 
 
-class InvoiceQueryService:
+class InvoiceService:
     """
-    Serviço de leitura para core_invoices.
+    Consultas de leitura para ``core_invoices``.
 
     Args:
         db: Sessão SQLAlchemy.
     """
 
     def __init__(self, db: Session):
+        """
+        Inicializa o serviço com a sessão do banco.
+
+        Args:
+            db: Sessão SQLAlchemy ativa.
+        """
         self.db = db
 
     def list_invoices(
