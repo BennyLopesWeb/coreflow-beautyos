@@ -89,7 +89,9 @@ def test_confirmar_deposito_registra_financeiro(
     db.commit()
     db.refresh(booking)
 
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking.id)
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking.id, company_id=default_company.id
+    )
 
     movs = (
         db.query(Financeiro)
@@ -129,8 +131,8 @@ def test_reconfirmar_deposito_nao_duplica_financeiro(
     db.refresh(booking)
 
     svc = PaymentReservationService(db)
-    svc.confirmar_deposito_por_booking(booking.id)
-    svc.confirmar_deposito_por_booking(booking.id)
+    svc.confirmar_deposito_por_booking(booking.id, company_id=default_company.id)
+    svc.confirmar_deposito_por_booking(booking.id, company_id=default_company.id)
 
     count = (
         db.query(Financeiro)

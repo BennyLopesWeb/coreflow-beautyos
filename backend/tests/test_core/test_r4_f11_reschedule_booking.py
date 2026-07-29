@@ -138,7 +138,9 @@ def _create_approved_booking(
     )
     assert create.status_code == 201, create.text
     booking = create.json()
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking["id"], company_id=cliente_exemplo.company_id
+    )
     approve = client.post(
         f"/v1/bookings/{booking['id']}/approve",
         headers=admin_headers,

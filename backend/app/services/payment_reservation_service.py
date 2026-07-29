@@ -7,11 +7,25 @@ from decimal import Decimal
 from typing import Optional, List
 
 from app.models.payment import Payment, PaymentStatus, PaymentType
-from app.core.exceptions import NotFoundError, BusinessRuleError
+from app.models.agendamento import ReservationStatus, StatusPagamento
+from app.core.exceptions import NotFoundError, BusinessRuleError, ConflictError
 from app.core.logging_config import get_logger
 from app.services.financeiro_service import FinanceiroService
 
 logger = get_logger("payment_reservation_service")
+
+# Status de booking/pagamento que bloqueiam confirmação financeira (FIX-04).
+_BOOKING_STATUS_BLOQUEADOS = frozenset(
+    {
+        ReservationStatus.CANCELLED,
+        ReservationStatus.CANCELADO,
+    }
+)
+_PAYMENT_STATUS_BLOQUEADOS = frozenset(
+    {
+        StatusPagamento.CANCELLED,
+    }
+)
 
 
 class PaymentReservationService:
@@ -98,7 +112,64 @@ class PaymentReservationService:
         """
         raise NotFoundError("Reserva", str(agendamento_id))
 
-    def confirmar_deposito_por_booking(self, booking_id: int) -> "CoreBooking":
+    def _obter_booking_do_tenant(
+        self, booking_id: int, company_id: int
+    ) -> "CoreBooking":
+        """
+        Busca ``CoreBooking`` por PK e ``company_id`` na mesma query SQL.
+
+        FIX-04: o filtro de tenant ocorre no SQL (não em memória), para
+        impedir mutação financeira cross-tenant e não distinguir
+        "inexistente" de "outro tenant" na mensagem de erro.
+
+        Args:
+            booking_id: ID ``core_bookings.id``.
+            company_id: Tenant efetivo do admin (obrigatório).
+
+        Returns:
+            CoreBooking do tenant.
+
+        Raises:
+            NotFoundError: Booking inexistente ou de outro tenant (404 genérico).
+        """
+        from app.modules.booking.domain.models import CoreBooking
+
+        row = (
+            self.db.query(CoreBooking)
+            .filter(
+                CoreBooking.id == booking_id,
+                CoreBooking.company_id == company_id,
+            )
+            .first()
+        )
+        if not row:
+            raise NotFoundError("Booking")
+        return row
+
+    def _assert_booking_confirmavel(self, booking: "CoreBooking") -> None:
+        """
+        Bloqueia confirmação financeira em booking cancelado/estornado (FIX-04).
+
+        Args:
+            booking: ``CoreBooking`` já filtrado pelo tenant.
+
+        Raises:
+            ConflictError: Status de reserva ou pagamento impede confirmação (409).
+        """
+        status_val = booking.status
+        if status_val in _BOOKING_STATUS_BLOQUEADOS:
+            raise ConflictError(
+                "Booking cancelado ou estornado não pode ter pagamento confirmado"
+            )
+        pay_val = booking.payment_status
+        if pay_val in _PAYMENT_STATUS_BLOQUEADOS:
+            raise ConflictError(
+                "Booking cancelado ou estornado não pode ter pagamento confirmado"
+            )
+
+    def confirmar_deposito_por_booking(
+        self, booking_id: int, company_id: int
+    ) -> "CoreBooking":
         """
         Confirma sinal diretamente em booking core-only, sem ``Agendamento`` (R4-F2/R4-F3).
 
@@ -120,25 +191,30 @@ class PaymentReservationService:
         via ``FinanceiroService.registrar_entrada_automatica`` (best-effort;
         falha não reverte ``deposit_paid``).
 
+        FIX-04: exige ``company_id`` e filtra na query SQL; bloqueia
+        cancelado/estornado (409); se ``deposit_paid`` já for ``True``,
+        retorna o booking sem reprocessar Payment nem Financeiro.
+
         Args:
             booking_id: ID ``core_bookings.id``.
+            company_id: Tenant efetivo (``CoreBooking.company_id``).
 
         Returns:
-            CoreBooking atualizado com ``deposit_paid=True``.
+            CoreBooking atualizado com ``deposit_paid=True`` (ou já pago).
 
         Raises:
-            NotFoundError: Booking não encontrado.
+            NotFoundError: Booking não encontrado neste tenant.
+            ConflictError: Booking cancelado/estornado.
         """
-        from app.modules.booking.domain.models import CoreBooking
-        from app.models.agendamento import StatusPagamento as _StatusPagamento
+        row = self._obter_booking_do_tenant(booking_id, company_id)
+        self._assert_booking_confirmavel(row)
 
-        row = self.db.query(CoreBooking).filter(CoreBooking.id == booking_id).first()
-        if not row:
-            raise NotFoundError("Booking", str(booking_id))
+        # Idempotência (FIX-04): estado alvo já atingido — sem efeitos colaterais.
+        if bool(row.deposit_paid):
+            return row
 
-        ja_pago = bool(row.deposit_paid)
         row.deposit_paid = True
-        row.payment_status = _StatusPagamento.PARTIALLY_PAID
+        row.payment_status = StatusPagamento.PARTIALLY_PAID
 
         self._upsert_payment_por_booking(row)
 
@@ -146,18 +222,17 @@ class PaymentReservationService:
         self.db.refresh(row)
 
         # R4-F9 — paridade contábil: entrada Financeiro na 1ª confirmação
-        if not ja_pago:
-            try:
-                self.financeiro.registrar_entrada_automatica(
-                    descricao=f"Sinal - Booking #{booking_id}",
-                    valor=Decimal(str(row.deposit_amount or 0)),
-                    agendamento_id=row.legacy_agendamento_id,
-                )
-            except Exception:
-                logger.exception(
-                    "Falha ao registrar entrada Financeiro para booking_id=%s (best-effort)",
-                    booking_id,
-                )
+        try:
+            self.financeiro.registrar_entrada_automatica(
+                descricao=f"Sinal - Booking #{booking_id}",
+                valor=Decimal(str(row.deposit_amount or 0)),
+                agendamento_id=row.legacy_agendamento_id,
+            )
+        except Exception:
+            logger.exception(
+                "Falha ao registrar entrada Financeiro para booking_id=%s (best-effort)",
+                booking_id,
+            )
 
         self.db.refresh(row)
         return row
@@ -232,7 +307,9 @@ class PaymentReservationService:
         """
         raise NotFoundError("Reserva", str(agendamento_id))
 
-    def confirmar_pagamento_final_por_booking(self, booking_id: int) -> "CoreBooking":
+    def confirmar_pagamento_final_por_booking(
+        self, booking_id: int, company_id: int
+    ) -> "CoreBooking":
         """
         Confirma pagamento final (remaining) em booking core-only (R4-F10).
 
@@ -242,47 +319,53 @@ class PaymentReservationService:
         registra entrada ``Financeiro`` na primeira confirmação (best-effort,
         espelhando R4-F9 no deposit).
 
+        FIX-04: exige ``company_id`` e filtra na query SQL; bloqueia
+        cancelado/estornado (409); se já ``PAID``, retorna sem reprocessar
+        Payment nem Financeiro. A regra "final sem sinal" permanece após
+        os gates de tenant e status.
+
         Args:
             booking_id: ID ``core_bookings.id``.
+            company_id: Tenant efetivo (``CoreBooking.company_id``).
 
         Returns:
-            CoreBooking atualizado com ``payment_status=PAID``.
+            CoreBooking atualizado com ``payment_status=PAID`` (ou já pago).
 
         Raises:
-            NotFoundError: Booking não encontrado.
+            NotFoundError: Booking não encontrado neste tenant.
+            ConflictError: Booking cancelado/estornado.
             BusinessRuleError: Sinal ainda não confirmado (``deposit_paid``).
         """
-        from app.modules.booking.domain.models import CoreBooking
-        from app.models.agendamento import StatusPagamento as _StatusPagamento
+        row = self._obter_booking_do_tenant(booking_id, company_id)
+        self._assert_booking_confirmavel(row)
 
-        row = self.db.query(CoreBooking).filter(CoreBooking.id == booking_id).first()
-        if not row:
-            raise NotFoundError("Booking", str(booking_id))
         if not row.deposit_paid:
             raise BusinessRuleError(
                 "Confirme o sinal antes do pagamento final "
                 f"(booking_id={booking_id})"
             )
 
-        ja_pago = row.payment_status == _StatusPagamento.PAID
-        row.payment_status = _StatusPagamento.PAID
+        # Idempotência (FIX-04): estado alvo já atingido — sem efeitos colaterais.
+        if row.payment_status == StatusPagamento.PAID:
+            return row
+
+        row.payment_status = StatusPagamento.PAID
         self._upsert_payment_final_por_booking(row)
 
         self.db.commit()
         self.db.refresh(row)
 
-        if not ja_pago:
-            try:
-                self.financeiro.registrar_entrada_automatica(
-                    descricao=f"Pagamento final - Booking #{booking_id}",
-                    valor=Decimal(str(row.remaining_amount or 0)),
-                    agendamento_id=row.legacy_agendamento_id,
-                )
-            except Exception:
-                logger.exception(
-                    "Falha ao registrar Financeiro (final) booking_id=%s (best-effort)",
-                    booking_id,
-                )
+        try:
+            self.financeiro.registrar_entrada_automatica(
+                descricao=f"Pagamento final - Booking #{booking_id}",
+                valor=Decimal(str(row.remaining_amount or 0)),
+                agendamento_id=row.legacy_agendamento_id,
+            )
+        except Exception:
+            logger.exception(
+                "Falha ao registrar Financeiro (final) booking_id=%s (best-effort)",
+                booking_id,
+            )
 
         self.db.refresh(row)
         return row

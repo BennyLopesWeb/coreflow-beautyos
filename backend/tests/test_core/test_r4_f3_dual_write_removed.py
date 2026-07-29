@@ -132,7 +132,9 @@ def test_approve_core_only_booking_without_legacy(
     assert blocked.status_code == 409
     assert "deposit_required" in blocked.text
 
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking["id"], company_id=cliente_exemplo.company_id
+    )
 
     approve = client.post(f"/v1/bookings/{booking['id']}/approve", headers=admin_headers)
     assert approve.status_code == 200, approve.text
