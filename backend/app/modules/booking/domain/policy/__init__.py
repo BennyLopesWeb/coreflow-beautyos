@@ -6,6 +6,10 @@ Tabela dedicada ``booking_policy_config``: ``CoreWorkflowConfig`` só armazena
 de política nem auditoria — inadequado para este caso.
 """
 from app.modules.booking.domain.policy.audit import record_policy_change
+from app.modules.booking.domain.policy.cancel_window import (
+    can_cancel_approved,
+    may_cancel_for_lifecycle,
+)
 from app.modules.booking.domain.policy.defaults import (
     get_installation_defaults,
     get_safe_fallback_policy,
@@ -22,7 +26,9 @@ __all__ = [
     "BookingPolicyAudit",
     "BookingPolicyConfig",
     "BookingPolicyResolver",
+    "can_cancel_approved",
     "get_installation_defaults",
     "get_safe_fallback_policy",
+    "may_cancel_for_lifecycle",
     "record_policy_change",
 ]
