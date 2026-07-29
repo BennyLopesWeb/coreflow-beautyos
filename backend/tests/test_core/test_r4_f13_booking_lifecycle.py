@@ -27,6 +27,7 @@ from app.services.payment_reservation_service import PaymentReservationService
 from app.shared.events.outbox import CoreEventOutbox
 
 
+from tests.helpers_ledger import seed_ledger_deposit
 def test_app_version_r4_f13():
     """APP_VERSION avançou de R4-F13 (pin exato relaxado em R4-F14+)."""
     assert settings.APP_VERSION.startswith("2.")
@@ -132,6 +133,7 @@ def test_complete_and_no_show_api(
     )
     assert create.status_code == 201, create.text
     booking_id = create.json()["id"]
+    seed_ledger_deposit(db, booking_id)
     PaymentReservationService(db).confirmar_deposito_por_booking(
         booking_id, company_id=cliente_exemplo.company_id
     )
@@ -169,6 +171,7 @@ def test_complete_and_no_show_api(
         headers=booking_headers(),
     )
     bid2 = create2.json()["id"]
+    seed_ledger_deposit(db, bid2)
     PaymentReservationService(db).confirmar_deposito_por_booking(
         bid2, company_id=cliente_exemplo.company_id
     )

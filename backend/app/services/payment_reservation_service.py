@@ -21,7 +21,7 @@ from app.modules.booking.domain.policy.activation import (
     money_to_cents,
 )
 from app.modules.booking.domain.policy.paid_amount import (
-    get_effective_paid_amount_cents,
+    get_effective_paid_snapshot,
 )
 from app.services.financeiro_service import FinanceiroService
 
@@ -184,20 +184,21 @@ class PaymentReservationService:
         self, booking: "CoreBooking", *, company_id: int
     ) -> None:
         """
-        Garante que o ledger atinge o mínimo de ativação.
+        Garante que o ledger reconciliado atinge o mínimo de ativação.
 
-        Recalcula o mínimo a partir de ``price_total`` no servidor e compara
-        com ``get_effective_paid_amount_cents`` (fonte canônica Payment /
-        CorePayment). ``deposit_amount`` é apenas snapshot comercial da
-        confirmação administrativa — não substitui o ledger.
+        ``deposit_amount`` do booking é cotação comercial e **não** entra
+        nesta apuração. Fail-closed se a consulta financeira falhar, se
+        houver ``processando``, ou se ``Payment`` e ``CorePayment``
+        divergirem materialmente.
 
         Args:
             booking: ``CoreBooking`` candidato à ativação.
             company_id: Tenant efetivo.
 
         Raises:
-            ValidationError: Total do serviço inválido.
-            MinimumDepositNotMetError: Entrada abaixo do mínimo.
+            ValidationError: Total inválido, falha de consulta, processing
+                ou divergência de fontes.
+            MinimumDepositNotMetError: Ledger reconciliado abaixo do mínimo.
         """
         total_cents = money_to_cents(booking.price_total)
         if total_cents is None or total_cents <= 0:
@@ -205,40 +206,58 @@ class PaymentReservationService:
                 "Não é possível ativar a reserva: preço total inválido."
             )
         minimum = calculate_minimum_activation_cents(total_cents)
-        paid_cents = get_effective_paid_amount_cents(
-            self.db,
-            booking_id=int(booking.id),
-            company_id=int(company_id),
-        )
-        if paid_cents < minimum:
+        try:
+            snap = get_effective_paid_snapshot(
+                self.db,
+                booking_id=int(booking.id),
+                company_id=int(company_id),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Falha ao apurar ledger booking_id=%s company_id=%s — "
+                "ativação bloqueada (fail-closed)",
+                booking.id,
+                company_id,
+                exc_info=True,
+            )
+            raise ValidationError(
+                "Não foi possível consultar o ledger financeiro para ativação."
+            ) from exc
+
+        if snap.has_processing:
+            raise ValidationError(
+                "Há pagamento em processamento; a reserva não pode ser ativada."
+            )
+        if snap.has_source_divergence or not snap.is_reconciled:
+            raise ValidationError(
+                "Divergência entre Payment e CorePayment; ativação bloqueada "
+                "para análise manual."
+            )
+        if snap.paid_cents < minimum:
             raise MinimumDepositNotMetError(minimum)
 
     def confirmar_deposito_por_booking(
         self, booking_id: int, company_id: int
     ) -> "CoreBooking":
         """
-        Confirma sinal diretamente em booking core-only, sem ``Agendamento`` (R4-F2/R4-F3).
+        Confirma sinal em booking core-only quando o ledger já cobre o mínimo.
 
-        Path preferencial desde R4-F3 (dual-write outbound removido
-        definitivamente) e path **único** de escrita de sinal desde R4-F6
-        para bookings novos: não existe projeção legado (``agendamentos``)
-        para o booking, então a confirmação do sinal atualiza
-        ``CoreBooking.deposit_paid`` diretamente — é isso que
-        ``PaymentQueryPort.is_deposit_confirmed`` consulta para liberar o
-        approve (ADR-028).
+        Path preferencial desde R4-F3 / R4-F6: atualiza
+        ``CoreBooking.deposit_paid`` (consulta de approve, ADR-028).
 
-        RECONCILE-DEPOSIT-SOURCES-01: grava/atualiza o ``Payment`` de depósito
-        com o snapshot ``deposit_amount`` (ato administrativo de recebimento),
-        apura o pago pelo ledger canônico e só então ativa se
-        ``effective_paid >= minimum``. Abaixo do mínimo o Payment permanece
-        para análise manual, sem ``deposit_paid``.
+        RECONCILE-DEPOSIT-SOURCES-01 — semântica explícita:
+
+        - ``deposit_amount`` = cotação comercial do sinal (não é pagamento);
+        - este endpoint **não** registra recebimento manual nem faz upsert
+          de ``Payment`` a partir do snapshot;
+        - apenas confirma pagamentos **já existentes** no ledger
+          (``Payment`` / ``CorePayment``) se reconciliados e >= mínimo.
 
         R4-F9: na primeira confirmação bem-sucedida, registra entrada em
         ``Financeiro`` (best-effort; falha não reverte ``deposit_paid``).
 
-        FIX-04: exige ``company_id`` e filtra na query SQL; bloqueia
-        cancelado/estornado (409); se ``deposit_paid`` já for ``True``,
-        retorna o booking sem reprocessar Payment nem Financeiro.
+        FIX-04: exige ``company_id``; bloqueia cancelado/estornado (409);
+        se ``deposit_paid`` já for ``True``, retorna sem efeitos colaterais.
 
         Args:
             booking_id: ID ``core_bookings.id``.
@@ -250,8 +269,10 @@ class PaymentReservationService:
         Raises:
             NotFoundError: Booking não encontrado neste tenant.
             ConflictError: Booking cancelado/estornado.
-            ValidationError: Preço total inválido ou falha ao gravar Payment.
-            MinimumDepositNotMetError: Entrada abaixo do mínimo de ativação.
+            ValidationError: Total inválido, falha de ledger, processing ou
+                divergência de fontes.
+            MinimumDepositNotMetError: Ledger abaixo do mínimo (valores
+                permanecem para análise manual; booking não ativa).
         """
         row = self._obter_booking_do_tenant(booking_id, company_id)
         self._assert_booking_confirmavel(row)
@@ -260,16 +281,7 @@ class PaymentReservationService:
         if bool(row.deposit_paid):
             return row
 
-        # Ledger primeiro: registra o recebimento administrativo no Payment.
-        self._upsert_payment_por_booking(row, fatal=True)
-        self.db.flush()
-
-        try:
-            self._assert_minimum_activation_met(row, company_id=company_id)
-        except MinimumDepositNotMetError:
-            # Preserva o Payment no ledger para análise manual; não ativa.
-            self.db.commit()
-            raise
+        self._assert_minimum_activation_met(row, company_id=company_id)
 
         row.deposit_paid = True
         row.payment_status = StatusPagamento.PARTIALLY_PAID
@@ -293,27 +305,18 @@ class PaymentReservationService:
         self.db.refresh(row)
         return row
 
-    def _upsert_payment_por_booking(
-        self, booking, *, fatal: bool = False
-    ) -> Optional[Payment]:
+    def _upsert_payment_por_booking(self, booking) -> Optional[Payment]:
         """
-        Cria ou atualiza o ``Payment`` (R4-F6 bridge) vinculado a um ``CoreBooking``.
+        Bridge legado R4-F6: cria/atualiza ``Payment`` de depósito.
 
-        Grava o snapshot ``deposit_amount`` como valor do depósito no ledger
-        (ato de confirmação administrativa). Não soft-deleta linhas; ignora
-        registros com ``deleted_at`` ao localizar o depósito ativo.
+        Mantido para outros fluxos/compatibilidade. **Não** é chamado por
+        ``confirmar_deposito_por_booking`` (cotação ≠ recebimento).
 
         Args:
-            booking: ``CoreBooking`` cujo sinal está sendo confirmado.
-            fatal: Se ``True``, propaga erros (obrigatório para o gate de
-                ativação). Se ``False``, engole erros (compatibilidade).
+            booking: ``CoreBooking`` com dados de depósito.
 
         Returns:
-            Payment persistido (criado ou atualizado), ou ``None`` se
-            ``fatal=False`` e ocorrer erro.
-
-        Raises:
-            ValidationError: Quando ``fatal=True`` e a gravação falha.
+            Payment persistido, ou ``None`` em erro não fatal.
         """
         try:
             pag = (
@@ -334,26 +337,16 @@ class PaymentReservationService:
                     status=PaymentStatus.PENDING,
                 )
                 self.db.add(pag)
-            else:
-                # Nunca reduzir valor já registrado no ledger canônico.
-                current = money_to_cents(pag.valor) or 0
-                incoming = money_to_cents(booking.deposit_amount) or 0
-                if incoming > current:
-                    pag.valor = booking.deposit_amount
 
             pag.status = PaymentStatus.PAID
             pag.paid_at = datetime.utcnow()
             return pag
-        except Exception as exc:
+        except Exception:
             logger.warning(
-                "Falha ao sincronizar Payment.booking_id=%s (R4-F6 bridge)",
+                "Falha não fatal ao sincronizar Payment.booking_id=%s (R4-F6 bridge)",
                 booking.id,
                 exc_info=True,
             )
-            if fatal:
-                raise ValidationError(
-                    "Não foi possível registrar o pagamento no ledger."
-                ) from exc
             return None
 
     def confirmar_pagamento_final(

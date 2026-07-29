@@ -23,6 +23,7 @@ import pytest
 
 from app.shared.events.outbox import CoreEventOutbox, OutboxStatus
 
+from tests.helpers_ledger import seed_ledger_deposit
 EVIDENCE_PATH = (
     Path(__file__).resolve().parents[3]
     / "docs"
@@ -143,6 +144,7 @@ def _approve_booking(client, db, admin_headers, booking_id: int) -> None:
         .filter(CoreBooking.id == booking_id)
         .scalar()
     )
+    seed_ledger_deposit(db, booking_id)
     PaymentReservationService(db).confirmar_deposito_por_booking(
         booking_id, company_id=company_id
     )

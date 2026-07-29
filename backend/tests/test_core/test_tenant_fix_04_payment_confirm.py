@@ -22,6 +22,7 @@ from app.services.company_service import CompanyService
 from app.services.payment_reservation_service import PaymentReservationService
 
 
+from tests.helpers_ledger import seed_ledger_deposit
 def _create_company(db, slug: str, nome: str) -> Company:
     """
     Cria empresa auxiliar para testes de isolamento financeiro.
@@ -207,6 +208,7 @@ def test_t03_mesmo_tenant_confirmar_sinal_200(
     """T-03: Mesmo tenant, primeira confirmação de sinal → 200."""
     admin = _create_admin(db, "fix04-ok@test.local", company=default_company)
     booking = _create_booking(db, default_company, cliente_exemplo, synced_catalog)
+    seed_ledger_deposit(db, booking.id)
 
     resp = client.post(
         f"/admin/pagamentos/booking/{booking.id}/confirmar-sinal",
@@ -282,6 +284,7 @@ def test_t08_idempotencia_sinal_sem_duplicar_financeiro(
     admin = _create_admin(db, "fix04-idem@test.local", company=default_company)
     booking = _create_booking(db, default_company, cliente_exemplo, synced_catalog)
     headers = _auth_headers(admin, default_company)
+    seed_ledger_deposit(db, booking.id)
 
     first = client.post(
         f"/admin/pagamentos/booking/{booking.id}/confirmar-sinal",
@@ -379,6 +382,7 @@ def test_t11_filtro_company_id_na_query_sql(
     db.refresh(booking)
     assert booking.deposit_paid is False
 
+    seed_ledger_deposit(db, booking.id)
     PaymentReservationService(db).confirmar_deposito_por_booking(
         booking.id, company_id=default_company.id
     )

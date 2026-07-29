@@ -47,6 +47,7 @@ from app.services.payment_reservation_service import PaymentReservationService
 from app.services.reservation_service import ReservationService
 
 
+from tests.helpers_ledger import seed_ledger_deposit
 def _slot_for_day(db, catalog, offering, days_ahead: int) -> datetime:
     """
     Retorna primeiro horário disponível N dias à frente.
@@ -133,7 +134,7 @@ def test_criar_booking_v1_continua_funcionando(
 def test_confirmar_deposito_por_booking_continua_funcionando(
     db, default_company, cliente_exemplo, synced_catalog
 ):
-    """confirmar_deposito_por_booking cria Payment vinculado por booking_id (sem Agendamento)."""
+    """confirmar_deposito_por_booking ativa quando há Payment no ledger (sem Agendamento)."""
     from app.modules.booking.application.commands.create_booking import (
         CreateBookingCommand,
         CreateBookingHandler,
@@ -153,6 +154,7 @@ def test_confirmar_deposito_por_booking_continua_funcionando(
     )
     booking_id = result.booking.id
 
+    seed_ledger_deposit(db, booking_id)
     atualizado = PaymentReservationService(db).confirmar_deposito_por_booking(
         booking_id, company_id=default_company.id
     )
@@ -184,6 +186,7 @@ def test_v1_payments_por_booking_id_continua_funcionando(
     assert response.status_code == 201, response.text
     booking_id = response.json()["id"]
 
+    seed_ledger_deposit(db, booking_id)
     PaymentReservationService(db).confirmar_deposito_por_booking(
         booking_id, company_id=cliente_exemplo.company_id
     )

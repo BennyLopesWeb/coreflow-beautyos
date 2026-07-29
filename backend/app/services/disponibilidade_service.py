@@ -272,16 +272,29 @@ class DisponibilidadeService:
                 int(booking_id),
                 {"paid_cents": 0, "has_processing": False, "has_paid_rows": False},
             )
-            # Fonte canônica: ledger. deposit_amount é snapshot comercial e
-            # não entra na soma (fail-closed cobre flags sem valor no ledger).
+            # Fonte canônica: ledger. deposit_amount é cotação comercial e
+            # não entra na soma.
             paid_cents = int(snap.get("paid_cents") or 0)
 
             if snap.get("has_processing"):
                 logger.info(
                     "Expiração: booking_id=%s company_id=%s com pagamento "
-                    "processando — fail-closed (não conta na ativação)",
+                    "processando — fail-closed (não conta como pago)",
                     booking_id,
                     company_id,
+                )
+                return True
+
+            if snap.get("has_source_divergence") or not snap.get(
+                "is_reconciled", True
+            ):
+                logger.warning(
+                    "Expiração: booking_id=%s company_id=%s divergência "
+                    "Payment(%s) vs CorePayment(%s) — fail-closed",
+                    booking_id,
+                    company_id,
+                    snap.get("payment_cents"),
+                    snap.get("core_payment_cents"),
                 )
                 return True
 

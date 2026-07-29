@@ -19,6 +19,7 @@ from app.modules.booking.domain.value_objects.booking_types import SyncStatus
 from app.services.payment_reservation_service import PaymentReservationService
 
 
+from tests.helpers_ledger import seed_ledger_deposit
 def test_app_version_r4_f9():
     """APP_VERSION avançou de R4-F9 (pin exato relaxado em R4-F10+; ver test_app_version_r4_f10)."""
     assert settings.APP_VERSION.startswith("2.")
@@ -89,6 +90,7 @@ def test_confirmar_deposito_registra_financeiro(
     db.commit()
     db.refresh(booking)
 
+    seed_ledger_deposit(db, booking.id)
     PaymentReservationService(db).confirmar_deposito_por_booking(
         booking.id, company_id=default_company.id
     )
@@ -131,6 +133,7 @@ def test_reconfirmar_deposito_nao_duplica_financeiro(
     db.refresh(booking)
 
     svc = PaymentReservationService(db)
+    seed_ledger_deposit(db, booking.id)
     svc.confirmar_deposito_por_booking(booking.id, company_id=default_company.id)
     svc.confirmar_deposito_por_booking(booking.id, company_id=default_company.id)
 

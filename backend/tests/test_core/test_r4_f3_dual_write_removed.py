@@ -27,6 +27,7 @@ from app.shared.acl.booking_port import LegacyBookingAdapter
 from app.workers.booking_reconciliation_worker import detect_drift
 
 
+from tests.helpers_ledger import seed_ledger_deposit
 def _slot_for_day(db, catalog, offering, days_ahead: int) -> datetime:
     """
     Retorna primeiro horário disponível N dias à frente.
@@ -132,6 +133,7 @@ def test_approve_core_only_booking_without_legacy(
     assert blocked.status_code == 409
     assert "deposit_required" in blocked.text
 
+    seed_ledger_deposit(db, booking["id"])
     PaymentReservationService(db).confirmar_deposito_por_booking(
         booking["id"], company_id=cliente_exemplo.company_id
     )

@@ -1,9 +1,11 @@
 """
 Apuração do valor efetivamente pago (RECONCILE-DEPOSIT-SOURCES-01).
 
-Fonte canônica: ledger ``Payment`` / ``CorePayment`` (não o snapshot
-``CoreBooking.deposit_amount``). Anti-dupla Strangler:
-``max(soma_payments, soma_core_payments)``.
+``CoreBooking.deposit_amount`` é cotação comercial — **não** é pagamento.
+
+Fonte financeira: ledger ``Payment`` / ``CorePayment``. O ``max`` entre
+somas é apenas mitigação temporária Strangler e **nunca** oculta
+divergência material (ambas as fontes com valor e valores diferentes).
 """
 from __future__ import annotations
 
@@ -14,21 +16,39 @@ from sqlalchemy.orm import Session
 
 from app.modules.booking.domain.policy.activation import money_to_cents
 
+# Domínio atual não persiste moeda por pagamento; padrão BRL.
+DEFAULT_CURRENCY = "BRL"
+
 
 @dataclass(frozen=True)
 class EffectivePaidSnapshot:
     """
-    Snapshot do valor pago efetivo de um booking.
+    Snapshot de reconciliação financeira de um booking.
 
     Attributes:
-        paid_cents: Centavos pagos válidos (não negativo).
-        has_processing: Há pagamento ``processando`` (fail-closed no expirador).
-        has_paid_rows: Existe ao menos uma linha com status pago contabilizada.
+        paid_cents: Valor considerado para comparação com o mínimo quando
+            a apuração está reconciliada (fonte única ou fontes iguais).
+            Em divergência, espelha ``max`` apenas informativo — a ativação
+            e a expiração devem bloquear via ``has_source_divergence``.
+        payment_cents: Soma válida em ``Payment``.
+        core_payment_cents: Soma válida em ``CorePayment``.
+        source_used: ``none`` | ``payment`` | ``core_payment`` | ``both``.
+        has_processing: Há ``processando`` (não conta como pago).
+        has_paid_rows: Há ao menos uma linha paga contabilizada.
+        has_source_divergence: Ambas as fontes com valor e valores diferentes.
+        is_reconciled: Sem divergência material (seguro para decisão automática).
+        currency: Moeda ISO (hoje sempre BRL).
     """
 
     paid_cents: int
+    payment_cents: int
+    core_payment_cents: int
+    source_used: str
     has_processing: bool
     has_paid_rows: bool
+    has_source_divergence: bool
+    is_reconciled: bool
+    currency: str = DEFAULT_CURRENCY
 
 
 def _status_value(status: Any) -> str:
@@ -57,6 +77,86 @@ def _type_value(tipo: Any) -> str:
     return tipo.value if hasattr(tipo, "value") else str(tipo)
 
 
+def _empty_snapshot() -> EffectivePaidSnapshot:
+    """
+    Snapshot zerado (sem linhas / booking fora do tenant).
+
+    Returns:
+        ``EffectivePaidSnapshot`` reconciliado com zeros.
+    """
+    return EffectivePaidSnapshot(
+        paid_cents=0,
+        payment_cents=0,
+        core_payment_cents=0,
+        source_used="none",
+        has_processing=False,
+        has_paid_rows=False,
+        has_source_divergence=False,
+        is_reconciled=True,
+        currency=DEFAULT_CURRENCY,
+    )
+
+
+def _build_snapshot(
+    *,
+    payment_cents: int,
+    core_cents: int,
+    has_processing: bool,
+) -> EffectivePaidSnapshot:
+    """
+    Monta o snapshot de reconciliação a partir das somas por fonte.
+
+    Args:
+        payment_cents: Soma ``Payment``.
+        core_cents: Soma ``CorePayment``.
+        has_processing: Flag de processamento.
+
+    Returns:
+        Snapshot com ``source_used``, divergência e ``paid_cents``.
+    """
+    payment_cents = int(payment_cents)
+    core_cents = int(core_cents)
+    has_paid = payment_cents > 0 or core_cents > 0
+
+    if payment_cents > 0 and core_cents > 0 and payment_cents != core_cents:
+        return EffectivePaidSnapshot(
+            paid_cents=max(payment_cents, core_cents),
+            payment_cents=payment_cents,
+            core_payment_cents=core_cents,
+            source_used="both",
+            has_processing=bool(has_processing),
+            has_paid_rows=True,
+            has_source_divergence=True,
+            is_reconciled=False,
+            currency=DEFAULT_CURRENCY,
+        )
+
+    if payment_cents > 0 and core_cents > 0:
+        source_used = "both"
+        paid = payment_cents
+    elif payment_cents > 0:
+        source_used = "payment"
+        paid = payment_cents
+    elif core_cents > 0:
+        source_used = "core_payment"
+        paid = core_cents
+    else:
+        source_used = "none"
+        paid = 0
+
+    return EffectivePaidSnapshot(
+        paid_cents=paid,
+        payment_cents=payment_cents,
+        core_payment_cents=core_cents,
+        source_used=source_used,
+        has_processing=bool(has_processing),
+        has_paid_rows=has_paid,
+        has_source_divergence=False,
+        is_reconciled=True,
+        currency=DEFAULT_CURRENCY,
+    )
+
+
 def load_effective_paid_snapshots(
     db: Session,
     booking_ids: Sequence[int],
@@ -64,41 +164,35 @@ def load_effective_paid_snapshots(
     company_id: Optional[int] = None,
 ) -> Dict[int, EffectivePaidSnapshot]:
     """
-    Carrega o valor efetivamente pago por booking a partir do ledger.
+    Carrega snapshots de reconciliação financeira por booking.
 
     Política de pagamentos válidos (somente estes somam):
 
     - ``Payment.status`` ∈ {``paid``, ``pago``};
     - ``CorePayment.status`` = ``paid``;
     - ``deleted_at IS NULL``;
-    - tipos de estorno (``refund`` / ``reembolso``) excluídos da soma;
-    - ``processando`` não soma, mas marca ``has_processing``.
+    - tipos de estorno (``refund`` / ``reembolso``) excluídos;
+    - ``processando`` não soma; marca ``has_processing``.
 
-    Anti-dupla entre tabelas: ``paid_cents = max(soma_Payment, soma_CorePayment)``.
-    Quando ``company_id`` é informado, ``CorePayment`` é filtrado por tenant e
-    ``Payment`` só entra se o ``booking_id`` pertencer a esse tenant
-    (via ``CoreBooking.company_id``).
+    Divergência material: ambas as fontes com valor ``> 0`` e valores
+    diferentes → ``has_source_divergence=True``, ``is_reconciled=False``.
 
     Args:
         db: Sessão SQLAlchemy.
         booking_ids: IDs ``core_bookings.id``.
-        company_id: Tenant efetivo (recomendado; filtra CorePayment e valida Payment).
+        company_id: Tenant efetivo (filtra CorePayment e valida ownership).
 
     Returns:
         Mapa ``booking_id → EffectivePaidSnapshot``.
 
     Raises:
-        Exception: Propagada ao caller (expirador aplica fail-closed).
+        Exception: Propagada ao caller (fail-closed na ativação/expiração).
     """
     from app.models.payment import Payment, PaymentStatus, PaymentType
     from app.modules.booking.domain.models import CoreBooking
     from app.modules.payments.models import CorePayment, CorePaymentStatus, CorePaymentType
 
     ids = [int(b) for b in booking_ids if b is not None]
-    empty = {
-        bid: EffectivePaidSnapshot(paid_cents=0, has_processing=False, has_paid_rows=False)
-        for bid in ids
-    }
     if not ids:
         return {}
 
@@ -113,19 +207,12 @@ def load_effective_paid_snapshots(
             .all()
         )
         allowed_ids = {int(r[0]) for r in owned}
-        empty = {
-            bid: EffectivePaidSnapshot(
-                paid_cents=0, has_processing=False, has_paid_rows=False
-            )
-            for bid in allowed_ids
-        }
         if not allowed_ids:
-            return {}
+            return {bid: _empty_snapshot() for bid in ids}
 
     paid_payments: Dict[int, int] = {bid: 0 for bid in allowed_ids}
     paid_core: Dict[int, int] = {bid: 0 for bid in allowed_ids}
     processing: Dict[int, bool] = {bid: False for bid in allowed_ids}
-    has_paid: Dict[int, bool] = {bid: False for bid in allowed_ids}
 
     refund_types = {
         PaymentType.REFUND.value,
@@ -157,7 +244,6 @@ def load_effective_paid_snapshots(
         if cents is None:
             continue
         paid_payments[bid] += cents
-        has_paid[bid] = True
 
     core_q = db.query(CorePayment).filter(
         CorePayment.booking_id.in_(list(allowed_ids)),
@@ -180,23 +266,41 @@ def load_effective_paid_snapshots(
         if cents is None:
             continue
         paid_core[bid] += cents
-        has_paid[bid] = True
 
     result: Dict[int, EffectivePaidSnapshot] = {}
     for bid in allowed_ids:
-        paid = max(int(paid_payments[bid]), int(paid_core[bid]))
-        result[bid] = EffectivePaidSnapshot(
-            paid_cents=paid,
-            has_processing=bool(processing[bid]),
-            has_paid_rows=bool(has_paid[bid]),
+        result[bid] = _build_snapshot(
+            payment_cents=paid_payments[bid],
+            core_cents=paid_core[bid],
+            has_processing=processing[bid],
         )
-    # Inclui ids pedidos mas fora do tenant como zero explícito (não vaza dados).
     for bid in ids:
         if bid not in result:
-            result[bid] = EffectivePaidSnapshot(
-                paid_cents=0, has_processing=False, has_paid_rows=False
-            )
+            result[bid] = _empty_snapshot()
     return result
+
+
+def get_effective_paid_snapshot(
+    db: Session,
+    *,
+    booking_id: int,
+    company_id: int,
+) -> EffectivePaidSnapshot:
+    """
+    Retorna o snapshot de reconciliação de um booking.
+
+    Args:
+        db: Sessão SQLAlchemy.
+        booking_id: ID ``core_bookings.id``.
+        company_id: Tenant efetivo.
+
+    Returns:
+        ``EffectivePaidSnapshot`` (zerado se ausente).
+    """
+    snap = load_effective_paid_snapshots(
+        db, [int(booking_id)], company_id=int(company_id)
+    ).get(int(booking_id))
+    return snap if snap is not None else _empty_snapshot()
 
 
 def get_effective_paid_amount_cents(
@@ -206,7 +310,10 @@ def get_effective_paid_amount_cents(
     company_id: int,
 ) -> int:
     """
-    Retorna o valor efetivamente pago de um booking em centavos.
+    Compatibilidade: retorna ``paid_cents`` do snapshot.
+
+    Preferir ``get_effective_paid_snapshot`` para decisões de ativação /
+    expiração (divergência / processing).
 
     Args:
         db: Sessão SQLAlchemy.
@@ -214,33 +321,38 @@ def get_effective_paid_amount_cents(
         company_id: Tenant efetivo.
 
     Returns:
-        Centavos >= 0 segundo a política canônica do ledger.
+        Centavos do campo ``paid_cents``.
     """
-    snap = load_effective_paid_snapshots(
-        db, [int(booking_id)], company_id=int(company_id)
-    ).get(int(booking_id))
-    if snap is None:
-        return 0
-    return int(snap.paid_cents)
+    return int(
+        get_effective_paid_snapshot(
+            db, booking_id=int(booking_id), company_id=int(company_id)
+        ).paid_cents
+    )
 
 
 def snapshots_as_dicts(
     snapshots: Dict[int, EffectivePaidSnapshot],
 ) -> Dict[int, Dict[str, Any]]:
     """
-    Converte snapshots tipados para o formato legado do expirador.
+    Converte snapshots tipados para dicts consumíveis pelo expirador.
 
     Args:
         snapshots: Mapa tipado.
 
     Returns:
-        Mapa ``booking_id → {paid_cents, has_processing, has_paid_rows}``.
+        Mapa com todos os campos de reconciliação.
     """
     return {
         bid: {
             "paid_cents": int(s.paid_cents),
+            "payment_cents": int(s.payment_cents),
+            "core_payment_cents": int(s.core_payment_cents),
+            "source_used": s.source_used,
             "has_processing": bool(s.has_processing),
             "has_paid_rows": bool(s.has_paid_rows),
+            "has_source_divergence": bool(s.has_source_divergence),
+            "is_reconciled": bool(s.is_reconciled),
+            "currency": s.currency,
         }
         for bid, s in snapshots.items()
     }

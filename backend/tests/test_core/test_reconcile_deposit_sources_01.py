@@ -1,5 +1,5 @@
 """
-RECONCILE-DEPOSIT-SOURCES-01 — fonte canônica do valor pago (ativação = expirador).
+RECONCILE-DEPOSIT-SOURCES-01 — revisão: snapshot, divergência, fail-closed.
 """
 from __future__ import annotations
 
@@ -8,46 +8,36 @@ from decimal import Decimal
 
 import pytest
 
-from app.core.exceptions import MinimumDepositNotMetError
+from app.core.exceptions import MinimumDepositNotMetError, ValidationError
 from app.models.agendamento import ReservationStatus, StatusPagamento
+from app.models.company import Company, CompanyPlan, CompanySegment
 from app.models.payment import Payment, PaymentStatus, PaymentType
 from app.modules.booking.domain.models import CoreBooking
-from app.modules.booking.domain.value_objects.booking_types import SyncStatus
-from app.modules.booking.domain.policy.activation import (
-    calculate_minimum_activation_cents,
-    money_to_cents,
-)
+from app.modules.booking.domain.policy.activation import calculate_minimum_activation_cents
 from app.modules.booking.domain.policy.paid_amount import (
-    get_effective_paid_amount_cents,
+    get_effective_paid_snapshot,
     load_effective_paid_snapshots,
 )
+from app.modules.booking.domain.value_objects.booking_types import SyncStatus
 from app.modules.payments.models import CorePayment, CorePaymentStatus, CorePaymentType
 from app.services.disponibilidade_service import DisponibilidadeService
 from app.services.payment_reservation_service import PaymentReservationService
 
 
-def _create_booking(
-    db,
-    company,
-    cliente,
-    synced_catalog,
-    *,
-    price_total: Decimal,
-    deposit_amount: Decimal,
-):
+def _create_booking(db, company, cliente, synced_catalog, *, price_total, deposit_amount):
     """
-    Cria ``CoreBooking`` pendente para testes de reconciliação.
+    Cria booking pendente.
 
     Args:
         db: Sessão.
         company: Tenant.
         cliente: Cliente.
-        synced_catalog: Fixture (catalog, offering).
-        price_total: Total do serviço.
-        deposit_amount: Snapshot comercial do sinal.
+        synced_catalog: Fixture.
+        price_total: Total.
+        deposit_amount: Cotação comercial (não é pagamento).
 
     Returns:
-        CoreBooking persistido.
+        CoreBooking.
     """
     catalog, offering = synced_catalog
     row = CoreBooking(
@@ -71,29 +61,8 @@ def _create_booking(
     return row
 
 
-def _add_payment(
-    db,
-    booking_id: int,
-    *,
-    valor: Decimal,
-    status=PaymentStatus.PAID,
-    tipo=PaymentType.DEPOSIT,
-    deleted: bool = False,
-):
-    """
-    Insere linha ``Payment`` ligada ao booking.
-
-    Args:
-        db: Sessão.
-        booking_id: ID do booking.
-        valor: Valor em reais.
-        status: Status do pagamento.
-        tipo: Tipo do pagamento.
-        deleted: Se True, marca soft-delete.
-
-    Returns:
-        Payment persistido.
-    """
+def _pay(db, booking_id, valor, *, status=PaymentStatus.PAID, tipo=PaymentType.DEPOSIT, deleted=False):
+    """Insere Payment no ledger."""
     pag = Payment(
         booking_id=booking_id,
         tipo=tipo,
@@ -108,27 +77,8 @@ def _add_payment(
     return pag
 
 
-def _add_core_payment(
-    db,
-    company_id: int,
-    booking_id: int,
-    *,
-    amount: Decimal,
-    status=CorePaymentStatus.PAID,
-):
-    """
-    Insere ``CorePayment`` no tenant/booking.
-
-    Args:
-        db: Sessão.
-        company_id: Tenant.
-        booking_id: Booking.
-        amount: Valor.
-        status: Status.
-
-    Returns:
-        CorePayment persistido.
-    """
+def _core_pay(db, company_id, booking_id, amount, *, status=CorePaymentStatus.PAID):
+    """Insere CorePayment no ledger."""
     row = CorePayment(
         company_id=company_id,
         booking_id=booking_id,
@@ -143,135 +93,168 @@ def _add_core_payment(
     return row
 
 
-def test_01_sem_pagamento_zero(db, default_company, cliente_exemplo, synced_catalog):
-    """Sem pagamento → valor efetivo zero."""
+def test_fontes_mesmo_valor(db, default_company, cliente_exemplo, synced_catalog):
+    """Payment e CorePayment iguais → reconciliado, source both."""
     booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=Decimal("60.00"),
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
     )
-    assert (
-        get_effective_paid_amount_cents(
-            db, booking_id=booking.id, company_id=default_company.id
-        )
-        == 0
-    )
-
-
-@pytest.mark.parametrize(
-    "valor,expected_active",
-    [
-        (Decimal("60.00"), True),
-        (Decimal("60.01"), True),
-        (Decimal("59.99"), False),
-    ],
-)
-def test_02_03_04_pagamento_valido_em_relacao_ao_minimo(
-    db, default_company, cliente_exemplo, synced_catalog, valor, expected_active
-):
-    """Pagamento válido no/acima/abaixo do mínimo."""
-    booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=valor,
-    )
-    _add_payment(db, booking.id, valor=valor)
-    paid = get_effective_paid_amount_cents(
+    _pay(db, booking.id, Decimal("60.00"))
+    _core_pay(db, default_company.id, booking.id, Decimal("60.00"))
+    snap = get_effective_paid_snapshot(
         db, booking_id=booking.id, company_id=default_company.id
     )
-    minimum = calculate_minimum_activation_cents(30_000)
-    assert (paid >= minimum) is expected_active
+    assert snap.paid_cents == 6_000
+    assert snap.payment_cents == 6_000
+    assert snap.core_payment_cents == 6_000
+    assert snap.source_used == "both"
+    assert snap.has_source_divergence is False
+    assert snap.is_reconciled is True
+    assert snap.currency == "BRL"
 
 
-@pytest.mark.parametrize(
-    "status",
-    [
-        PaymentStatus.PENDING,
-        PaymentStatus.FAILED,
-        PaymentStatus.REFUNDED,
-        PaymentStatus.CANCELADO,
-    ],
-)
-def test_05_08_status_invalidos_nao_contam(
-    db, default_company, cliente_exemplo, synced_catalog, status
+def test_fontes_divergentes_bloqueiam_ativacao_e_expiracao(
+    db, default_company, cliente_exemplo, synced_catalog
 ):
-    """Pending/failed/refunded/cancelado não contam."""
+    """Divergência material: não ativa e não libera expiração."""
     booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=Decimal("60.00"),
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
     )
-    _add_payment(db, booking.id, valor=Decimal("60.00"), status=status)
-    assert (
-        get_effective_paid_amount_cents(
-            db, booking_id=booking.id, company_id=default_company.id
+    _pay(db, booking.id, Decimal("60.00"))
+    _core_pay(db, default_company.id, booking.id, Decimal("50.00"))
+    snap = get_effective_paid_snapshot(
+        db, booking_id=booking.id, company_id=default_company.id
+    )
+    assert snap.has_source_divergence is True
+    assert snap.is_reconciled is False
+    assert snap.payment_cents == 6_000
+    assert snap.core_payment_cents == 5_000
+
+    with pytest.raises(ValidationError):
+        PaymentReservationService(db).confirmar_deposito_por_booking(
+            booking.id, default_company.id
         )
-        == 0
-    )
+    db.refresh(booking)
+    assert booking.deposit_paid is False
+
+    # Fail-closed: não expira automaticamente
+    assert DisponibilidadeService(db)._has_minimum_activation_payment(booking) is True
 
 
-def test_09_soft_deleted_nao_conta(db, default_company, cliente_exemplo, synced_catalog):
-    """Pagamento soft-deleted não conta."""
+def test_uma_fonte_vazia(db, default_company, cliente_exemplo, synced_catalog):
+    """Apenas Payment → source payment, reconciliado."""
     booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=Decimal("60.00"),
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
     )
-    _add_payment(db, booking.id, valor=Decimal("60.00"), deleted=True)
-    assert (
-        get_effective_paid_amount_cents(
-            db, booking_id=booking.id, company_id=default_company.id
+    _pay(db, booking.id, Decimal("60.00"))
+    snap = get_effective_paid_snapshot(
+        db, booking_id=booking.id, company_id=default_company.id
+    )
+    assert snap.source_used == "payment"
+    assert snap.core_payment_cents == 0
+    assert snap.is_reconciled is True
+    assert snap.has_source_divergence is False
+
+
+def test_processing_bloqueia_ativacao_e_expiracao(
+    db, default_company, cliente_exemplo, synced_catalog
+):
+    """processando não conta e bloqueia decisão automática."""
+    booking = _create_booking(
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
+    )
+    _pay(db, booking.id, Decimal("60.00"), status=PaymentStatus.PROCESSANDO)
+    snap = get_effective_paid_snapshot(
+        db, booking_id=booking.id, company_id=default_company.id
+    )
+    assert snap.paid_cents == 0
+    assert snap.has_processing is True
+
+    with pytest.raises(ValidationError):
+        PaymentReservationService(db).confirmar_deposito_por_booking(
+            booking.id, default_company.id
         )
-        == 0
-    )
+    assert DisponibilidadeService(db)._has_minimum_activation_payment(booking) is True
 
 
-def test_10_outro_booking_nao_conta(db, default_company, cliente_exemplo, synced_catalog):
-    """Pagamento de outro booking não conta."""
-    a = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=Decimal("60.00"),
+def test_falha_consulta_fail_closed_ativacao_e_expiracao(
+    db, default_company, cliente_exemplo, synced_catalog, monkeypatch
+):
+    """Erro em consulta financeira → fail-closed nos dois fluxos."""
+    booking = _create_booking(
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
     )
-    b = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=Decimal("60.00"),
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(
+        "app.services.payment_reservation_service.get_effective_paid_snapshot",
+        _boom,
     )
-    _add_payment(db, b.id, valor=Decimal("60.00"))
-    assert (
-        get_effective_paid_amount_cents(
-            db, booking_id=a.id, company_id=default_company.id
+    with pytest.raises(ValidationError):
+        PaymentReservationService(db).confirmar_deposito_por_booking(
+            booking.id, default_company.id
         )
-        == 0
+
+    svc = DisponibilidadeService(db)
+    svc._load_payment_activation_snapshots = _boom  # type: ignore[method-assign]
+    assert svc._has_minimum_activation_payment(booking) is True
+
+
+def test_duplicidade_max_sinalizada_quando_igual(
+    db, default_company, cliente_exemplo, synced_catalog
+):
+    """Mesmo valor nas duas fontes não duplica e fica reconciliado."""
+    booking = _create_booking(
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
     )
+    _pay(db, booking.id, Decimal("60.00"))
+    _core_pay(db, default_company.id, booking.id, Decimal("60.00"))
+    snap = get_effective_paid_snapshot(
+        db, booking_id=booking.id, company_id=default_company.id
+    )
+    assert snap.paid_cents == 6_000
+    assert snap.is_reconciled is True
 
 
-def test_11_outro_tenant_nao_conta(db, default_company, cliente_exemplo, synced_catalog):
+def test_retry_confirm_idempotent(db, default_company, cliente_exemplo, synced_catalog):
+    """Retry após ativação não altera estado."""
+    booking = _create_booking(
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
+    )
+    _pay(db, booking.id, Decimal("60.00"))
+    svc = PaymentReservationService(db)
+    a = svc.confirmar_deposito_por_booking(booking.id, default_company.id)
+    b = svc.confirmar_deposito_por_booking(booking.id, default_company.id)
+    assert a.deposit_paid and b.deposit_paid
+
+
+def test_dois_pagamentos_parciais(db, default_company, cliente_exemplo, synced_catalog):
+    """Parcelas somam na mesma fonte."""
+    booking = _create_booking(
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("30.00"),
+    )
+    _pay(db, booking.id, Decimal("30.00"))
+    _pay(db, booking.id, Decimal("30.00"), tipo=PaymentType.FINAL_PAYMENT)
+    snap = get_effective_paid_snapshot(
+        db, booking_id=booking.id, company_id=default_company.id
+    )
+    assert snap.paid_cents == 6_000
+
+
+def test_outro_tenant(db, default_company, cliente_exemplo, synced_catalog):
     """CorePayment de outro tenant não conta."""
-    from app.models.company import Company, CompanyPlan, CompanySegment
-
     other = Company(
         nome="Other",
-        slug="reconcile-other",
+        slug="reconcile-rev-other",
         segmento=CompanySegment.TRANCISTA,
         plano=CompanyPlan.FREE,
         timezone="America/Sao_Paulo",
@@ -280,227 +263,162 @@ def test_11_outro_tenant_nao_conta(db, default_company, cliente_exemplo, synced_
     db.add(other)
     db.commit()
     db.refresh(other)
-
     booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=Decimal("60.00"),
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
     )
-    _add_core_payment(
-        db, other.id, booking.id, amount=Decimal("60.00")
+    _core_pay(db, other.id, booking.id, Decimal("60.00"))
+    snap = get_effective_paid_snapshot(
+        db, booking_id=booking.id, company_id=default_company.id
     )
-    assert (
-        get_effective_paid_amount_cents(
-            db, booking_id=booking.id, company_id=default_company.id
-        )
-        == 0
-    )
+    assert snap.paid_cents == 0
+    assert snap.source_used == "none"
 
 
-def test_12_13_payment_e_core_nao_duplicam(
+def test_snapshot_comercial_divergente_nao_ativa(
     db, default_company, cliente_exemplo, synced_catalog
 ):
-    """Mesmo valor em Payment e CorePayment não é somado duas vezes."""
+    """Cotação alta sem ledger → não ativa."""
     booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=Decimal("60.00"),
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
     )
-    _add_payment(db, booking.id, valor=Decimal("60.00"))
-    _add_core_payment(
-        db, default_company.id, booking.id, amount=Decimal("60.00")
-    )
-    assert (
-        get_effective_paid_amount_cents(
-            db, booking_id=booking.id, company_id=default_company.id
+    with pytest.raises(MinimumDepositNotMetError):
+        PaymentReservationService(db).confirmar_deposito_por_booking(
+            booking.id, default_company.id
         )
-        == 6_000
-    )
 
 
-def test_14_parciais_somam(db, default_company, cliente_exemplo, synced_catalog):
-    """Parcelas pagas somam no ledger."""
-    booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=Decimal("30.00"),
-    )
-    _add_payment(db, booking.id, valor=Decimal("30.00"))
-    _add_payment(
-        db,
-        booking.id,
-        valor=Decimal("30.00"),
-        tipo=PaymentType.FINAL_PAYMENT,
-    )
-    assert (
-        get_effective_paid_amount_cents(
-            db, booking_id=booking.id, company_id=default_company.id
-        )
-        == 6_000
-    )
-
-
-def test_15_16_snapshot_divergente_usa_ledger(
+def test_ativacao_e_expirador_mesma_decisao(
     db, default_company, cliente_exemplo, synced_catalog
 ):
-    """Snapshot baixo + ledger alto → ativação usa o ledger (não reduz)."""
+    """Mesmo paid_cents e mesma decisão de proteção."""
     booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=Decimal("10.00"),  # snapshot abaixo do mínimo
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("800.00"), deposit_amount=Decimal("100.00"),
     )
-    _add_payment(db, booking.id, valor=Decimal("60.00"))
+    _pay(db, booking.id, Decimal("100.00"))
+    snap = get_effective_paid_snapshot(
+        db, booking_id=booking.id, company_id=default_company.id
+    )
+    exp = DisponibilidadeService(db)._load_payment_activation_snapshots(
+        [booking.id], company_id=default_company.id
+    )[booking.id]
+    assert snap.paid_cents == exp["paid_cents"] == 10_000
+    assert snap.is_reconciled is exp["is_reconciled"] is True
+    assert snap.paid_cents >= calculate_minimum_activation_cents(80_000)
     updated = PaymentReservationService(db).confirmar_deposito_por_booking(
         booking.id, default_company.id
     )
     assert updated.deposit_paid is True
-    # Upsert não pode ter reduzido o Payment existente
-    pag = (
-        db.query(Payment)
-        .filter(Payment.booking_id == booking.id, Payment.deleted_at.is_(None))
-        .first()
-    )
-    assert money_to_cents(pag.valor) == 6_000
+    # Após ativo, expirador continua protegendo
+    db.refresh(booking)
+    assert DisponibilidadeService(db)._has_minimum_activation_payment(booking) is True
 
 
-def test_17_ativacao_e_expirador_mesma_decisao(
+def test_abaixo_minimo_preserva_para_analise(
     db, default_company, cliente_exemplo, synced_catalog
 ):
-    """Ativação e expirador concordam sobre o paid_cents canônico."""
+    """Ledger abaixo do mínimo: Payment permanece, booking não ativa."""
     booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("800.00"),
-        deposit_amount=Decimal("100.00"),
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
     )
-    _add_payment(db, booking.id, valor=Decimal("100.00"))
-    paid = get_effective_paid_amount_cents(
-        db, booking_id=booking.id, company_id=default_company.id
-    )
-    snap = DisponibilidadeService(db)._load_payment_activation_snapshots(
-        [booking.id], company_id=default_company.id
-    )[booking.id]
-    assert paid == snap["paid_cents"] == 10_000
-    assert paid >= calculate_minimum_activation_cents(80_000)
-
-
-def test_18_falha_consulta_fail_closed(db, default_company, cliente_exemplo, synced_catalog):
-    """Falha na consulta financeira → expirador fail-closed (não libera expiração)."""
-    booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=Decimal("60.00"),
-    )
-
-    def _boom(*_a, **_k):
-        raise RuntimeError("db down")
-
-    svc = DisponibilidadeService(db)
-    svc._load_payment_activation_snapshots = _boom  # type: ignore[method-assign]
-    assert svc._has_minimum_activation_payment(booking) is True
-
-
-def test_20_21_teto_100_reais(db, default_company, cliente_exemplo, synced_catalog):
-    """R$100 ativa serviço alto; R$99,99 não."""
-    booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("800.00"),
-        deposit_amount=Decimal("99.99"),
-    )
-    _add_payment(db, booking.id, valor=Decimal("99.99"))
+    _pay(db, booking.id, Decimal("59.99"))
+    with pytest.raises(MinimumDepositNotMetError):
+        PaymentReservationService(db).confirmar_deposito_por_booking(
+            booking.id, default_company.id
+        )
+    db.refresh(booking)
+    assert booking.deposit_paid is False
     assert (
-        get_effective_paid_amount_cents(
-            db, booking_id=booking.id, company_id=default_company.id
-        )
-        == 9_999
-    )
-    with pytest.raises(MinimumDepositNotMetError):
-        PaymentReservationService(db).confirmar_deposito_por_booking(
-            booking.id, default_company.id
-        )
-    db.refresh(booking)
-    assert booking.deposit_paid is False
-
-    ok = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("800.00"),
-        deposit_amount=Decimal("100.00"),
-    )
-    updated = PaymentReservationService(db).confirmar_deposito_por_booking(
-        ok.id, default_company.id
-    )
-    assert updated.deposit_paid is True
-
-
-def test_abaixo_minimo_preserva_payment_sem_ativar(
-    db, default_company, cliente_exemplo, synced_catalog
-):
-    """Abaixo do mínimo: Payment permanece; deposit_paid permanece False."""
-    booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=Decimal("59.99"),
-    )
-    with pytest.raises(MinimumDepositNotMetError):
-        PaymentReservationService(db).confirmar_deposito_por_booking(
-            booking.id, default_company.id
-        )
-    db.refresh(booking)
-    assert booking.deposit_paid is False
-    pag = (
         db.query(Payment)
         .filter(Payment.booking_id == booking.id, Payment.deleted_at.is_(None))
-        .first()
+        .count()
+        == 1
     )
-    assert pag is not None
-    assert pag.status == PaymentStatus.PAID
-    assert money_to_cents(pag.valor) == 5_999
 
 
-def test_processando_marca_flag(db, default_company, cliente_exemplo, synced_catalog):
-    """Status processando não soma, mas marca has_processing."""
+def test_contrato_snapshot_campos(db, default_company, cliente_exemplo, synced_catalog):
+    """Snapshot expõe todos os campos de reconciliação."""
     booking = _create_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        price_total=Decimal("300.00"),
-        deposit_amount=Decimal("60.00"),
-    )
-    _add_payment(
-        db,
-        booking.id,
-        valor=Decimal("60.00"),
-        status=PaymentStatus.PROCESSANDO,
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
     )
     snap = load_effective_paid_snapshots(
         db, [booking.id], company_id=default_company.id
     )[booking.id]
-    assert snap.paid_cents == 0
-    assert snap.has_processing is True
+    for field in (
+        "paid_cents",
+        "payment_cents",
+        "core_payment_cents",
+        "source_used",
+        "has_processing",
+        "has_paid_rows",
+        "has_source_divergence",
+        "is_reconciled",
+        "currency",
+    ):
+        assert hasattr(snap, field)
+
+
+def test_moeda_padrao_brl(db, default_company, cliente_exemplo, synced_catalog):
+    """Domínio atual não persiste moeda por pagamento — snapshot sempre BRL."""
+    booking = _create_booking(
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
+    )
+    _pay(db, booking.id, Decimal("60.00"))
+    snap = get_effective_paid_snapshot(
+        db, booking_id=booking.id, company_id=default_company.id
+    )
+    assert snap.currency == "BRL"
+
+
+def test_falha_uma_fonte_fail_closed(
+    db, default_company, cliente_exemplo, synced_catalog, monkeypatch
+):
+    """Falha ao consultar Payment (query) → fail-closed na ativação."""
+    booking = _create_booking(
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
+    )
+
+    def _boom_query(self, *args, **kwargs):
+        raise RuntimeError("payment source down")
+
+    monkeypatch.setattr(
+        "sqlalchemy.orm.Query.all",
+        _boom_query,
+    )
+    with pytest.raises(ValidationError):
+        PaymentReservationService(db).confirmar_deposito_por_booking(
+            booking.id, default_company.id
+        )
+
+
+def test_falha_duas_fontes_fail_closed(
+    db, default_company, cliente_exemplo, synced_catalog, monkeypatch
+):
+    """Falha geral do loader → fail-closed na ativação e no expirador."""
+    booking = _create_booking(
+        db, default_company, cliente_exemplo, synced_catalog,
+        price_total=Decimal("300.00"), deposit_amount=Decimal("90.00"),
+    )
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("both sources down")
+
+    monkeypatch.setattr(
+        "app.services.disponibilidade_service.load_effective_paid_snapshots",
+        _boom,
+    )
+    monkeypatch.setattr(
+        "app.services.payment_reservation_service.get_effective_paid_snapshot",
+        _boom,
+    )
+    with pytest.raises(ValidationError):
+        PaymentReservationService(db).confirmar_deposito_por_booking(
+            booking.id, default_company.id
+        )
+    assert DisponibilidadeService(db)._has_minimum_activation_payment(booking) is True

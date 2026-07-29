@@ -15,6 +15,7 @@ from app.modules.booking.domain.policy.activation import (
 from app.modules.booking.domain.policy.paid_amount import (
     EffectivePaidSnapshot,
     get_effective_paid_amount_cents,
+    get_effective_paid_snapshot,
     load_effective_paid_snapshots,
 )
 from app.modules.booking.domain.policy.audit import record_policy_change
@@ -43,6 +44,7 @@ __all__ = [
     "can_cancel_approved",
     "cents_to_decimal",
     "get_effective_paid_amount_cents",
+    "get_effective_paid_snapshot",
     "get_installation_defaults",
     "get_safe_fallback_policy",
     "load_effective_paid_snapshots",

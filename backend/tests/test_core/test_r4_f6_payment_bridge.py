@@ -61,6 +61,7 @@ from app.services.payment_reservation_service import PaymentReservationService
 from app.services.reservation_service import ReservationService
 
 
+from tests.helpers_ledger import seed_ledger_deposit
 def _slot_for_day(db, catalog, offering, days_ahead: int) -> datetime:
     """
     Retorna primeiro horário disponível N dias à frente.
@@ -159,10 +160,10 @@ def test_criar_pendente_falha_sem_agendamento_e_sem_booking(db):
         PaymentReservationService(db).criar_pendente(None, PaymentType.DEPOSIT, Decimal("10.00"))
 
 
-def test_confirmar_deposito_por_booking_cria_payment_ponte(
+def test_confirmar_deposito_por_booking_com_payment_ponte(
     db, default_company, cliente_exemplo, synced_catalog
 ):
-    """confirmar_deposito_por_booking cria Payment vinculado por booking_id (sem Agendamento)."""
+    """Confirma depósito quando já existe Payment ponte por booking_id (sem Agendamento)."""
     catalog, offering = synced_catalog
     booking = CoreBooking(
         company_id=default_company.id,
@@ -183,6 +184,7 @@ def test_confirmar_deposito_por_booking_cria_payment_ponte(
     db.commit()
     db.refresh(booking)
 
+    seed_ledger_deposit(db, booking.id)
     atualizado = PaymentReservationService(db).confirmar_deposito_por_booking(
         booking.id, company_id=default_company.id
     )
@@ -300,6 +302,7 @@ def test_admin_confirmar_sinal_booking_continua_funcional(
     booking = _create_booking(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=88
     )
+    seed_ledger_deposit(db, booking["id"])
 
     response = client.post(
         f"/admin/pagamentos/booking/{booking['id']}/confirmar-sinal",

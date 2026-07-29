@@ -13,6 +13,7 @@ from app.shared.events.domain_event import DomainEvent
 from app.core.config import settings
 
 
+from tests.helpers_ledger import seed_ledger_deposit
 def _project_booking(db, company_id, cliente_exemplo, synced_catalog) -> int:
     """
     Cria um ``CoreBooking`` core-only via ``CreateBookingHandler`` (R4-F8).
@@ -119,6 +120,7 @@ def test_v1_orders_and_invoices_list(
         db, default_company.id, cliente_exemplo, synced_catalog
     )
     OrderLegacySyncService(db).sync_one(booking_id)
+    seed_ledger_deposit(db, booking_id)
     PaymentReservationService(db).confirmar_deposito_por_booking(
         booking_id, company_id=default_company.id
     )
