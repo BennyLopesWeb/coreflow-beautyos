@@ -18,7 +18,7 @@ Classificação oficial: [ModuleTieringPolicy.md](./ModuleTieringPolicy.md)
 | `customer` | CORE-SUPPORT | — | — | **KEEP** (F3b) | — | Hexagonal lite — flatten Wave 1 DONE revertido de tier |
 | `asset` | CRUD | 1 | P3 | **DONE** | `084b84a` | Flat |
 | `invoice` | CRUD | 1 | P4 | **DONE** | `a7532ea` | Flat |
-| `order` | CRUD | 1 | P5 | **DONE** | (pending) | Flat |
+| `order` | CRUD | 1 | P5 | **DONE** | `12e691e` | Flat |
 | `catalog` | CORE-SUPPORT | — | — | **KEEP** (F3b) | — | Hexagonal lite — flatten Wave 2 **CANCELLED** |
 | `waitlist` | CRUD | 2 | P7 | TODO | — | CRUD Flat (target) |
 | `payments` (read) | CRUD | 2 | P8 | TODO | — | CRUD Flat (target) — **sensitive** |
