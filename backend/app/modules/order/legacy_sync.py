@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.logging_config import get_logger
 from app.models.agendamento import ReservationStatus, StatusPagamento
 from app.modules.booking.domain.models import CoreBooking
-from app.modules.order.domain.models import CoreOrder, CoreOrderStatus
+from app.modules.order.models import CoreOrder, CoreOrderStatus
 
 logger = get_logger("order_sync")
 

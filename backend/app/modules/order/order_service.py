@@ -1,23 +1,29 @@
 """
-Consultas read-only de Order genérico CoreFlow.
+Serviço read-only de Order genérico CoreFlow (Support CRUD).
 """
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.modules.order.domain.models import CoreOrder
+from app.modules.order.models import CoreOrder
 
 
-class OrderQueryService:
+class OrderService:
     """
-    Serviço de leitura para core_orders.
+    Consultas de leitura para ``core_orders``.
 
     Args:
         db: Sessão SQLAlchemy.
     """
 
     def __init__(self, db: Session):
+        """
+        Inicializa o serviço com a sessão do banco.
+
+        Args:
+            db: Sessão SQLAlchemy ativa.
+        """
         self.db = db
 
     def list_orders(

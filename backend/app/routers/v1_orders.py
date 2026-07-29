@@ -11,8 +11,8 @@ from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.modules.identity.api.deps import get_tenant_context, get_current_admin_user
 from app.models.user import User
-from app.modules.order.application.legacy_sync_service import OrderLegacySyncService
-from app.modules.order.application.order_query_service import OrderQueryService
+from app.modules.order.legacy_sync import OrderLegacySyncService
+from app.modules.order.order_service import OrderService
 from app.schemas.coreflow_v1 import OrderResponse
 from app.shared.kernel.tenant import TenantContext
 
@@ -34,7 +34,7 @@ def listar_orders(
         Lista de core_orders sincronizados.
     """
     OrderLegacySyncService(db).sync_all()
-    return OrderQueryService(db).list_orders(
+    return OrderService(db).list_orders(
         tenant.company_id,
         booking_id=booking_id,
         customer_id=customer_id,
@@ -58,6 +58,6 @@ def obter_order(
         OrderResponse.
     """
     try:
-        return OrderQueryService(db).get_order(order_id, tenant.company_id)
+        return OrderService(db).get_order(order_id, tenant.company_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
