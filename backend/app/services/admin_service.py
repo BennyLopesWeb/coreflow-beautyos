@@ -26,9 +26,14 @@ from app.models.agendamento import StatusAgendamento, ReservationStatus, StatusP
 from app.models.fila import Fila, STATUS_FILA_ATIVOS
 from app.models.financeiro import Financeiro, TipoMovimento
 from app.models.payment import Payment, PaymentType
+from app.modules.booking.application.ports.clock_port import ClockPort
 from app.modules.booking.domain.models import CoreBooking
+from app.modules.booking.domain.policy.cancel_window import may_cancel_for_lifecycle
 from app.modules.booking.domain.policy.resolver import BookingPolicyResolver
 from app.modules.booking.domain.value_objects.booking_types import BookingLifecycleStatus
+from app.modules.booking.infrastructure.adapters.system_clock_adapter import (
+    SystemClockAdapter,
+)
 from app.modules.catalog.domain.models import CoreCatalog
 from app.schemas.admin import (
     AdminDashboardResponse,
@@ -36,7 +41,12 @@ from app.schemas.admin import (
     AgendamentoAdminItem,
     ClienteCrmItem,
 )
-from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.core.exceptions import (
+    CancelPolicyViolationError,
+    ConflictError,
+    NotFoundError,
+    ValidationError,
+)
 
 
 # ReservationStatus ORM / aliases FE → lifecycle canônico (política manual_status).
@@ -379,6 +389,8 @@ class AdminService:
         agendamento_id: int,
         novo_status: StatusAgendamento,
         company_id: int,
+        *,
+        clock: Optional[ClockPort] = None,
     ) -> CoreBooking:
         """
         Atualiza status de uma reserva (``CoreBooking``) via gestão admin.
@@ -388,10 +400,17 @@ class AdminService:
         de transições e ``block_financial_reopen``; ao cancelar, alinha
         ``payment_status``/``deleted_at`` conforme política de cancelamento.
 
+        FIX-CANCEL-POLICY-02: em ``approved → cancelled``, avalia a janela
+        configurável via ``may_cancel_for_lifecycle`` / ``cancel_window.py``
+        (mesmo cálculo do cancelamento oficial) antes de qualquer mutação.
+        ``pending → cancelled`` não aplica a janela. Idempotência
+        ``cancelled → cancelled`` não reavalia a janela.
+
         Args:
             agendamento_id: ID do booking (``core_bookings.id``).
             novo_status: Novo status desejado (ORM/FE).
             company_id: Tenant efetivo da requisição (obrigatório).
+            clock: Relógio injetável (UTC); default ``SystemClockAdapter``.
 
         Returns:
             CoreBooking atualizado (ou inalterado se transição idempotente).
@@ -400,6 +419,7 @@ class AdminService:
             NotFoundError: Booking inexistente para o tenant (inclui cross-tenant).
             ValidationError: Transição fora da matriz da política.
             ConflictError: Reabertura de cancelado/expirado ou status manual off.
+            CancelPolicyViolationError: ``approved → cancelled`` fora da janela.
             ValueError: ``company_id`` ausente/inválido.
         """
         if company_id is None or not isinstance(company_id, int) or company_id <= 0:
@@ -457,6 +477,22 @@ class AdminService:
             raise ValidationError(
                 f"Transição de status não permitida: {current_lc} → {target_lc}"
             )
+
+        # FIX-CANCEL-POLICY-02: janela antes de mutação / efeitos financeiros.
+        if target_lc == BookingLifecycleStatus.CANCELLED.value:
+            effective_clock = clock if clock is not None else SystemClockAdapter()
+            starts_at = booking.scheduled_at
+            if starts_at is None:
+                raise ConflictError(
+                    "Agendamento sem horário de início; cancelamento bloqueado"
+                )
+            if not may_cancel_for_lifecycle(
+                BookingLifecycleStatus(current_lc),
+                effective_clock.now_utc(),
+                starts_at,
+                policy.cancellation.approved_min_hours_before,
+            ):
+                raise CancelPolicyViolationError()
 
         # Snapshot de proteção financeira — nunca limpar ao mutar.
         previous_payment_status = booking.payment_status
