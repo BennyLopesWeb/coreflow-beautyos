@@ -4,7 +4,7 @@ Lógica de negócio para cálculo de horários disponíveis.
 """
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, date
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from app.models.agendamento import ReservationStatus, STATUS_OCUPAM_VAGA
 from app.models.tranca import Tranca
@@ -19,9 +19,6 @@ logger = get_logger("disponibilidade_service")
 
 # Duração padrão quando consulta admin sem modelo (slot de 30 min)
 DURACAO_PADRAO_MIN = 30
-
-# Reservas sem pagamento expiram após este prazo
-EXPIRACAO_PENDENTE_HORAS = 2
 
 
 class DisponibilidadeService:
@@ -60,39 +57,91 @@ class DisponibilidadeService:
 
     def _expirar_core_bookings_pendentes(self) -> int:
         """
-        Cancela ``CoreBooking`` pendente sem sinal pago (R4-F6).
+        Expira ``CoreBooking`` pendente sem sinal pago (R4-F6 / FIX-EXPIRATION-01).
 
-        Equivalente ao expirar de ``Agendamento`` legado, mas para bookings
-        core-only: usa ``ExpireBookingHandler`` (R4-F13 / ADR-026 —
-        ``pending → expired`` + evento ``booking.expired``) em vez de
-        cancelar. Falhas isoladas em um booking não interrompem a
-        expiração dos demais (best-effort, logado).
+        Candidatos: ``PENDING_PAYMENT``, depósito não pago, não soft-deleted.
+        Para cada booking, resolve ``BookingPolicyResolver`` pelo
+        ``company_id`` e aplica ``expiration.enabled`` + ``expiration.after_hours``
+        (comparação exclusiva ``created_at < now - after_hours``).
+
+        FIX-EXPIRATION-01: remove o hardcode de 2 horas; não consome ainda
+        ``reference``, ``eligible_statuses``, ``require_unpaid_deposit`` nem
+        ``touch_payment_status`` (permanecem no comportamento atual fixo).
+
+        Falhas isoladas (resolve, booking sem tenant, handler) não interrompem
+        o lote — best-effort com log.
 
         Returns:
-            Quantidade de bookings core expirados.
+            Quantidade de bookings core expirados neste ciclo.
         """
-        from app.modules.booking.domain.models import CoreBooking
         from app.modules.booking.application.commands.expire_booking import (
             ExpireBookingCommand,
             ExpireBookingHandler,
         )
+        from app.modules.booking.domain.models import CoreBooking
+        from app.modules.booking.domain.policy.resolver import BookingPolicyResolver
 
-        limite = datetime.now() - timedelta(hours=EXPIRACAO_PENDENTE_HORAS)
-        pendentes = self.db.query(CoreBooking).filter(
-            CoreBooking.status == ReservationStatus.PENDING_PAYMENT,
-            CoreBooking.deposit_paid.is_(False),
-            CoreBooking.created_at < limite,
-            CoreBooking.deleted_at.is_(None),
-        ).all()
+        # Status/depósito/soft-delete fixos nesta etapa (FIX-EXPIRATION-02).
+        # A janela temporal é avaliada por tenant após o resolve.
+        pendentes = (
+            self.db.query(CoreBooking)
+            .filter(
+                CoreBooking.status == ReservationStatus.PENDING_PAYMENT,
+                CoreBooking.deposit_paid.is_(False),
+                CoreBooking.deleted_at.is_(None),
+            )
+            .all()
+        )
 
         handler = ExpireBookingHandler(self.db)
+        resolver = BookingPolicyResolver(self.db)
+        # Cache por company_id neste lote (nunca reutilizar política entre tenants).
+        policy_by_company: Dict[int, object] = {}
+        resolve_failed: Set[int] = set()
+        now = datetime.now()
         count = 0
+
         for booking in pendentes:
             try:
+                company_id = booking.company_id
+                if company_id is None or not isinstance(company_id, int) or company_id <= 0:
+                    logger.warning(
+                        "CoreBooking id=%s sem company_id válido — expiração "
+                        "ignorada (fail-closed)",
+                        booking.id,
+                    )
+                    continue
+
+                if company_id in resolve_failed:
+                    continue
+
+                if company_id not in policy_by_company:
+                    try:
+                        policy_by_company[company_id] = resolver.resolve(company_id)
+                    except Exception:
+                        resolve_failed.add(company_id)
+                        logger.warning(
+                            "Falha ao resolver política de expiração "
+                            "company_id=%s — bookings do tenant ignorados neste lote",
+                            company_id,
+                            exc_info=True,
+                        )
+                        continue
+
+                policy = policy_by_company[company_id]
+                expiration = policy.expiration
+                if not expiration.enabled:
+                    continue
+
+                limite = now - timedelta(hours=expiration.after_hours)
+                created_at = booking.created_at
+                if created_at is None or not (created_at < limite):
+                    continue
+
                 handler.execute(
                     ExpireBookingCommand(
                         booking_id=booking.id,
-                        company_id=booking.company_id,
+                        company_id=company_id,
                         reason="expirado",
                     )
                 )
