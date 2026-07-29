@@ -11,6 +11,10 @@ from app.db.session import get_db
 from app.models import *  # Importa todos os models
 from app.modules.catalog.domain.models import CoreCatalog, CoreOffering  # noqa: F401
 from app.modules.booking.domain.models import CoreBooking  # noqa: F401
+from app.modules.booking.domain.policy.models import (  # noqa: F401
+    BookingPolicyAudit,
+    BookingPolicyConfig,
+)
 from app.modules.scheduling.domain.models import (  # noqa: F401
     CoreLocation,
     CoreResource,
