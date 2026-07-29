@@ -289,10 +289,14 @@ class AdminService:
 
     def listar_agendamentos(
         self,
+        company_id: int,
         data_ref: Optional[date] = None,
     ) -> List[AgendamentoAdminItem]:
         """
         Lista reservas (``CoreBooking``) com dados de cliente, categoria e fila.
+
+        FIX-02b-list: filtra ``CoreBooking.company_id`` e ``Fila.company_id``
+        na SQL (sem post-filter em memória e sem fallback ``salao-demo``).
 
         .. deprecated:: 2.11.0-r4-f8
             Antes lia ``Agendamento`` legado (join com ``Tranca``);
@@ -303,17 +307,29 @@ class AdminService:
             estabilidade do schema para o frontend.
 
         Args:
-            data_ref: Filtra por dia específico; None retorna todos futuros e recentes.
+            company_id: Tenant efetivo (``companies.id``). Obrigatório.
+            data_ref: Filtra por dia específico; None retorna janela dos
+                últimos 7 dias até o futuro (contrato atual).
 
         Returns:
-            Lista de AgendamentoAdminItem para gestão admin.
+            Lista de AgendamentoAdminItem do tenant, ordenada por
+            ``scheduled_at`` ASC.
+
+        Raises:
+            ValueError: Se ``company_id`` for ausente ou inválido.
         """
+        if company_id is None or not isinstance(company_id, int) or company_id <= 0:
+            raise ValueError("company_id é obrigatório para listar a agenda admin")
+
         query = (
             self.db.query(CoreBooking, Cliente, CoreCatalog)
             .join(Cliente, CoreBooking.customer_id == Cliente.id)
             .join(CoreCatalog, CoreBooking.catalog_id == CoreCatalog.id)
             .options(joinedload(CoreBooking.offering))
-            .filter(CoreBooking.deleted_at.is_(None))
+            .filter(
+                CoreBooking.deleted_at.is_(None),
+                CoreBooking.company_id == company_id,
+            )
         )
 
         if data_ref:
@@ -332,6 +348,7 @@ class AdminService:
         fila_map = {}
         if data_ref:
             fila_items = self.db.query(Fila).filter(
+                Fila.company_id == company_id,
                 Fila.data == data_ref,
                 Fila.status.in_(STATUS_FILA_ATIVOS),
             ).all()
