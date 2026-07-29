@@ -23,6 +23,7 @@ from app.modules.booking.domain.policy.activation import (
 from app.modules.booking.domain.policy.paid_amount import (
     get_effective_paid_snapshot,
 )
+from app.modules.payments.legacy_sync import PaymentLegacySyncService
 from app.services.financeiro_service import FinanceiroService
 
 logger = get_logger("payment_reservation_service")
@@ -379,7 +380,21 @@ class PaymentReservationService:
             return row
 
         row.payment_status = StatusPagamento.PAID
-        self._upsert_payment_final_por_booking(row)
+        pag_final = self._upsert_payment_final_por_booking(row)
+        if pag_final is not None:
+            try:
+                self.db.flush()
+                PaymentLegacySyncService(self.db).sync_payment(
+                    pag_final, commit=False
+                )
+            except Exception:
+                logger.warning(
+                    "Falha não fatal ao espelhar Payment FINAL id=%s "
+                    "booking_id=%s em CorePayment",
+                    getattr(pag_final, "id", None),
+                    booking_id,
+                    exc_info=True,
+                )
 
         self.db.commit()
         self.db.refresh(row)
