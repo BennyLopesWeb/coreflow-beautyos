@@ -23,7 +23,7 @@ from app.modules.waitlist.domain.models import CoreWaitlist  # noqa: F401
 from app.modules.workflow.domain.models import CoreWorkflowRun  # noqa: F401
 from app.modules.workflow.domain.config_models import CoreWorkflowConfig  # noqa: F401
 from app.modules.order.domain.models import CoreOrder  # noqa: F401
-from app.modules.invoice.domain.models import CoreInvoice  # noqa: F401
+from app.modules.invoice.models import CoreInvoice  # noqa: F401
 from app.modules.asset.models import CoreAsset  # noqa: F401
 from app.modules.inventory.models import CoreInventory  # noqa: F401
 from app.modules.push.domain.models import CoreDeviceToken  # noqa: F401
@@ -102,7 +102,7 @@ def bootstrap_tenant() -> None:
         order_stats = OrderLegacySyncService(db).sync_all()
         print(f"✅ Order sync: {order_stats}")
 
-        from app.modules.invoice.application.legacy_sync_service import InvoiceLegacySyncService
+        from app.modules.invoice.legacy_sync import InvoiceLegacySyncService
         invoice_stats = InvoiceLegacySyncService(db).sync_all()
         print(f"✅ Invoice sync: {invoice_stats}")
 

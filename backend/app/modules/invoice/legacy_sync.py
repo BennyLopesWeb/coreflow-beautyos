@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.logging_config import get_logger
 from app.models.financeiro import Financeiro, TipoMovimento
 from app.modules.booking.domain.models import CoreBooking
-from app.modules.invoice.domain.models import CoreInvoice, CoreInvoiceStatus
+from app.modules.invoice.models import CoreInvoice, CoreInvoiceStatus
 from app.modules.order.domain.models import CoreOrder
 
 logger = get_logger("invoice_sync")

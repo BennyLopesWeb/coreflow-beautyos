@@ -17,7 +17,7 @@ Classificação oficial: [ModuleTieringPolicy.md](./ModuleTieringPolicy.md)
 | `inventory` | CRUD | 1 | P1 | **DONE** | `7b3328a` | Flat |
 | `customer` | CORE-SUPPORT | — | — | **KEEP** (F3b) | — | Hexagonal lite — flatten Wave 1 DONE revertido de tier |
 | `asset` | CRUD | 1 | P3 | **DONE** | `084b84a` | Flat |
-| `invoice` | CRUD | 1 | P4 | TODO | — | CRUD Flat (target) |
+| `invoice` | CRUD | 1 | P4 | **DONE** | (pending) | Flat |
 | `order` | CRUD | 1 | P5 | TODO | — | CRUD Flat (target) |
 | `catalog` | CORE-SUPPORT | — | — | **KEEP** (F3b) | — | Hexagonal lite — flatten Wave 2 **CANCELLED** |
 | `waitlist` | CRUD | 2 | P7 | TODO | — | CRUD Flat (target) |
@@ -255,4 +255,12 @@ modules/asset/
 | 0 aliases | ✅ | ✅ | ✅ |
 | Core untouched | ✅ | ✅ | ✅ |
 
-**Padrão aprovado para P4+ (`invoice`).**
+### Architecture Debt — invoice (P4)
+
+**Removed:**
+- [x] application/ / domain/ layers
+- [x] `InvoiceQueryService` → `InvoiceService`
+
+**Remaining:** `legacy_sync.py` até runner P0
+
+**Padrão aprovado para P5+ (`order`).**

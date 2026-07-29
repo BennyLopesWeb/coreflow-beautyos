@@ -37,4 +37,4 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos: `./scripts/terraform-ci-oidc.sh apply` na AWS + secret `AWS_ROLE_ARN`; Migration Ledger P4 `invoice`
+Próximos: Migration Ledger P5 `order`; rotacionar access key AWS exposta; limpeza schemas mortos

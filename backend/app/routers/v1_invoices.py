@@ -11,8 +11,8 @@ from app.core.exceptions import NotFoundError
 from app.db.session import get_db
 from app.modules.identity.api.deps import get_tenant_context, get_current_admin_user
 from app.models.user import User
-from app.modules.invoice.application.legacy_sync_service import InvoiceLegacySyncService
-from app.modules.invoice.application.invoice_query_service import InvoiceQueryService
+from app.modules.invoice.legacy_sync import InvoiceLegacySyncService
+from app.modules.invoice.invoice_service import InvoiceService
 from app.schemas.coreflow_v1 import InvoiceResponse
 from app.shared.kernel.tenant import TenantContext
 
@@ -34,7 +34,7 @@ def listar_invoices(
         Lista de core_invoices sincronizados de entradas financeiras.
     """
     InvoiceLegacySyncService(db).sync_all()
-    return InvoiceQueryService(db).list_invoices(
+    return InvoiceService(db).list_invoices(
         tenant.company_id,
         order_id=order_id,
         booking_id=booking_id,
@@ -58,6 +58,6 @@ def obter_invoice(
         InvoiceResponse.
     """
     try:
-        return InvoiceQueryService(db).get_invoice(invoice_id, tenant.company_id)
+        return InvoiceService(db).get_invoice(invoice_id, tenant.company_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
