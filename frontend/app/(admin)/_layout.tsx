@@ -6,6 +6,7 @@ import {
   useAdminOperacionalContext,
   formatTabBadge,
 } from '../../src/contexts/AdminOperacionalContext';
+import { isDepositPolicyUiEnabled } from '../../src/config/featureFlags';
 
 /**
  * Tabs admin com badges de pendências em Reservas e Fila.
@@ -107,6 +108,16 @@ function AdminTabs() {
           title: 'Agente IA',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="sparkles" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="politica-entrada"
+        options={{
+          title: 'Entrada',
+          href: isDepositPolicyUiEnabled() ? undefined : null,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="cash-outline" size={size} color={color} />
           ),
         }}
       />

@@ -13,6 +13,8 @@ import { useFocusEffect } from 'expo-router';
 import { adminService } from '../../src/services/adminService';
 import { PagamentoAdmin } from '../../src/types';
 import { Loader } from '../../src/components/Loader';
+import { parseApiError } from '../../src/utils/apiError';
+import { formatCentsToBrl } from '../../src/utils/money';
 
 /**
  * Formata data/hora para exibição.
@@ -80,7 +82,8 @@ export default function AdminPagamentosScreen() {
             </View>
             <Text style={styles.tranca}>{item.tranca_nome}</Text>
             <Text style={styles.valor}>
-              Sinal: R$ {parseFloat(item.valor_sinal).toFixed(2).replace('.', ',')}
+              Sinal sugerido: R${' '}
+              {parseFloat(item.valor_sinal).toFixed(2).replace('.', ',')}
             </Text>
             <Text style={styles.meta}>
               {formatDateTime(item.data_hora)} · {item.status_agendamento}
@@ -101,10 +104,24 @@ export default function AdminPagamentosScreen() {
                     await adminService.confirmarSinalBooking(item.agendamento_id);
                     loadData();
                   } catch (error) {
-                    Alert.alert(
-                      'Erro',
+                    const parsed = parseApiError(
+                      error,
                       'Não foi possível confirmar o sinal. Tente novamente.',
                     );
+                    if (parsed.code === 'MINIMUM_DEPOSIT_NOT_MET') {
+                      const minimo =
+                        parsed.minimum_activation_cents != null
+                          ? formatCentsToBrl(parsed.minimum_activation_cents)
+                          : null;
+                      Alert.alert(
+                        'Entrada abaixo do mínimo',
+                        minimo
+                          ? `${parsed.message}\n\nMínimo para ativar: ${minimo}`
+                          : parsed.message,
+                      );
+                      return;
+                    }
+                    Alert.alert('Erro', parsed.message);
                   }
                 }}
               >
