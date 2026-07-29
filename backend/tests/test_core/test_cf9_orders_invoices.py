@@ -4,8 +4,8 @@ from decimal import Decimal
 
 from app.modules.invoice.legacy_sync import InvoiceLegacySyncService
 from app.modules.invoice.models import CoreInvoice
-from app.modules.order.application.legacy_sync_service import OrderLegacySyncService
-from app.modules.order.domain.models import CoreOrder
+from app.modules.order.legacy_sync import OrderLegacySyncService
+from app.modules.order.models import CoreOrder
 from app.modules.workflow.application.workflow_definition_service import WorkflowDefinitionService
 from app.modules.workflow.domain.models import CoreWorkflowRun, WorkflowRunStatus
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine

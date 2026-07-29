@@ -6,7 +6,7 @@ Framework SaaS modular (API First · AI First · Event-Driven · Hexagonal · Pl
 
 **BeautyOS** é o primeiro produto — plugin `beauty` sobre o CoreFlow Engine.
 
-**Release atual:** `2.20.0-r4-f17` · R4-F17 + OIDC live · próximo: Migration Ledger P5 `order`
+**Release atual:** `2.20.0-r4-f17` · R4-F17 + OIDC live · próximo: Migration Ledger P7 `waitlist`
 
 ---
 
