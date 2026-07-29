@@ -21,7 +21,7 @@ Classificação oficial: [ModuleTieringPolicy.md](./ModuleTieringPolicy.md)
 | `order` | CRUD | 1 | P5 | **DONE** | `12e691e` | Flat |
 | `catalog` | CORE-SUPPORT | — | — | **KEEP** (F3b) | — | Hexagonal lite — flatten Wave 2 **CANCELLED** |
 | `waitlist` | CRUD | 2 | P7 | **DONE** | `65f658b` | Flat |
-| `payments` (read) | CRUD | 2 | P8 | **DONE** | (pending) | Flat — **sensitive** |
+| `payments` (read) | CRUD | 2 | P8 | **DONE** | `bd1e43b` | Flat — **sensitive** |
 | `platform` | OPS | 3 | P9 | TODO | — | OPS thin |
 | `observability` | OPS | 3 | P10 | TODO | — | OPS thin |
 | `ai` | OPS | 3 | P12 | TODO | — | OPS thin |
