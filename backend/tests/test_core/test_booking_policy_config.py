@@ -248,13 +248,20 @@ def test_21_restore_original_rejeitado():
 
 def test_22_config_invalida_nao_falha_aberto(db, caplog):
     """Configuração inválida não falha aberto — retorna fallback seguro."""
+    import logging
+
     co = _create_company(db, "cfg01-bad", "Bad Config")
     _upsert_override(db, co.id, {"expiration": {"after_hours": 0}})
-    with caplog.at_level("WARNING"):
+    resolver_logger = "app.modules.booking.domain.policy.resolver"
+    with caplog.at_level(logging.WARNING, logger=resolver_logger):
         policy = BookingPolicyResolver(db).resolve(co.id)
     assert policy.expiration.after_hours == 2
     assert policy == get_installation_defaults()
-    assert any("booking_policy_invalid_override" in r.message for r in caplog.records)
+    # Usa getMessage(): record.message só existe após Formatter.format.
+    assert any(
+        "booking_policy_invalid_override" in r.getMessage()
+        for r in caplog.records
+    ), caplog.messages
 
 
 def test_23_chave_desconhecida_nao_altera_silenciosamente(db, caplog):

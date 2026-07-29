@@ -36,7 +36,11 @@ from app.modules.inventory.models import CoreInventory  # noqa: F401
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: o upgrade programático (init_db /
+    # TestClient com DATABASE_URL MySQL) não pode desativar loggers de
+    # domínio já importados — isso engolia WARNING do BookingPolicyResolver
+    # e quebrava testes de caplog no job test-mysql.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
