@@ -24,11 +24,16 @@ from app.schemas.admin import (
     AtualizarStatusAgendamentoRequest,
 )
 from app.schemas.agente import AgentTaskResponse, AgenteExecutarResponse
+from app.schemas.booking_policy_admin import (
+    BookingPolicyAdminResponse,
+    BookingPolicyOverrideRequest,
+)
 from app.schemas.fila import FilaResumoResponse
 from app.schemas.agenda_dia import AgendaDiaCreate, AgendaDiaResponse, AgendaDiaDetalheResponse
 from app.schemas.tranca import TrancaResponse
 from app.services.admin_service import AdminService
 from app.services.agente_service import AgenteService
+from app.services.booking_policy_admin_service import BookingPolicyAdminService
 from app.services.fila_service import FilaService
 from app.services.tranca_service import TrancaService
 from app.services.agenda_dia_service import AgendaDiaService
@@ -631,3 +636,154 @@ def executar_tarefa_agente(
     """
     tarefa = AgenteService(db).executar_tarefa(task_id)
     return AgentTaskResponse.model_validate(tarefa)
+
+
+def _authorize_booking_policy_admin(
+    identity: IdentityApplicationService,
+    credentials: HTTPAuthorizationCredentials,
+    tenant: TenantContext,
+) -> User:
+    """
+    Autoriza admin com tenant efetivo para a API de política (FIX-CONFIG-02).
+
+    Reutiliza o mesmo padrão de Bearer + ``tenant.is_admin`` + tenant efetivo
+    dos endpoints de agenda/pagamento (FIX-02b / FIX-04).
+
+    Args:
+        identity: Serviço Identity.
+        credentials: Bearer exigido.
+        tenant: Contexto de tenant da requisição.
+
+    Returns:
+        User admin autenticado.
+
+    Raises:
+        HTTPException: 401 sem credenciais válidas; 403 sem papel admin ou
+            sem tenant efetivo.
+    """
+    current_user = _resolve_admin_for_payment_mutation(identity, credentials, tenant)
+    if not _has_effective_company(identity, current_user, credentials):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant não associado ao usuário",
+        )
+    return current_user
+
+
+@router.get("/booking-policy", response_model=BookingPolicyAdminResponse)
+def obter_booking_policy(
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_tenant_context),
+    identity: IdentityApplicationService = Depends(get_identity_service),
+    credentials: HTTPAuthorizationCredentials = Depends(_require_bearer_credentials),
+):
+    """
+    Consulta a política efetiva de booking do tenant autenticado (FIX-CONFIG-02).
+
+    Não aceita ``company_id`` na query; usa exclusivamente o tenant efetivo.
+    GET não cria auditoria nem altera o banco.
+    """
+    _authorize_booking_policy_admin(identity, credentials, tenant)
+    return BookingPolicyAdminService(db).get_policy(tenant.company_id)
+
+
+@router.put("/booking-policy", response_model=BookingPolicyAdminResponse)
+def substituir_booking_policy(
+    body: BookingPolicyOverrideRequest,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_tenant_context),
+    identity: IdentityApplicationService = Depends(get_identity_service),
+    credentials: HTTPAuthorizationCredentials = Depends(_require_bearer_credentials),
+):
+    """
+    Substitui o override de política do tenant (PUT — documento enviado).
+
+    Campos omitidos deixam de integrar o override e voltam ao default na
+    resolução efetiva. Valida via ``merge_and_validate`` antes de persistir.
+    """
+    from app.core.exceptions import ConflictError, ValidationError
+
+    current_user = _authorize_booking_policy_admin(identity, credentials, tenant)
+    service = BookingPolicyAdminService(db)
+    try:
+        return service.put_override(
+            tenant.company_id,
+            body.to_override_dict(),
+            actor_user_id=current_user.id,
+            reason=body.reason,
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.detail,
+        ) from exc
+    except ConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail,
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.patch("/booking-policy", response_model=BookingPolicyAdminResponse)
+def mesclar_booking_policy(
+    body: BookingPolicyOverrideRequest,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_tenant_context),
+    identity: IdentityApplicationService = Depends(get_identity_service),
+    credentials: HTTPAuthorizationCredentials = Depends(_require_bearer_credentials),
+):
+    """
+    Mescla patch no override ativo do tenant (PATCH — preserva campos omitidos).
+    """
+    from app.core.exceptions import ConflictError, ValidationError
+
+    current_user = _authorize_booking_policy_admin(identity, credentials, tenant)
+    service = BookingPolicyAdminService(db)
+    try:
+        return service.patch_override(
+            tenant.company_id,
+            body.to_override_dict(),
+            actor_user_id=current_user.id,
+            reason=body.reason,
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.detail,
+        ) from exc
+    except ConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail,
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.delete("/booking-policy", response_model=BookingPolicyAdminResponse)
+def desativar_booking_policy(
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_tenant_context),
+    identity: IdentityApplicationService = Depends(get_identity_service),
+    credentials: HTTPAuthorizationCredentials = Depends(_require_bearer_credentials),
+    reason: Optional[str] = Query(None, description="Motivo opcional da desativação"),
+):
+    """
+    Desativa o override ativo (``is_active=False``) e volta aos defaults.
+
+    Não remove defaults globais nem afeta outros tenants. Idempotente.
+    """
+    current_user = _authorize_booking_policy_admin(identity, credentials, tenant)
+    return BookingPolicyAdminService(db).deactivate_override(
+        tenant.company_id,
+        actor_user_id=current_user.id,
+        reason=reason,
+    )
