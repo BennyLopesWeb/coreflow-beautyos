@@ -226,7 +226,9 @@ async def test_comprovante_espelha_pending_sem_marcar_pago(
         company_id=default_company.id,
     )
     assert pag.status == PaymentStatus.PENDING
-    assert pag.valor == booking.deposit_amount
+    # SEPARATE-PAYMENT-EVIDENCE-01: evidência usa placeholder, não cotação.
+    assert pag.valor == Decimal("0.00")
+    assert pag.valor != booking.deposit_amount
 
     core = (
         db.query(CorePayment)
@@ -234,6 +236,7 @@ async def test_comprovante_espelha_pending_sem_marcar_pago(
         .one()
     )
     assert core.status == CorePaymentStatus.PENDING
+    assert core.amount == Decimal("0.00")
     assert core.company_id == default_company.id
     assert core.receipt_url is not None
 

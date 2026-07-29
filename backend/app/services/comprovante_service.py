@@ -2,6 +2,7 @@
 Service para upload e gestão de comprovantes de depósito (R4-F15 core-only).
 """
 import uuid
+from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +16,11 @@ from app.modules.booking.domain.models import CoreBooking
 from app.modules.payments.legacy_sync import PaymentLegacySyncService
 
 logger = get_logger("comprovante_service")
+
+# SEPARATE-PAYMENT-EVIDENCE-01: evidência não carrega valor liquidado.
+# ``Payment.valor`` em PENDING do comprovante é placeholder (0), nunca a
+# cotação ``deposit_amount``. Liquidação exige writer PAID futuro.
+_EVIDENCE_PLACEHOLDER_AMOUNT = Decimal("0.00")
 
 COMPROVANTES_DIR = Path(__file__).resolve().parents[1] / "static" / "comprovantes"
 TIPOS_PERMITIDOS = {
@@ -40,6 +46,10 @@ class ComprovanteService:
 
     R4-F15: vínculo autoritativo é ``core_bookings`` + ponte ``payments``
     (``booking_id``); o path legado ``agendamento_id`` foi removido.
+
+    SEPARATE-PAYMENT-EVIDENCE-01: o upload é **evidência**, não liquidação.
+    Não marca ``PAID``, não altera ``deposit_paid`` e não grava
+    ``deposit_amount`` em ``Payment.valor``.
     """
 
     def __init__(self, db: Session):
@@ -62,9 +72,13 @@ class ComprovanteService:
         """
         Salva comprovante de depósito vinculado a um ``CoreBooking`` (R4-F15).
 
-        Cria ou atualiza a linha ``payments`` (DEPOSIT/SINAL) com
-        ``comprovante_url``. Não confirma o sinal — isso continua sendo
-        ato do admin via ``confirmar_deposito_por_booking``.
+        Cria ou atualiza a linha ``payments`` (DEPOSIT/SINAL) em status
+        ``PENDING`` com ``comprovante_url``. ``Payment.valor`` fica em
+        placeholder ``0.00`` (não é cotação nem valor recebido).
+
+        Não confirma o sinal, não marca ``PAID`` e não altera
+        ``deposit_paid`` — confirmação continua em
+        ``confirmar_deposito_por_booking`` após ledger PAID válido.
 
         Args:
             booking_id: ID ``core_bookings.id``.
@@ -123,12 +137,21 @@ class ComprovanteService:
                 booking_id=booking_id,
                 agendamento_id=booking.legacy_agendamento_id,
                 tipo=PaymentType.DEPOSIT,
-                valor=booking.deposit_amount,
+                valor=_EVIDENCE_PLACEHOLDER_AMOUNT,
                 status=PaymentStatus.PENDING,
             )
             self.db.add(pag)
+        elif pag.status in (
+            PaymentStatus.PENDING,
+            PaymentStatus.PENDENTE,
+        ):
+            # Remove ambiguidade de linhas antigas que gravavam a cotação.
+            pag.valor = _EVIDENCE_PLACEHOLDER_AMOUNT
+            pag.status = PaymentStatus.PENDING
 
         pag.comprovante_url = url
+        # Evidência nunca promove liquidação.
+        pag.paid_at = None
         self.db.flush()
         # SYNC-PAYMENT-COREPAYMENT-01: espelho explícito (PENDING + URL).
         # Falha do espelho não bloqueia o comprovante — Payment permanece

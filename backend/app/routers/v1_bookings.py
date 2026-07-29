@@ -534,8 +534,10 @@ async def enviar_comprovante_booking(
     """
     Envia comprovante de depósito para um booking core (R4-F15).
 
-    Fluxo do cliente após ``POST /v1/bookings``. Não confirma o sinal —
-    apenas anexa a URL em ``payments`` (DEPOSIT) para o admin revisar.
+    Fluxo do cliente após ``POST /v1/bookings``. Anexa evidência
+    (``comprovante_url``) em ``payments`` DEPOSIT ``PENDING`` — não
+    confirma o sinal, não marca ``PAID`` e não usa ``deposit_amount``
+    como valor liquidado (SEPARATE-PAYMENT-EVIDENCE-01).
 
     Args:
         booking_id: ID ``core_bookings.id``.
