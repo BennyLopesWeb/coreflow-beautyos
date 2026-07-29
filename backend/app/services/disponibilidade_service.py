@@ -4,7 +4,7 @@ Lógica de negócio para cálculo de horários disponíveis.
 """
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, date
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, FrozenSet
 
 from app.models.agendamento import ReservationStatus, STATUS_OCUPAM_VAGA
 from app.models.tranca import Tranca
@@ -14,11 +14,26 @@ from app.core.exceptions import NotFoundError, BusinessRuleError
 from app.core.logging_config import get_logger
 from app.utils.service_image_precos import resolver_precos_imagem
 from app.services.agenda_dia_service import AgendaDiaService
+from app.modules.booking.domain.policy.cancel_window import ensure_utc
 
 logger = get_logger("disponibilidade_service")
 
 # Duração padrão quando consulta admin sem modelo (slot de 30 min)
 DURACAO_PADRAO_MIN = 30
+
+# Status ORM que o ExpireBookingHandler consegue expirar com segurança
+# (mapeiam para lifecycle PENDING). Alias ambíguo "pending" NÃO entra aqui.
+_EXPIRATION_SAFE_ORM_STATUSES: FrozenSet[ReservationStatus] = frozenset(
+    {
+        ReservationStatus.PENDING_PAYMENT,
+        ReservationStatus.PENDING_APPROVAL,
+        ReservationStatus.WAITING_TIME_CONFIRMATION,
+        ReservationStatus.PENDENTE,
+    }
+)
+_EXPIRATION_SAFE_STATUS_VALUES: FrozenSet[str] = frozenset(
+    s.value for s in _EXPIRATION_SAFE_ORM_STATUSES
+)
 
 
 class DisponibilidadeService:
@@ -55,18 +70,81 @@ class DisponibilidadeService:
         """
         return self._expirar_core_bookings_pendentes()
 
+    @staticmethod
+    def _expiration_status_is_eligible(
+        booking_status: ReservationStatus,
+        eligible_statuses,
+    ) -> bool:
+        """
+        Verifica se o status ORM do booking está na lista elegível da política.
+
+        Só considera aliases com mapeamento seguro para status PENDING-like.
+        Entradas desconhecidas ou ambíguas (ex.: ``pending``) são ignoradas
+        sem expandir o conjunto — fail-closed por booking.
+
+        Args:
+            booking_status: Status ORM atual do ``CoreBooking``.
+            eligible_statuses: Iterável de strings da política
+                (``expiration.eligible_statuses``).
+
+        Returns:
+            ``True`` se o status do booking é seguro para expire e está
+            listado de forma explícita na política; ``False`` caso contrário.
+        """
+        if booking_status not in _EXPIRATION_SAFE_ORM_STATUSES:
+            return False
+        allowed_safe = {
+            value
+            for value in (eligible_statuses or ())
+            if value in _EXPIRATION_SAFE_STATUS_VALUES
+        }
+        return booking_status.value in allowed_safe
+
+    @staticmethod
+    def _expiration_reference_timestamp(
+        booking,
+        reference: str,
+    ) -> Optional[datetime]:
+        """
+        Resolve o timestamp de referência temporal da política de expiração.
+
+        Args:
+            booking: Instância ``CoreBooking`` candidata.
+            reference: Valor de ``expiration.reference``
+                (``created_at`` ou ``scheduled_at``).
+
+        Returns:
+            Datetime aware em UTC do campo escolhido, ou ``None`` se a
+            referência for desconhecida ou o timestamp estiver ausente
+            (fail-closed — booking não expira neste ciclo).
+        """
+        if reference == "created_at":
+            raw = booking.created_at
+        elif reference == "scheduled_at":
+            raw = booking.scheduled_at
+        else:
+            logger.warning(
+                "CoreBooking id=%s reference de expiração desconhecida=%r — "
+                "ignorado (fail-closed)",
+                getattr(booking, "id", None),
+                reference,
+            )
+            return None
+        if raw is None:
+            return None
+        return ensure_utc(raw)
+
     def _expirar_core_bookings_pendentes(self) -> int:
         """
-        Expira ``CoreBooking`` pendente sem sinal pago (R4-F6 / FIX-EXPIRATION-01).
+        Expira ``CoreBooking`` elegível sem sinal pago (FIX-EXPIRATION-02A/02B).
 
-        Candidatos: ``PENDING_PAYMENT``, depósito não pago, não soft-deleted.
-        Para cada booking, resolve ``BookingPolicyResolver`` pelo
-        ``company_id`` e aplica ``expiration.enabled`` + ``expiration.after_hours``
-        (comparação exclusiva ``created_at < now - after_hours``).
+        Candidatos SQL: status PENDING-like seguros, ``deposit_paid=False``,
+        não soft-deleted. Por tenant, aplica ``BookingPolicyResolver``:
+        ``enabled``, ``after_hours``, ``reference`` e ``eligible_statuses``.
 
-        FIX-EXPIRATION-01: remove o hardcode de 2 horas; não consome ainda
-        ``reference``, ``eligible_statuses``, ``require_unpaid_deposit`` nem
-        ``touch_payment_status`` (permanecem no comportamento atual fixo).
+        Comparação exclusiva: ``reference_ts < now - after_hours``.
+        ``require_unpaid_deposit`` e ``touch_payment_status`` permanecem
+        no comportamento fixo (depósito não pago sempre exigido).
 
         Falhas isoladas (resolve, booking sem tenant, handler) não interrompem
         o lote — best-effort com log.
@@ -81,12 +159,13 @@ class DisponibilidadeService:
         from app.modules.booking.domain.models import CoreBooking
         from app.modules.booking.domain.policy.resolver import BookingPolicyResolver
 
-        # Status/depósito/soft-delete fixos nesta etapa (FIX-EXPIRATION-02).
-        # A janela temporal é avaliada por tenant após o resolve.
+        # Pré-filtro: só status com caminho seguro até ExpireBookingHandler.
+        # eligible_statuses e reference são avaliados por tenant após resolve.
+        # require_unpaid_deposit permanece fixo (sempre depósito não pago).
         pendentes = (
             self.db.query(CoreBooking)
             .filter(
-                CoreBooking.status == ReservationStatus.PENDING_PAYMENT,
+                CoreBooking.status.in_(list(_EXPIRATION_SAFE_ORM_STATUSES)),
                 CoreBooking.deposit_paid.is_(False),
                 CoreBooking.deleted_at.is_(None),
             )
@@ -98,7 +177,9 @@ class DisponibilidadeService:
         # Cache por company_id neste lote (nunca reutilizar política entre tenants).
         policy_by_company: Dict[int, object] = {}
         resolve_failed: Set[int] = set()
-        now = datetime.now()
+        # Naive local (como created_at/scheduled_at tipicamente persistidos) → UTC
+        # via ensure_utc, preservando a semântica de comparação do FIX-EXPIRATION-01.
+        now = ensure_utc(datetime.now())
         count = 0
 
         for booking in pendentes:
@@ -133,9 +214,19 @@ class DisponibilidadeService:
                 if not expiration.enabled:
                     continue
 
+                if not self._expiration_status_is_eligible(
+                    booking.status, expiration.eligible_statuses
+                ):
+                    continue
+
+                reference_ts = self._expiration_reference_timestamp(
+                    booking, expiration.reference
+                )
+                if reference_ts is None:
+                    continue
+
                 limite = now - timedelta(hours=expiration.after_hours)
-                created_at = booking.created_at
-                if created_at is None or not (created_at < limite):
+                if not (reference_ts < limite):
                     continue
 
                 handler.execute(
