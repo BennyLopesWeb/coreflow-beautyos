@@ -22,11 +22,13 @@ from decimal import Decimal
 from typing import List, Optional
 
 from app.models.cliente import Cliente
-from app.models.agendamento import StatusAgendamento, ReservationStatus
+from app.models.agendamento import StatusAgendamento, ReservationStatus, StatusPagamento
 from app.models.fila import Fila, STATUS_FILA_ATIVOS
 from app.models.financeiro import Financeiro, TipoMovimento
 from app.models.payment import Payment, PaymentType
 from app.modules.booking.domain.models import CoreBooking
+from app.modules.booking.domain.policy.resolver import BookingPolicyResolver
+from app.modules.booking.domain.value_objects.booking_types import BookingLifecycleStatus
 from app.modules.catalog.domain.models import CoreCatalog
 from app.schemas.admin import (
     AdminDashboardResponse,
@@ -34,7 +36,56 @@ from app.schemas.admin import (
     AgendamentoAdminItem,
     ClienteCrmItem,
 )
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+
+
+# ReservationStatus ORM / aliases FE → lifecycle canônico (política manual_status).
+_ORM_STATUS_TO_LIFECYCLE = {
+    ReservationStatus.PENDING_PAYMENT: BookingLifecycleStatus.PENDING.value,
+    ReservationStatus.PENDING_APPROVAL: BookingLifecycleStatus.PENDING.value,
+    ReservationStatus.WAITING_TIME_CONFIRMATION: BookingLifecycleStatus.PENDING.value,
+    ReservationStatus.PENDENTE: BookingLifecycleStatus.PENDING.value,
+    ReservationStatus.APPROVED: BookingLifecycleStatus.APPROVED.value,
+    ReservationStatus.CONFIRMADO: BookingLifecycleStatus.APPROVED.value,
+    ReservationStatus.IN_QUEUE: BookingLifecycleStatus.APPROVED.value,
+    ReservationStatus.CHECKED_IN: BookingLifecycleStatus.APPROVED.value,
+    ReservationStatus.IN_SERVICE: BookingLifecycleStatus.APPROVED.value,
+    ReservationStatus.REJECTED: BookingLifecycleStatus.REJECTED.value,
+    ReservationStatus.CANCELLED: BookingLifecycleStatus.CANCELLED.value,
+    ReservationStatus.CANCELADO: BookingLifecycleStatus.CANCELLED.value,
+    ReservationStatus.RESCHEDULED: BookingLifecycleStatus.RESCHEDULED.value,
+    ReservationStatus.COMPLETED: BookingLifecycleStatus.COMPLETED.value,
+    ReservationStatus.CONCLUIDO: BookingLifecycleStatus.COMPLETED.value,
+    ReservationStatus.PAID: BookingLifecycleStatus.COMPLETED.value,
+    ReservationStatus.NO_SHOW: BookingLifecycleStatus.NO_SHOW.value,
+    ReservationStatus.EXPIRED: BookingLifecycleStatus.EXPIRED.value,
+}
+
+
+def _lifecycle_from_reservation_status(status: StatusAgendamento | str) -> str:
+    """
+    Mapeia status ORM/FE para lifecycle canônico da política de booking.
+
+    Args:
+        status: ``ReservationStatus`` ou string equivalente (ex.: ``confirmado``).
+
+    Returns:
+        Valor lifecycle (``pending``, ``approved``, ``cancelled``, …).
+
+    Raises:
+        ValidationError: Status desconhecido / não mapeável.
+    """
+    if isinstance(status, ReservationStatus):
+        key = status
+    else:
+        try:
+            key = ReservationStatus(str(status))
+        except ValueError as exc:
+            raise ValidationError(f"Status inválido: {status}") from exc
+    lifecycle = _ORM_STATUS_TO_LIFECYCLE.get(key)
+    if lifecycle is None:
+        raise ValidationError(f"Status sem mapeamento de lifecycle: {key.value}")
+    return lifecycle
 
 
 class AdminService:
@@ -310,36 +361,111 @@ class AdminService:
         self,
         agendamento_id: int,
         novo_status: StatusAgendamento,
+        company_id: int,
     ) -> CoreBooking:
         """
         Atualiza status de uma reserva (``CoreBooking``) via gestão admin.
 
-        .. deprecated:: 2.11.0-r4-f8
-            Antes atualizava ``Agendamento`` legado; reescrito para
-            ``CoreBooking`` (tabela ``agendamentos`` removida —
-            ``StatusAgendamento`` é apenas um alias de
-            ``ReservationStatus``, aceito diretamente por
-            ``CoreBooking.status``).
+        FIX-02b-write: busca por ``id + company_id`` (inclui soft-deleted para
+        bloquear reabertura); consome ``BookingPolicyResolver`` para matriz
+        de transições e ``block_financial_reopen``; ao cancelar, alinha
+        ``payment_status``/``deleted_at`` conforme política de cancelamento.
 
         Args:
             agendamento_id: ID do booking (``core_bookings.id``).
-            novo_status: Novo status desejado.
+            novo_status: Novo status desejado (ORM/FE).
+            company_id: Tenant efetivo da requisição (obrigatório).
 
         Returns:
-            CoreBooking atualizado.
+            CoreBooking atualizado (ou inalterado se transição idempotente).
 
         Raises:
-            NotFoundError: Se o booking não existir.
+            NotFoundError: Booking inexistente para o tenant (inclui cross-tenant).
+            ValidationError: Transição fora da matriz da política.
+            ConflictError: Reabertura de cancelado/expirado ou status manual off.
+            ValueError: ``company_id`` ausente/inválido.
         """
-        booking = self.db.query(CoreBooking).filter(
-            CoreBooking.id == agendamento_id,
-            CoreBooking.deleted_at.is_(None),
-        ).first()
+        if company_id is None or not isinstance(company_id, int) or company_id <= 0:
+            raise ValueError("company_id é obrigatório para alterar status da agenda")
 
+        # Inclui soft-deleted: reabertura de cancelado não deve virar 404 silencioso
+        # que permita outro caminho; a política bloqueia com 409.
+        booking = (
+            self.db.query(CoreBooking)
+            .filter(
+                CoreBooking.id == agendamento_id,
+                CoreBooking.company_id == company_id,
+            )
+            .first()
+        )
         if not booking:
-            raise NotFoundError("Agendamento não encontrado")
+            raise NotFoundError("Agendamento")
+
+        policy = BookingPolicyResolver(self.db).resolve(company_id)
+        manual = policy.manual_status
+        if not manual.enabled:
+            raise ConflictError("Alteração manual de status desabilitada para o tenant")
+
+        current_lc = _lifecycle_from_reservation_status(booking.status)
+        target_lc = _lifecycle_from_reservation_status(novo_status)
+
+        if current_lc == target_lc:
+            # Idempotente: mesmo lifecycle (ex.: cancelado ↔ cancelled).
+            return booking
+
+        if manual.block_financial_reopen:
+            if current_lc in (
+                BookingLifecycleStatus.CANCELLED.value,
+                BookingLifecycleStatus.EXPIRED.value,
+            ):
+                raise ConflictError(
+                    "Não é permitido reabrir booking cancelado ou expirado"
+                )
+            payment_status = booking.payment_status
+            payment_value = (
+                payment_status.value
+                if hasattr(payment_status, "value")
+                else str(payment_status)
+            )
+            if payment_value == StatusPagamento.CANCELLED.value and target_lc not in (
+                BookingLifecycleStatus.CANCELLED.value,
+                BookingLifecycleStatus.EXPIRED.value,
+            ):
+                raise ConflictError(
+                    "Não é permitido reabrir janela financeira de booking cancelado"
+                )
+
+        allowed = manual.allowed_transitions.get(current_lc, ())
+        if target_lc not in allowed:
+            raise ValidationError(
+                f"Transição de status não permitida: {current_lc} → {target_lc}"
+            )
+
+        # Snapshot de proteção financeira — nunca limpar ao mutar.
+        previous_payment_status = booking.payment_status
+        previous_deleted_at = booking.deleted_at
 
         booking.status = novo_status
+
+        if target_lc == BookingLifecycleStatus.CANCELLED.value:
+            if policy.cancellation.set_payment_cancelled:
+                booking.payment_status = StatusPagamento.CANCELLED
+            if policy.cancellation.soft_delete:
+                booking.deleted_at = previous_deleted_at or datetime.utcnow()
+        elif target_lc == BookingLifecycleStatus.EXPIRED.value:
+            # Expiração via PATCH só se a matriz permitir; soft-delete alinhado
+            # ao path de repositório (não altera payment_status por default).
+            booking.deleted_at = previous_deleted_at or datetime.utcnow()
+
+        # Preserva CANCELLED / deleted_at se já estavam definidos (fail-closed).
+        if (
+            hasattr(previous_payment_status, "value")
+            and previous_payment_status.value == StatusPagamento.CANCELLED.value
+        ) or previous_payment_status == StatusPagamento.CANCELLED:
+            booking.payment_status = StatusPagamento.CANCELLED
+        if previous_deleted_at is not None:
+            booking.deleted_at = previous_deleted_at
+
         self.db.commit()
         self.db.refresh(booking)
         return booking
