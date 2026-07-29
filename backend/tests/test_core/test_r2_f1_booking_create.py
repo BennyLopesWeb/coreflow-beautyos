@@ -1,5 +1,5 @@
 """R2-F1 — Booking create domain path + paridade P01/P02/P09."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock
 
@@ -14,6 +14,7 @@ from app.modules.booking.application.commands.create_booking import (
     CreateBookingHandler,
 )
 from app.shared.events.outbox import CoreEventOutbox, OutboxStatus
+from app.shared.kernel.datetimes import as_naive_utc
 
 
 def test_booking_aggregate_create_valid():
@@ -103,6 +104,50 @@ def test_p01_create_core_path(
     assert booking_evt.status == OutboxStatus.PROCESSED
     # R3-F2 (ADR-027 sunset): alias reservation.created não é mais publicado.
     assert alias_evt is None
+
+
+def test_as_naive_utc_strips_z_suffix():
+    """Unit — ISO offset-aware vira naive UTC sem TypeError em comparações."""
+    aware = datetime(2026, 8, 4, 10, 0, 0, tzinfo=timezone.utc)
+    naive = as_naive_utc(aware)
+    assert naive.tzinfo is None
+    assert naive == datetime(2026, 8, 4, 10, 0, 0)
+    assert as_naive_utc(naive) == naive
+
+
+def test_create_booking_accepts_scheduled_at_with_z(
+    client, synced_catalog, cliente_exemplo, db, enable_booking_core, booking_headers
+):
+    """
+    Regressão FASE 3 — ``scheduled_at`` com sufixo Z não deve retornar 400
+    por comparação offset-naive vs offset-aware.
+    """
+    from app.services.disponibilidade_service import DisponibilidadeService
+
+    catalog, offering = synced_catalog
+    horarios = DisponibilidadeService(db).calcular_horarios_disponiveis(
+        datetime.now() + timedelta(days=4),
+        catalog.legacy_tranca_id,
+        offering.legacy_service_image_id,
+    )
+    slot = next(h for h in horarios if h.disponivel)
+    scheduled_z = slot.horario.replace(tzinfo=timezone.utc).isoformat().replace(
+        "+00:00", "Z"
+    )
+
+    response = client.post(
+        "/v1/bookings",
+        json={
+            "customer_id": cliente_exemplo.id,
+            "catalog_id": catalog.id,
+            "offering_id": offering.id,
+            "scheduled_at": scheduled_z,
+        },
+        headers=booking_headers(),
+    )
+    assert response.status_code == 201, response.text
+    assert "offset-naive" not in response.text
+    assert response.json()["status"] == "pending_payment"
 
 
 def test_p02_unavailable_slot_core_path(

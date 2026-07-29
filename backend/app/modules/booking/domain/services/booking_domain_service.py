@@ -173,7 +173,12 @@ class BookingDomainService:
             BusinessRuleError: Catalog/cliente inativo.
             ConflictError: Slot/resource indisponível (409).
         """
-        if scheduled_at.replace(tzinfo=None) < datetime.now():
+        from app.shared.kernel.datetimes import as_naive_utc
+
+        # ISO com timezone (ex.: ...Z) quebra comparação com datetime.now() naive
+        # em DisponibilidadeService / ACL — normalizar na boundary do domínio.
+        scheduled_at = as_naive_utc(scheduled_at)
+        if scheduled_at < datetime.now():
             raise ValidationError("Não é possível reservar no passado")
 
         if not self._catalog or not self._scheduling:

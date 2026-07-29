@@ -217,6 +217,8 @@ class DisponibilidadeService:
         Returns:
             Lista de slots com flag disponível/indisponível.
         """
+        from app.shared.kernel.datetimes import as_naive_utc
+
         self.expirar_reservas_pendentes()
 
         tranca = self.db.query(Tranca).filter(Tranca.id == tranca_id).first()
@@ -229,6 +231,8 @@ class DisponibilidadeService:
             tranca, service_image_id, ignorar_duracao_modelo
         )
 
+        # Evita TypeError ao misturar offset-aware (ISO Z) com datetime.now() naive.
+        data = as_naive_utc(data)
         data_date = data.date()
         hi, mi, hf, mf, ativo = self.agenda_dia.obter_ou_padrao(data_date)
         if not ativo:
