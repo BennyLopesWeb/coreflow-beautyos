@@ -18,9 +18,27 @@ class ClienteService:
     def __init__(self, db: Session):
         self.db = db
     
-    def listar_clientes(self) -> List[Cliente]:
-        """Lista todos os clientes (não deletados)"""
-        return self.db.query(Cliente).filter(Cliente.deleted_at.is_(None)).all()
+    def listar_clientes(self, company_id: int) -> List[Cliente]:
+        """
+        Lista clientes do tenant (não deletados).
+
+        Isolamento multi-tenant: filtra ``Cliente.company_id`` na query
+        SQLAlchemy. Registros com ``company_id IS NULL`` são excluídos.
+
+        Args:
+            company_id: ID da empresa (tenant) ativa na requisição.
+
+        Returns:
+            Lista de ``Cliente`` do tenant.
+        """
+        return (
+            self.db.query(Cliente)
+            .filter(
+                Cliente.deleted_at.is_(None),
+                Cliente.company_id == company_id,
+            )
+            .all()
+        )
     
     def buscar_por_id(self, cliente_id: int) -> Optional[Cliente]:
         """Busca cliente por ID (não deletado)"""
@@ -42,6 +60,37 @@ class ClienteService:
         Lança exceção se não encontrado
         """
         cliente = self.buscar_por_id(cliente_id)
+        if not cliente:
+            raise NotFoundError("Cliente", str(cliente_id))
+        return cliente
+
+    def obter_cliente_do_tenant(self, cliente_id: int, company_id: int) -> Cliente:
+        """
+        Obtém cliente por ID restrito ao tenant (TENANT-FIX-08).
+
+        Aplica ``company_id`` na query SQLAlchemy. Registros com
+        ``company_id IS NULL`` ou de outra empresa não são retornados
+        (tratados como inexistentes pelo caller).
+
+        Args:
+            cliente_id: ID do cliente.
+            company_id: ID da empresa (tenant) ativa.
+
+        Returns:
+            Cliente do tenant.
+
+        Raises:
+            NotFoundError: Se não existir no tenant (inclui outro tenant / órfão).
+        """
+        cliente = (
+            self.db.query(Cliente)
+            .filter(
+                Cliente.id == cliente_id,
+                Cliente.deleted_at.is_(None),
+                Cliente.company_id == company_id,
+            )
+            .first()
+        )
         if not cliente:
             raise NotFoundError("Cliente", str(cliente_id))
         return cliente

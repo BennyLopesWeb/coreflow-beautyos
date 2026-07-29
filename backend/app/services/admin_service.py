@@ -153,15 +153,21 @@ class AdminService:
             saldo_mes=Decimal(str(receita_mes)) - Decimal(str(saidas_mes)),
         )
 
-    def listar_pagamentos(self) -> List[PagamentoAdminItem]:
+    def listar_pagamentos(self, company_id: int) -> List[PagamentoAdminItem]:
         """
         Lista reservas (``CoreBooking``) com status de pagamento do sinal.
+
+        Isolamento multi-tenant: filtra ``CoreBooking.company_id`` na query
+        SQLAlchemy (não em memória).
 
         .. deprecated:: 2.11.0-r4-f8
             Antes lia ``Agendamento`` legado; reescrito para
             ``CoreBooking`` (tabela removida). ``comprovante_url`` passa a
             vir do ``Payment`` (DEPOSIT/SINAL) vinculado por
             ``booking_id`` — best-effort, ``None`` se não houver registro.
+
+        Args:
+            company_id: ID da empresa (tenant) ativa na requisição.
 
         Returns:
             Lista de PagamentoAdminItem ordenada por data decrescente.
@@ -171,7 +177,10 @@ class AdminService:
             .join(Cliente, CoreBooking.customer_id == Cliente.id)
             .join(CoreCatalog, CoreBooking.catalog_id == CoreCatalog.id)
             .options(joinedload(CoreBooking.offering))
-            .filter(CoreBooking.deleted_at.is_(None))
+            .filter(
+                CoreBooking.deleted_at.is_(None),
+                CoreBooking.company_id == company_id,
+            )
             .order_by(CoreBooking.scheduled_at.desc())
             .all()
         )

@@ -11,7 +11,11 @@ import {
   Linking,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { reservationService, Reservation } from '../../src/services/reservationService';
+import {
+  reservationService,
+  Reservation,
+  lastReservationListMeta,
+} from '../../src/services/reservationService';
 import { paymentReservationService } from '../../src/services/queueService';
 import { useAdminOperacionalContext } from '../../src/contexts/AdminOperacionalContext';
 import { Loader } from '../../src/components/Loader';
@@ -45,6 +49,28 @@ const STATUS_ACAO = new Set([
 type FiltroReserva = 'pendentes' | 'todas';
 
 /**
+ * Formata total/sinal da reserva sem exibir ``NaN%`` quando o percentual
+ * não for calculável.
+ *
+ * Args:
+ *   item: Reserva mapeada (valores como string).
+ *
+ * Returns:
+ *   Texto monetário; inclui percentual apenas se for um número finito.
+ */
+function formatValoresReserva(item: Reservation): string {
+  const total = Number.parseFloat(item.valor_total);
+  const sinal = Number.parseFloat(item.valor_sinal);
+  const totalTxt = Number.isFinite(total) ? total.toFixed(2) : '—';
+  const sinalTxt = Number.isFinite(sinal) ? sinal.toFixed(2) : '—';
+  const pct = Number.parseFloat(item.percentual_sinal);
+  if (!Number.isFinite(pct)) {
+    return `Total R$ ${totalTxt} · Sinal R$ ${sinalTxt}`;
+  }
+  return `Total R$ ${totalTxt} · Sinal R$ ${sinalTxt} (${Math.round(pct * 100)}%)`;
+}
+
+/**
  * Painel admin de reservas — exibe novas solicitações e as aguardando aprovação.
  */
 export default function AdminReservasScreen() {
@@ -54,9 +80,11 @@ export default function AdminReservasScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filtro, setFiltro] = useState<FiltroReserva>('pendentes');
   const [erro, setErro] = useState<string | null>(null);
+  /** True quando GET /v1/bookings atingiu o teto interno (pode haver mais). */
+  const [listaTruncada, setListaTruncada] = useState(false);
 
   /**
-   * Carrega reservas da API admin.
+   * Carrega reservas da API admin (Core + enriquecimento de nome/comprovante).
    */
   const load = async () => {
     try {
@@ -65,9 +93,11 @@ export default function AdminReservasScreen() {
         filtro === 'pendentes' ? { pendentes: true } : undefined,
       );
       setReservas(data);
+      setListaTruncada(lastReservationListMeta.truncated);
     } catch (e: unknown) {
       setErro(getApiErrorMessage(e, 'Erro ao carregar reservas'));
       setReservas([]);
+      setListaTruncada(false);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -166,6 +196,12 @@ export default function AdminReservasScreen() {
 
       {erro ? <Text style={styles.erro}>{erro}</Text> : null}
 
+      {listaTruncada ? (
+        <Text style={styles.avisoTruncado}>
+          A lista pode conter mais de 100 reservas. A paginação ainda não está disponível.
+        </Text>
+      ) : null}
+
       <FlatList
         data={reservasOrdenadas}
         keyExtractor={(i) => String(i.id)}
@@ -200,9 +236,7 @@ export default function AdminReservasScreen() {
               </Text>
             ) : null}
             <Text style={styles.meta}>
-              Total R$ {parseFloat(item.valor_total).toFixed(2)} · Sinal R${' '}
-              {parseFloat(item.valor_sinal).toFixed(2)} (
-              {Math.round(parseFloat(item.percentual_sinal) * 100)}%)
+              {formatValoresReserva(item)}
             </Text>
             <Text style={styles.status}>{STATUS_LABEL[item.status] ?? item.status}</Text>
             {item.sinal_pago ? (
@@ -282,6 +316,15 @@ const styles = StyleSheet.create({
   filtroTexto: { fontWeight: '600', color: '#666' },
   filtroTextoAtivo: { color: '#FFF' },
   erro: { color: '#DC3545', textAlign: 'center', padding: 12 },
+  avisoTruncado: {
+    color: '#8A6D3B',
+    backgroundColor: '#FCF8E3',
+    textAlign: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   empty: { textAlign: 'center', color: '#888', marginTop: 40, paddingHorizontal: 24 },
   card: {
     backgroundColor: '#FFF',
