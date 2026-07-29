@@ -4,7 +4,6 @@ Lógica de negócio para cálculo de horários disponíveis.
 """
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, date
-from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional, Set, FrozenSet, Any
 
 from app.models.agendamento import ReservationStatus, StatusPagamento, STATUS_OCUPAM_VAGA
@@ -16,6 +15,10 @@ from app.core.logging_config import get_logger
 from app.utils.service_image_precos import resolver_precos_imagem
 from app.services.agenda_dia_service import AgendaDiaService
 from app.modules.booking.domain.policy.cancel_window import ensure_utc
+from app.modules.booking.domain.policy.activation import (
+    calculate_minimum_activation_cents,
+    money_to_cents,
+)
 
 logger = get_logger("disponibilidade_service")
 
@@ -45,11 +48,6 @@ _FLAG_PAID_PAYMENT_STATUS_VALUES: FrozenSet[str] = frozenset(
         StatusPagamento.PAID.value,
     }
 )
-
-# Teto de ativação: R$ 100,00 = 10000 centavos (FIX-EXPIRATION-02C).
-_ACTIVATION_CAP_CENTS = 10_000
-# Percentual mínimo sobre o total do serviço.
-_ACTIVATION_PERCENT = 20
 
 
 class DisponibilidadeService:
@@ -170,49 +168,28 @@ class DisponibilidadeService:
     @staticmethod
     def _money_to_cents(value) -> Optional[int]:
         """
-        Converte valor monetário decimal/string para centavos inteiros.
+        Converte valor monetário para centavos (delegado à política compartilhada).
 
         Args:
-            value: Valor em reais (``Decimal``, ``int``, ``float`` ou str).
+            value: Valor em reais.
 
         Returns:
-            Centavos >= 0, ou ``None`` se ausente/inválido/negativo.
+            Centavos >= 0, ou ``None`` se inválido.
         """
-        if value is None:
-            return None
-        try:
-            amount = Decimal(str(value))
-        except Exception:
-            return None
-        if amount < 0:
-            return None
-        cents = (amount * Decimal("100")).quantize(
-            Decimal("1"), rounding=ROUND_HALF_UP
-        )
-        return int(cents)
+        return money_to_cents(value)
 
     @staticmethod
     def _get_minimum_activation_cents(total_service_cents: int) -> int:
         """
-        Calcula o mínimo de ativação da reserva em centavos.
-
-        Fórmula (inteiros, sem ponto flutuante)::
-
-            min(ceil(total_service_cents * 20 / 100), 10000)
+        Calcula o mínimo de ativação (delegado à política compartilhada).
 
         Args:
-            total_service_cents: Valor total do serviço em centavos (> 0).
+            total_service_cents: Total do serviço em centavos (> 0).
 
         Returns:
             Mínimo de ativação em centavos.
-
-        Raises:
-            ValueError: Se ``total_service_cents`` não for positivo.
         """
-        if not isinstance(total_service_cents, int) or total_service_cents <= 0:
-            raise ValueError("total_service_cents deve ser int positivo")
-        twenty_pct = (total_service_cents * _ACTIVATION_PERCENT + 99) // 100
-        return min(twenty_pct, _ACTIVATION_CAP_CENTS)
+        return calculate_minimum_activation_cents(total_service_cents)
 
     def _load_payment_activation_snapshots(
         self, booking_ids: List[int]

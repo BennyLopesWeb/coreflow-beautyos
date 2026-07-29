@@ -1,10 +1,15 @@
 """
 Schemas API v1 — Catalog e Offering (metamodelo CoreFlow).
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 from typing import Any, Dict, List, Optional
 from datetime import datetime, date, time
 from decimal import Decimal
+
+from app.modules.booking.domain.policy.activation import (
+    cents_to_decimal,
+    minimum_activation_from_price_total,
+)
 
 
 class CatalogResponse(BaseModel):
@@ -51,6 +56,9 @@ class OfferingResponse(BaseModel):
         image_url: Imagem principal.
         active: Reservável.
         legacy_service_image_id: ID legado.
+        minimum_activation_cents: Entrada mínima para ativar (centavos).
+        minimum_activation_amount: Entrada mínima em reais.
+        currency: Moeda ISO.
     """
 
     id: int
@@ -65,6 +73,32 @@ class OfferingResponse(BaseModel):
     image_url: Optional[str] = None
     active: bool
     legacy_service_image_id: Optional[int] = None
+    currency: str = "BRL"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def minimum_activation_cents(self) -> Optional[int]:
+        """
+        Mínimo de entrada em centavos a partir de ``price_total``.
+
+        Returns:
+            Centavos, ou ``None`` se o preço for inválido.
+        """
+        return minimum_activation_from_price_total(self.price_total)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def minimum_activation_amount(self) -> Optional[Decimal]:
+        """
+        Mínimo de entrada em reais (2 casas).
+
+        Returns:
+            Decimal, ou ``None`` se o mínimo não puder ser calculado.
+        """
+        cents = self.minimum_activation_cents
+        if cents is None:
+            return None
+        return cents_to_decimal(cents)
 
     class Config:
         from_attributes = True
@@ -163,6 +197,9 @@ class BookingResponse(BaseModel):
         status: Status da reserva.
         price_total: Preço snapshot.
         legacy_agendamento_id: ID legado para APIs antigas.
+        minimum_activation_cents: Entrada mínima para ativar (centavos).
+        minimum_activation_amount: Entrada mínima em reais.
+        currency: Moeda ISO.
     """
 
     id: int
@@ -183,6 +220,45 @@ class BookingResponse(BaseModel):
     catalog_name: Optional[str] = None
     offering_name: Optional[str] = None
     created_at: datetime
+    currency: str = "BRL"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def minimum_activation_cents(self) -> Optional[int]:
+        """
+        Mínimo de entrada em centavos a partir de ``price_total``.
+
+        Returns:
+            Centavos, ou ``None`` se o preço for inválido.
+        """
+        return minimum_activation_from_price_total(self.price_total)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def minimum_activation_amount(self) -> Optional[Decimal]:
+        """
+        Mínimo de entrada em reais (2 casas).
+
+        Returns:
+            Decimal, ou ``None`` se o mínimo não puder ser calculado.
+        """
+        cents = self.minimum_activation_cents
+        if cents is None:
+            return None
+        return cents_to_decimal(cents)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def price_total_cents(self) -> Optional[int]:
+        """
+        Total do serviço em centavos.
+
+        Returns:
+            Centavos, ou ``None`` se inválido.
+        """
+        from app.modules.booking.domain.policy.activation import money_to_cents
+
+        return money_to_cents(self.price_total)
 
     class Config:
         from_attributes = True

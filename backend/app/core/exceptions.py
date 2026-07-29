@@ -77,6 +77,46 @@ class DepositRequiredError(ConflictError):
         super().__init__("deposit_required")
 
 
+class MinimumDepositNotMetError(ValidationError):
+    """
+    Ativação bloqueada — valor de entrada abaixo do mínimo
+    (FIX-BOOKING-MIN-DEPOSIT-QUOTE-01).
+    """
+
+    def __init__(
+        self,
+        minimum_activation_cents: int,
+        *,
+        currency: str = "BRL",
+    ) -> None:
+        """
+        Monta erro 400 com mínimo exigido em centavos.
+
+        Args:
+            minimum_activation_cents: Mínimo recalculado no servidor.
+            currency: Moeda ISO (padrão BRL).
+        """
+        from decimal import Decimal
+
+        reais = (Decimal(minimum_activation_cents) / Decimal(100)).quantize(
+            Decimal("0.01")
+        )
+        message = (
+            f"O valor mínimo de entrada para este serviço é R$ {reais}."
+        )
+        # detail estruturado (compatível com clientes que leem string ou dict)
+        HTTPException.__init__(
+            self,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "MINIMUM_DEPOSIT_NOT_MET",
+                "message": message,
+                "minimum_activation_cents": minimum_activation_cents,
+                "currency": currency,
+            },
+        )
+
+
 class CancelPolicyViolationError(ConflictError):
     """Cancel bloqueado — policy 24h (ADR-026 amendment / R2-F2b)."""
 
