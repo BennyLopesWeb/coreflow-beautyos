@@ -156,3 +156,57 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
 export function isMinimumDepositNotMet(error: unknown): boolean {
   return parseApiError(error, '').code === 'MINIMUM_DEPOSIT_NOT_MET';
 }
+
+/** Ação recomendada após falha ao salvar política admin. */
+export type PolicyAdminSaveAction =
+  | { kind: 'conflict_reload'; message: string }
+  | { kind: 'forbidden'; message: string }
+  | { kind: 'validation'; message: string; fieldErrors: ApiFieldErrors }
+  | { kind: 'generic'; message: string };
+
+/**
+ * Decide o fluxo UI após erro de PUT/PATCH de booking-policy.
+ *
+ * - 409 → recarregar GET (não sobrescrever remoto com draft local)
+ * - 403 → permissão (não validação de formulário)
+ * - 422 → validação por campo
+ *
+ * @param error - Erro Axios/API.
+ * @param fallback - Mensagem padrão.
+ * @returns Ação tipada para a tela.
+ */
+export function resolvePolicyAdminSaveError(
+  error: unknown,
+  fallback = 'Não foi possível salvar',
+): PolicyAdminSaveAction {
+  const parsed = parseApiError(error, fallback);
+  if (parsed.status === 409) {
+    return { kind: 'conflict_reload', message: parsed.message };
+  }
+  if (parsed.status === 403) {
+    return { kind: 'forbidden', message: parsed.message };
+  }
+  if (parsed.status === 422) {
+    return {
+      kind: 'validation',
+      message: parsed.message,
+      fieldErrors: parsed.fieldErrors,
+    };
+  }
+  return { kind: 'generic', message: parsed.message };
+}
+
+/**
+ * Indica se o formulário de política deve ser renderizado.
+ *
+ * Em 403 (`forbidden=true`) a UI não deve expor campos editáveis.
+ *
+ * @param opts - Estado da tela.
+ * @returns True somente quando autenticado com permissão aparente e não loading.
+ */
+export function shouldRenderPolicyForm(opts: {
+  forbidden: boolean;
+  loading: boolean;
+}): boolean {
+  return !opts.loading && !opts.forbidden;
+}

@@ -15,6 +15,8 @@ export interface ActivationQuoteBlockProps {
   minimumActivationAmount?: string | number | null;
   /** Mínimo em centavos vindo do backend. */
   minimumActivationCents?: number | null;
+  /** Moeda ISO; não-BRL omite o mínimo na v1. */
+  currency?: string | null;
   /** Estilo do container. */
   style?: StyleProp<ViewStyle>;
   /** Estilo do texto. */
@@ -36,6 +38,7 @@ export const ActivationQuoteBlock: React.FC<ActivationQuoteBlockProps> = ({
   percentualSinal,
   minimumActivationAmount,
   minimumActivationCents,
+  currency,
   style,
   textStyle,
   hideEmptySinal = false,
@@ -48,6 +51,7 @@ export const ActivationQuoteBlock: React.FC<ActivationQuoteBlockProps> = ({
   const minimo = resolveMinimumActivationLabel(
     minimumActivationAmount,
     minimumActivationCents,
+    currency,
   );
 
   if (!showSinal && !minimo) {

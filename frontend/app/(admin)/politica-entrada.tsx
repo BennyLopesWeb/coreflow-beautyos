@@ -21,7 +21,11 @@ import {
   type ActivationPolicyV1,
   type BookingPolicyAdminResponseV1,
 } from '../../src/services/bookingPolicyService';
-import { parseApiError } from '../../src/utils/apiError';
+import {
+  parseApiError,
+  resolvePolicyAdminSaveError,
+  shouldRenderPolicyForm,
+} from '../../src/utils/apiError';
 import { formatCentsToBrl, parseMoneyToCents } from '../../src/utils/money';
 import { showAlert } from '../../src/utils/alert';
 
@@ -255,26 +259,27 @@ export default function PoliticaEntradaScreen() {
       setReason('');
       showAlert('Sucesso', 'Política de entrada atualizada.');
     } catch (e: unknown) {
-      const parsed = parseApiError(e, 'Não foi possível salvar');
-      if (parsed.status === 403) {
+      const action = resolvePolicyAdminSaveError(e);
+      if (action.kind === 'forbidden') {
         setForbidden(true);
-        showAlert('Sem permissão', parsed.message);
+        showAlert('Sem permissão', action.message);
         return;
       }
-      if (parsed.status === 409) {
+      if (action.kind === 'conflict_reload') {
+        // Não sobrescreve o remoto com o draft local: GET redefine o form.
         setConflictNotice(
           'A política foi alterada por outro administrador. Recarregamos a versão atual. Revise os valores, informe um novo motivo e salve novamente.',
         );
         await load({ clearReason: true });
-        showAlert('Conflito de versão', parsed.message);
+        showAlert('Conflito de versão', action.message);
         return;
       }
-      if (parsed.status === 422) {
-        setFieldErrors(parsed.fieldErrors);
-        showAlert('Validação', parsed.message);
+      if (action.kind === 'validation') {
+        setFieldErrors(action.fieldErrors);
+        showAlert('Validação', action.message);
         return;
       }
-      showAlert('Erro', parsed.message);
+      showAlert('Erro', action.message);
     } finally {
       setSaving(false);
     }
@@ -289,7 +294,7 @@ export default function PoliticaEntradaScreen() {
     );
   }
 
-  if (forbidden) {
+  if (!shouldRenderPolicyForm({ forbidden, loading: false })) {
     return (
       <View style={styles.center}>
         <Text style={styles.errorTitle}>Sem permissão</Text>

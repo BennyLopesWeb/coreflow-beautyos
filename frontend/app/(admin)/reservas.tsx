@@ -269,6 +269,7 @@ export default function AdminReservasScreen() {
               percentualSinal={item.percentual_sinal || undefined}
               minimumActivationAmount={item.minimum_activation_amount}
               minimumActivationCents={item.minimum_activation_cents}
+              currency={item.currency}
               style={{ marginBottom: 6 }}
             />
             {item.sinal_pago ? (
