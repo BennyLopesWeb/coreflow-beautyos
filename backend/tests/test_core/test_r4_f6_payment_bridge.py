@@ -17,8 +17,9 @@ Prova que:
 - ``Payment`` aceita ``booking_id`` sem ``agendamento_id`` (bridge).
 - ``PaymentReservationService.criar_pendente`` recusa quando nem
   ``agendamento_id`` nem ``booking_id`` sao informados.
-- ``confirmar_deposito_por_booking`` cria/atualiza um ``Payment`` ponte
-  vinculado por ``booking_id``.
+- ``confirmar_deposito_por_booking`` confirma o sinal quando o ledger
+  (``Payment``/``CorePayment``) já cobre o mínimo; não cria ``Payment``
+  a partir da cotação (testes semeiam via ``seed_ledger_deposit``).
 - ``DisponibilidadeService`` marca slot ocupado por ``CoreBooking`` sem
   nenhuma linha em ``agendamentos`` (banco completamente vazio de
   legado).
