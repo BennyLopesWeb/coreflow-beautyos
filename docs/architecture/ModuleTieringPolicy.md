@@ -45,7 +45,7 @@
 | `asset` | **CRUD** | 1 | DONE (P3) |
 | `invoice` | **CRUD** | 1 | DONE (P4) |
 | `order` | **CRUD** | 1 | DONE (P5) |
-| `waitlist` | **CRUD** | 2 | TODO (P7) |
+| `waitlist` | **CRUD** | 2 | DONE (P7) |
 | `payments` (read) | **CRUD** | 2 | TODO (P8) — **sensitive** |
 
 ### OPS — Support Operations — **Wave 3**

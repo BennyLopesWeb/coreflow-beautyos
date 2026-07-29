@@ -18,13 +18,13 @@ from app.core.exceptions import (
 from app.db.session import get_db
 from app.modules.identity.api.deps import get_tenant_context, get_current_admin_user
 from app.models.user import User
-from app.modules.waitlist.application.commands.promote_waitlist import (
+from app.modules.waitlist.promote_waitlist import (
     PromoteWaitlistCommand,
     PromoteWaitlistHandler,
 )
-from app.modules.waitlist.application.legacy_sync_service import WaitlistLegacySyncService
-from app.modules.waitlist.application.waitlist_query_service import WaitlistQueryService
-from app.modules.waitlist.domain.models import CoreWaitlistStatus
+from app.modules.waitlist.legacy_sync import WaitlistLegacySyncService
+from app.modules.waitlist.waitlist_service import WaitlistService
+from app.modules.waitlist.models import CoreWaitlistStatus
 from app.schemas.coreflow_v1 import (
     WaitlistPromoteRequest,
     WaitlistPromoteResponse,
@@ -54,7 +54,7 @@ def listar_waitlist(
         Lista de core_waitlist sincronizados da fila legada.
     """
     WaitlistLegacySyncService(db).sync_all()
-    return WaitlistQueryService(db).list_waitlist(
+    return WaitlistService(db).list_waitlist(
         tenant.company_id,
         preferred_date=preferred_date,
         status=status,
@@ -78,7 +78,7 @@ def obter_waitlist_item(
         WaitlistResponse.
     """
     try:
-        return WaitlistQueryService(db).get_waitlist_item(
+        return WaitlistService(db).get_waitlist_item(
             waitlist_id, tenant.company_id
         )
     except NotFoundError as exc:

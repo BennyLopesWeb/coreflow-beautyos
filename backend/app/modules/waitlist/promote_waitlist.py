@@ -14,7 +14,7 @@ from app.modules.booking.application.commands.create_booking import (
     CreateBookingCommand,
     CreateBookingHandler,
 )
-from app.modules.waitlist.domain.models import CoreWaitlist, CoreWaitlistStatus
+from app.modules.waitlist.models import CoreWaitlist, CoreWaitlistStatus
 
 
 @dataclass(frozen=True)

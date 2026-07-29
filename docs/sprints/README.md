@@ -37,4 +37,4 @@ Sprints de entrega técnica (CF-0 → CF-25 concluídos).
 
 Template: [templates/SprintTemplate.md](../templates/SprintTemplate.md)
 
-Próximos: Migration Ledger P7 `waitlist`; rotacionar access key AWS; limpeza schemas mortos
+Próximos: Migration Ledger P8 `payments` (read, sensível); rotacionar access key AWS; limpeza schemas mortos
