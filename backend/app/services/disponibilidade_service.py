@@ -206,7 +206,10 @@ class DisponibilidadeService:
 
         Args:
             booking_ids: IDs de ``core_bookings``.
-            company_id: Tenant opcional para filtrar ``CorePayment``.
+            company_id: Tenant efetivo. O lote de expiração **deve** passar
+                o ``company_id`` do booking (nunca omitir): sem tenant,
+                ``CorePayment`` de outra empresa com o mesmo ``booking_id``
+                poderia ser contabilizado.
 
         Returns:
             Mapa ``booking_id → {paid_cents, has_processing, has_paid_rows}``.
@@ -219,6 +222,59 @@ class DisponibilidadeService:
                 self.db, booking_ids, company_id=company_id
             )
         )
+
+    def _load_expiration_payment_snapshots_by_tenant(
+        self, bookings: List[Any]
+    ) -> Dict[int, Dict[str, Any]]:
+        """
+        Pré-carrega snapshots financeiros do lote agrupados por ``company_id``.
+
+        FIX-EXPIRATION-TENANT-ISOLATION-01: cada grupo consulta o ledger com
+        o tenant do booking, evitando ``CorePayment`` cross-tenant. Falha de
+        consulta em um tenant marca só os bookings desse tenant como
+        protegidos (fail-closed), sem derrubar o lote inteiro.
+
+        Args:
+            bookings: Candidatos ``CoreBooking`` do lote.
+
+        Returns:
+            Mapa ``booking_id →`` dict de snapshot (ou fail-closed sintético).
+        """
+        ids_by_company: Dict[int, List[int]] = {}
+        for booking in bookings:
+            booking_id = getattr(booking, "id", None)
+            company_id = getattr(booking, "company_id", None)
+            if booking_id is None:
+                continue
+            if company_id is None or not isinstance(company_id, int) or company_id <= 0:
+                continue
+            ids_by_company.setdefault(int(company_id), []).append(int(booking_id))
+
+        payment_snapshots: Dict[int, Dict[str, Any]] = {}
+        for company_id, booking_ids in ids_by_company.items():
+            try:
+                payment_snapshots.update(
+                    self._load_payment_activation_snapshots(
+                        booking_ids, company_id=company_id
+                    )
+                )
+            except Exception:
+                logger.warning(
+                    "Falha ao pré-carregar snapshots financeiros "
+                    "company_id=%s no lote de expiração — bookings do "
+                    "tenant tratados como protegidos (fail-closed)",
+                    company_id,
+                    exc_info=True,
+                )
+                for bid in booking_ids:
+                    payment_snapshots[bid] = {
+                        "paid_cents": 0,
+                        "has_processing": True,
+                        "has_paid_rows": False,
+                        "has_source_divergence": False,
+                        "is_reconciled": True,
+                    }
+        return payment_snapshots
 
     def _has_minimum_activation_payment(
         self,
@@ -253,6 +309,14 @@ class DisponibilidadeService:
                 )
                 return True
 
+            if company_id is None or not isinstance(company_id, int) or company_id <= 0:
+                logger.warning(
+                    "Expiração: booking_id=%s sem company_id válido — "
+                    "fail-closed (tenant indeterminado)",
+                    booking_id,
+                )
+                return True
+
             total_cents = self._money_to_cents(getattr(booking, "price_total", None))
             if total_cents is None or total_cents <= 0:
                 logger.warning(
@@ -266,7 +330,7 @@ class DisponibilidadeService:
             if payment_snapshots is None:
                 payment_snapshots = self._load_payment_activation_snapshots(
                     [int(booking_id)],
-                    company_id=int(company_id) if company_id is not None else None,
+                    company_id=int(company_id),
                 )
             snap = payment_snapshots.get(
                 int(booking_id),
@@ -392,26 +456,11 @@ class DisponibilidadeService:
             .all()
         )
 
-        booking_ids = [
-            int(b.id) for b in pendentes if getattr(b, "id", None) is not None
-        ]
-        try:
-            payment_snapshots = self._load_payment_activation_snapshots(booking_ids)
-        except Exception:
-            logger.warning(
-                "Falha ao pré-carregar snapshots financeiros do lote de "
-                "expiração — todos os candidatos tratados como protegidos "
-                "(fail-closed)",
-                exc_info=True,
-            )
-            payment_snapshots = {
-                bid: {
-                    "paid_cents": 0,
-                    "has_processing": True,
-                    "has_paid_rows": False,
-                }
-                for bid in booking_ids
-            }
+        # FIX-EXPIRATION-TENANT-ISOLATION-01: pré-carga por tenant — nunca
+        # consultar CorePayment sem company_id no lote multi-empresa.
+        payment_snapshots = self._load_expiration_payment_snapshots_by_tenant(
+            pendentes
+        )
 
         handler = ExpireBookingHandler(self.db)
         resolver = BookingPolicyResolver(self.db)
