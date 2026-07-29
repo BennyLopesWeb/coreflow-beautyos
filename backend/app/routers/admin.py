@@ -214,29 +214,74 @@ def atualizar_status_agenda(
     agendamento_id: int,
     body: AtualizarStatusAgendamentoRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
+    tenant: TenantContext = Depends(get_tenant_context),
+    identity: IdentityApplicationService = Depends(get_identity_service),
+    credentials: HTTPAuthorizationCredentials = Depends(_require_bearer_credentials),
 ):
     """
     Atualiza o status de um agendamento (confirmar, cancelar, concluir).
+
+    FIX-02b-write: exige Bearer (401), tenant efetivo (403 sem fallback
+    ``salao-demo``), filtra booking por ``id + company_id``; cross-tenant /
+    inexistente → 404; transição inválida → 400; reabertura de
+    cancelado/expirado → 409. Consome ``BookingPolicyResolver``.
     """
+    from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+
+    current_user = _resolve_admin_for_payment_mutation(identity, credentials, tenant)
+    if not _has_effective_company(identity, current_user, credentials):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant não associado ao usuário",
+        )
+
     service = AdminService(db)
-    booking = service.atualizar_status_agendamento(agendamento_id, body.status)
-    items = service.listar_agendamentos(data_ref=booking.scheduled_at.date())
-    for item in items:
-        if item.id == agendamento_id:
-            return item
-    if items:
-        return items[0]
+    try:
+        booking = service.atualizar_status_agendamento(
+            agendamento_id,
+            body.status,
+            company_id=tenant.company_id,
+        )
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agendamento não encontrado",
+        )
+    except ConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail,
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.detail,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+
+    # Preferir projeção da listagem quando o booking ainda não foi soft-deleted.
+    if booking.deleted_at is None:
+        items = service.listar_agendamentos(data_ref=booking.scheduled_at.date())
+        for item in items:
+            if item.id == agendamento_id:
+                return item
 
     from app.modules.catalog.domain.models import CoreCatalog
+    from app.models.cliente import Cliente
+
     catalog = db.query(CoreCatalog).filter(CoreCatalog.id == booking.catalog_id).first()
+    cliente = db.query(Cliente).filter(Cliente.id == booking.customer_id).first()
     return AgendamentoAdminItem(
         id=booking.id,
         cliente_id=booking.customer_id,
-        cliente_nome="",
-        cliente_telefone="",
+        cliente_nome=cliente.nome if cliente else "",
+        cliente_telefone=cliente.telefone if cliente else "",
         tranca_id=(catalog.legacy_tranca_id if catalog else None) or booking.catalog_id,
-        tranca_nome="",
+        tranca_nome=catalog.name if catalog else "",
         data_hora=booking.scheduled_at,
         status=booking.status,
         sinal_pago=booking.deposit_paid,
