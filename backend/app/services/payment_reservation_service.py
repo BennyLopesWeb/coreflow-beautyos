@@ -314,50 +314,6 @@ class PaymentReservationService:
         self.db.refresh(row)
         return row
 
-    def _upsert_payment_por_booking(self, booking) -> Optional[Payment]:
-        """
-        Bridge legado R4-F6: cria/atualiza ``Payment`` de depósito.
-
-        Mantido para outros fluxos/compatibilidade. **Não** é chamado por
-        ``confirmar_deposito_por_booking`` (cotação ≠ recebimento).
-
-        Args:
-            booking: ``CoreBooking`` com dados de depósito.
-
-        Returns:
-            Payment persistido, ou ``None`` em erro não fatal.
-        """
-        try:
-            pag = (
-                self.db.query(Payment)
-                .filter(
-                    Payment.booking_id == booking.id,
-                    Payment.tipo.in_([PaymentType.DEPOSIT, PaymentType.SINAL]),
-                    Payment.deleted_at.is_(None),
-                )
-                .first()
-            )
-            if not pag:
-                pag = Payment(
-                    booking_id=booking.id,
-                    agendamento_id=booking.legacy_agendamento_id,
-                    tipo=PaymentType.DEPOSIT,
-                    valor=booking.deposit_amount,
-                    status=PaymentStatus.PENDING,
-                )
-                self.db.add(pag)
-
-            pag.status = PaymentStatus.PAID
-            pag.paid_at = datetime.utcnow()
-            return pag
-        except Exception:
-            logger.warning(
-                "Falha não fatal ao sincronizar Payment.booking_id=%s (R4-F6 bridge)",
-                booking.id,
-                exc_info=True,
-            )
-            return None
-
     def confirmar_pagamento_final(
         self,
         agendamento_id: int,
