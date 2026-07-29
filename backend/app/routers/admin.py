@@ -240,8 +240,16 @@ def atualizar_status_agenda(
     ``salao-demo``), filtra booking por ``id + company_id``; cross-tenant /
     inexistente → 404; transição inválida → 400; reabertura de
     cancelado/expirado → 409. Consome ``BookingPolicyResolver``.
+
+    FIX-CANCEL-POLICY-02: ``approved → cancelled`` fora da janela configurável
+    → 409 (``CancelPolicyViolationError``); ``pending → cancelled`` sem janela.
     """
-    from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+    from app.core.exceptions import (
+        CancelPolicyViolationError,
+        ConflictError,
+        NotFoundError,
+        ValidationError,
+    )
 
     current_user = _resolve_admin_for_payment_mutation(identity, credentials, tenant)
     if not _has_effective_company(identity, current_user, credentials):
@@ -261,6 +269,11 @@ def atualizar_status_agenda(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agendamento não encontrado",
+        )
+    except CancelPolicyViolationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail,
         )
     except ConflictError as exc:
         raise HTTPException(
