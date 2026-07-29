@@ -6,7 +6,8 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native
 import { TrancaImagem } from '../types';
 import { TrancaThumbnail } from './TrancaThumbnail';
 import { ButtonPrimary } from './ButtonPrimary';
-import { formatarMoeda, formatarDuracao, labelPercentualSinal } from '../utils/trancaFormat';
+import { formatarMoeda, formatarDuracao } from '../utils/trancaFormat';
+import { ActivationQuoteBlock } from './ActivationQuoteBlock';
 
 interface CardModeloTrancaProps {
   /** Dados do modelo (foto com preço individual). */
@@ -53,11 +54,14 @@ export const CardModeloTranca: React.FC<CardModeloTrancaProps> = ({
         {modelo.duracao_minutos > 0 && (
           <Text style={styles.duracao}>{formatarDuracao(modelo.duracao_minutos)}</Text>
         )}
-        {parseFloat(modelo.valor_sinal) > 0 && (
-          <Text style={styles.sinal}>
-            Sinal {labelPercentualSinal(modelo.percentual_sinal)}: {formatarMoeda(modelo.valor_sinal)}
-          </Text>
-        )}
+        <ActivationQuoteBlock
+          sinalSugerido={modelo.valor_sinal}
+          percentualSinal={modelo.percentual_sinal}
+          minimumActivationAmount={modelo.minimum_activation_amount}
+          minimumActivationCents={modelo.minimum_activation_cents}
+          hideEmptySinal
+          textStyle={styles.sinal}
+        />
       </View>
     </>
   );

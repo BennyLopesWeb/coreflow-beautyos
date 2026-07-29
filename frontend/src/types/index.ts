@@ -48,10 +48,16 @@ export interface TrancaImagem {
   ativo?: boolean;
   label: string;
   valor_total: string;
+  /** Cotação comercial do sinal — não é valor pago. */
   valor_sinal: string;
   valor_restante?: string;
   duracao_minutos: number;
   percentual_sinal?: string;
+  /** Mínimo de ativação em centavos (quando o backend enviar). */
+  minimum_activation_cents?: number | null;
+  /** Mínimo de ativação em reais (quando o backend enviar). */
+  minimum_activation_amount?: string | null;
+  currency?: string;
 }
 
 export interface TrancaImagemUpdate {
@@ -212,10 +218,14 @@ export interface BookingV1 {
   status: string;
   payment_status: string;
   price_total: string;
+  /** Cotação comercial do sinal — não é valor pago. */
   deposit_amount: string;
   deposit_paid: boolean;
   remaining_amount?: string;
   notes?: string | null;
+  currency?: string;
+  minimum_activation_cents?: number | null;
+  minimum_activation_amount?: string | null;
 }
 
 // Pagamento

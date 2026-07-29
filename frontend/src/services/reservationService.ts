@@ -18,6 +18,7 @@ export interface Reservation {
   horario_aprovado?: string;
   valor_total: string;
   percentual_sinal: string;
+  /** Cotação comercial do sinal — não é valor pago. */
   valor_sinal: string;
   valor_restante: string;
   sinal_pago: boolean;
@@ -32,6 +33,9 @@ export interface Reservation {
   tranca_nome?: string;
   modelo_nome?: string;
   created_at: string;
+  currency?: string;
+  minimum_activation_cents?: number | null;
+  minimum_activation_amount?: string | null;
 }
 
 export interface ReservationCreate {
@@ -115,6 +119,9 @@ interface BookingListItem {
   catalog_name?: string | null;
   offering_name?: string | null;
   created_at: string;
+  currency?: string;
+  minimum_activation_cents?: number | null;
+  minimum_activation_amount?: string | number | null;
 }
 
 /** Status considerados “pendentes” pela UI admin (reservas.tsx / operacional). */
@@ -153,6 +160,12 @@ function mapBookingToReservation(booking: BookingListItem): Reservation {
     tranca_nome: booking.catalog_name ?? undefined,
     modelo_nome: booking.offering_name ?? undefined,
     created_at: booking.created_at,
+    currency: booking.currency,
+    minimum_activation_cents: booking.minimum_activation_cents ?? null,
+    minimum_activation_amount:
+      booking.minimum_activation_amount != null
+        ? String(booking.minimum_activation_amount)
+        : null,
   };
 }
 

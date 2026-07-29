@@ -9,6 +9,7 @@
     "web": "expo start --web",
     "build:web": "expo export --platform web",
     "typecheck": "tsc --noEmit",
+    "test:deposit-policy": "node scripts/verify-deposit-policy.mjs",
     "eas:build:preview": "eas build --profile preview --platform all",
     "eas:build:production": "eas build --profile production --platform all"
   },

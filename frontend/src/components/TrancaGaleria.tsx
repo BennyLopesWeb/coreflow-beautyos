@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { TrancaImagem } from '../types';
 import { TrancaThumbnail } from './TrancaThumbnail';
-import { formatarMoeda, formatarDuracao, labelPercentualSinal } from '../utils/trancaFormat';
+import { formatarMoeda, formatarDuracao } from '../utils/trancaFormat';
+import { ActivationQuoteBlock } from './ActivationQuoteBlock';
 
 interface TrancaGaleriaProps {
   /** Fotos com ID (preferencial — usado na reserva). */
@@ -143,9 +144,13 @@ export const TrancaGaleria: React.FC<TrancaGaleriaProps> = ({
       {selectable && fotoAtual.valor_total && (
         <View style={styles.precoBox}>
           <Text style={styles.precoTotal}>{formatarMoeda(fotoAtual.valor_total)}</Text>
-          <Text style={styles.precoSinal}>
-            Sinal {labelPercentualSinal()}: {formatarMoeda(fotoAtual.valor_sinal)}
-          </Text>
+          <ActivationQuoteBlock
+            sinalSugerido={fotoAtual.valor_sinal}
+            percentualSinal={fotoAtual.percentual_sinal}
+            minimumActivationAmount={fotoAtual.minimum_activation_amount}
+            minimumActivationCents={fotoAtual.minimum_activation_cents}
+            textStyle={styles.precoSinal}
+          />
           {fotoAtual.duracao_minutos > 0 && (
             <Text style={styles.precoDuracao}>
               {formatarDuracao(fotoAtual.duracao_minutos)}

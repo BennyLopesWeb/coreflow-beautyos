@@ -18,7 +18,8 @@ import { telefoneValido, telefonesIguais } from '../../../src/utils/telefone';
 import { obterOuCriarCliente } from '../../../src/utils/clienteResolucao';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import { formatLocalDateTime } from '../../../src/utils/datetime';
-import { formatarMoeda, labelPercentualSinal } from '../../../src/utils/trancaFormat';
+import { formatarMoeda } from '../../../src/utils/trancaFormat';
+import { ActivationQuoteBlock } from '../../../src/components/ActivationQuoteBlock';
 
 export default function AgendarScreen() {
   const { id, imagemId } = useLocalSearchParams<{ id: string; imagemId?: string }>();
@@ -438,10 +439,14 @@ export default function AgendarScreen() {
             </Text>
           </View>
           <View style={styles.resumoItem}>
-            <Text style={styles.resumoLabel}>Sinal ({labelPercentualSinal()}):</Text>
-            <Text style={[styles.resumoValue, styles.sinal]}>
-              {formatarMoeda(valorSinal)}
-            </Text>
+            <View style={{ flex: 1 }}>
+              <ActivationQuoteBlock
+                sinalSugerido={valorSinal}
+                percentualSinal={fotoSelecionada.percentual_sinal}
+                minimumActivationAmount={fotoSelecionada.minimum_activation_amount}
+                minimumActivationCents={fotoSelecionada.minimum_activation_cents}
+              />
+            </View>
           </View>
           <View style={styles.resumoItem}>
             <Text style={styles.resumoLabel}>Restante (no atendimento):</Text>
@@ -455,8 +460,9 @@ export default function AgendarScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Comprovante de depósito</Text>
           <Text style={styles.sectionDesc}>
-            Faça o depósito do sinal ({formatarMoeda(valorSinal)}) e anexe o comprovante
-            para agilizar a confirmação da reserva.
+            Faça o depósito do sinal sugerido ({formatarMoeda(valorSinal)}) e anexe o
+            comprovante. A ativação da reserva usa o mínimo definido pelo salão
+            (calculado no servidor), não apenas o valor do sinal sugerido.
           </Text>
           <ComprovantePicker value={comprovante} onChange={setComprovante} />
         </View>

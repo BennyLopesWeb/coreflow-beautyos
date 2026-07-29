@@ -9,12 +9,12 @@ import { TrancaThumbnail } from '../../../../../src/components/TrancaThumbnail';
 import {
   formatarDuracao,
   formatarMoeda,
-  labelPercentualSinal,
 } from '../../../../../src/utils/trancaFormat';
 import { irParaAgendar } from '../../../../../src/utils/navigation';
+import { ActivationQuoteBlock } from '../../../../../src/components/ActivationQuoteBlock';
 
 /**
- * Detalhes do modelo selecionado: preço total, sinal (30%) e saldo restante.
+ * Detalhes do modelo: preço total, sinal sugerido e mínimo de ativação (se vier da API).
  */
 export default function DetalheModeloScreen() {
   const { id, imagemId } = useLocalSearchParams<{ id: string; imagemId: string }>();
@@ -115,10 +115,15 @@ export default function DetalheModeloScreen() {
         </View>
         <View style={styles.divider} />
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Sinal ({labelPercentualSinal()})</Text>
-          <Text style={[styles.detailValue, styles.sinal]}>
-            {formatarMoeda(modelo.valor_sinal)}
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.detailLabel}>Entrada</Text>
+            <ActivationQuoteBlock
+              sinalSugerido={modelo.valor_sinal}
+              percentualSinal={modelo.percentual_sinal}
+              minimumActivationAmount={modelo.minimum_activation_amount}
+              minimumActivationCents={modelo.minimum_activation_cents}
+            />
+          </View>
         </View>
         <View style={styles.divider} />
         <View style={styles.detailRow}>
@@ -128,8 +133,9 @@ export default function DetalheModeloScreen() {
       </View>
 
       <Text style={styles.nota}>
-        A reserva será confirmada após o pagamento do sinal de {labelPercentualSinal()}.
-        O saldo restante é pago presencialmente.
+        O sinal sugerido é uma cotação comercial. A ativação da reserva depende do
+        mínimo financeiro calculado pelo servidor. O saldo restante é pago
+        presencialmente.
       </Text>
 
       <ButtonPrimary

@@ -19,8 +19,10 @@ import {
 import { paymentReservationService } from '../../src/services/queueService';
 import { useAdminOperacionalContext } from '../../src/contexts/AdminOperacionalContext';
 import { Loader } from '../../src/components/Loader';
-import { getApiErrorMessage } from '../../src/utils/apiError';
+import { getApiErrorMessage, parseApiError } from '../../src/utils/apiError';
+import { formatCentsToBrl } from '../../src/utils/money';
 import { showAlert } from '../../src/utils/alert';
+import { ActivationQuoteBlock } from '../../src/components/ActivationQuoteBlock';
 
 const STATUS_LABEL: Record<string, string> = {
   pending_payment: 'Aguardando pagamento',
@@ -64,10 +66,10 @@ function formatValoresReserva(item: Reservation): string {
   const totalTxt = Number.isFinite(total) ? total.toFixed(2) : '—';
   const sinalTxt = Number.isFinite(sinal) ? sinal.toFixed(2) : '—';
   const pct = Number.parseFloat(item.percentual_sinal);
-  if (!Number.isFinite(pct)) {
-    return `Total R$ ${totalTxt} · Sinal R$ ${sinalTxt}`;
-  }
-  return `Total R$ ${totalTxt} · Sinal R$ ${sinalTxt} (${Math.round(pct * 100)}%)`;
+  const base = !Number.isFinite(pct)
+    ? `Total R$ ${totalTxt} · Sinal sugerido R$ ${sinalTxt}`
+    : `Total R$ ${totalTxt} · Sinal sugerido R$ ${sinalTxt} (${Math.round(pct * 100)}%)`;
+  return base;
 }
 
 /**
@@ -130,7 +132,30 @@ export default function AdminReservasScreen() {
       await load();
       await refreshOperacional();
     } catch (e: unknown) {
-      showAlert('Erro', getApiErrorMessage(e, 'Não foi possível concluir a ação'));
+      const parsed = parseApiError(e, 'Não foi possível concluir a ação');
+      if (parsed.code === 'MINIMUM_DEPOSIT_NOT_MET') {
+        const minimo =
+          parsed.minimum_activation_cents != null
+            ? formatCentsToBrl(parsed.minimum_activation_cents)
+            : null;
+        showAlert(
+          'Entrada abaixo do mínimo',
+          minimo
+            ? `${parsed.message}\n\nMínimo para ativar: ${minimo}`
+            : parsed.message,
+        );
+        return;
+      }
+      if (
+        /processamento|processing|divergênc/i.test(parsed.message)
+      ) {
+        showAlert(
+          'Pagamento em análise',
+          `${parsed.message}\n\nAguarde a conciliação. O app não força a ativação.`,
+        );
+        return;
+      }
+      showAlert('Erro', parsed.message);
     }
   };
 
@@ -239,13 +264,27 @@ export default function AdminReservasScreen() {
               {formatValoresReserva(item)}
             </Text>
             <Text style={styles.status}>{STATUS_LABEL[item.status] ?? item.status}</Text>
+            <ActivationQuoteBlock
+              sinalSugerido={item.valor_sinal}
+              percentualSinal={item.percentual_sinal || undefined}
+              minimumActivationAmount={item.minimum_activation_amount}
+              minimumActivationCents={item.minimum_activation_cents}
+              style={{ marginBottom: 6 }}
+            />
             {item.sinal_pago ? (
-              <Text style={styles.pagoOk}>Sinal pago — aguardando sua aprovação</Text>
+              <Text style={styles.pagoOk}>
+                Depósito registrado como pago — aguardando sua aprovação
+              </Text>
             ) : item.comprovante_url ? (
               <Text style={styles.comprovanteHint}>Comprovante anexado — confirme o sinal</Text>
             ) : (
               <Text style={styles.aguardandoPag}>Aguardando pagamento do sinal</Text>
             )}
+            {/process/i.test(item.status_pagamento || '') ? (
+              <Text style={styles.comprovanteHint}>
+                Pagamento em processamento — ativação só após conciliação no servidor.
+              </Text>
+            ) : null}
 
             {item.comprovante_url ? (
               <TouchableOpacity onPress={() => Linking.openURL(item.comprovante_url!)}>

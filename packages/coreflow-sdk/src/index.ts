@@ -4,9 +4,13 @@
 export { CoreFlowClient } from './client';
 export type { CoreFlowHttpClient } from './client';
 export type {
+  ActivationModeV1,
+  ActivationPolicyV1,
   AvailabilityQuery,
   AvailabilitySlot,
   BookingCreateV1,
+  BookingPolicyAdminResponseV1,
+  BookingPolicyOverrideRequestV1,
   BookingV1,
   CatalogV1,
   MarketplaceListingV1,
