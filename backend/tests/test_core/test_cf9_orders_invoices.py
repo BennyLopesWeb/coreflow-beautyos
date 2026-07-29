@@ -119,7 +119,9 @@ def test_v1_orders_and_invoices_list(
         db, default_company.id, cliente_exemplo, synced_catalog
     )
     OrderLegacySyncService(db).sync_one(booking_id)
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking_id)
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking_id, company_id=default_company.id
+    )
 
     orders_resp = client.get("/v1/orders", headers=admin_headers)
     assert orders_resp.status_code == 200

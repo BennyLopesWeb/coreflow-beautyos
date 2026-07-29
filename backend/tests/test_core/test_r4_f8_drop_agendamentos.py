@@ -153,7 +153,9 @@ def test_confirmar_deposito_por_booking_continua_funcionando(
     )
     booking_id = result.booking.id
 
-    atualizado = PaymentReservationService(db).confirmar_deposito_por_booking(booking_id)
+    atualizado = PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking_id, company_id=default_company.id
+    )
     assert atualizado.deposit_paid is True
 
     pag = db.query(Payment).filter(Payment.booking_id == booking_id).first()
@@ -182,7 +184,9 @@ def test_v1_payments_por_booking_id_continua_funcionando(
     assert response.status_code == 201, response.text
     booking_id = response.json()["id"]
 
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking_id)
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking_id, company_id=cliente_exemplo.company_id
+    )
 
     payments_resp = client.get(
         "/v1/payments",

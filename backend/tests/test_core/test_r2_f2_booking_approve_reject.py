@@ -124,7 +124,15 @@ def _create_booking_with_deposit(client, db, synced_catalog, cliente_exemplo, bo
     booking = _create_booking(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead
     )
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
+    from app.modules.booking.domain.models import CoreBooking
+    company_id = (
+        db.query(CoreBooking.company_id)
+        .filter(CoreBooking.id == booking["id"])
+        .scalar()
+    )
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking["id"], company_id=company_id
+    )
     return booking
 
 
@@ -256,7 +264,15 @@ def test_p08_deposit_confirmed_enables_approve_core_only_path(
     )
     assert booking["legacy_agendamento_id"] is None
 
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
+    from app.modules.booking.domain.models import CoreBooking
+    company_id = (
+        db.query(CoreBooking.company_id)
+        .filter(CoreBooking.id == booking["id"])
+        .scalar()
+    )
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking["id"], company_id=company_id
+    )
 
     approve = client.post(
         f"/v1/bookings/{booking['id']}/approve",

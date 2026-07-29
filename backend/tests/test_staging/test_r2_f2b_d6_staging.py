@@ -137,7 +137,15 @@ def _approve_booking(client, db, admin_headers, booking_id: int) -> None:
     """
     from app.services.payment_reservation_service import PaymentReservationService
 
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking_id)
+    from app.modules.booking.domain.models import CoreBooking
+    company_id = (
+        db.query(CoreBooking.company_id)
+        .filter(CoreBooking.id == booking_id)
+        .scalar()
+    )
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking_id, company_id=company_id
+    )
     resp = client.post(f"/v1/bookings/{booking_id}/approve", headers=admin_headers)
     assert resp.status_code == 200, resp.text
 

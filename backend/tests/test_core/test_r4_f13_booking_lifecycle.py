@@ -132,7 +132,9 @@ def test_complete_and_no_show_api(
     )
     assert create.status_code == 201, create.text
     booking_id = create.json()["id"]
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking_id)
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking_id, company_id=cliente_exemplo.company_id
+    )
     assert (
         client.post(f"/v1/bookings/{booking_id}/approve", headers=admin_headers).status_code
         == 200
@@ -167,7 +169,9 @@ def test_complete_and_no_show_api(
         headers=booking_headers(),
     )
     bid2 = create2.json()["id"]
-    PaymentReservationService(db).confirmar_deposito_por_booking(bid2)
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        bid2, company_id=cliente_exemplo.company_id
+    )
     client.post(f"/v1/bookings/{bid2}/approve", headers=admin_headers)
     ns = client.post(
         f"/v1/bookings/{bid2}/no-show",

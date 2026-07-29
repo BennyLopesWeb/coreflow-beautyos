@@ -2,7 +2,7 @@
 Router administrativo — dashboard, pagamentos, agenda, CRM e agente IA.
 """
 from fastapi import APIRouter, Depends, Query, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from datetime import date
 from typing import List, Optional
@@ -36,6 +36,32 @@ from app.services.agendamento_service import AgendamentoService
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
+_bearer_optional = HTTPBearer(auto_error=False)
+
+
+def _require_bearer_credentials(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_optional),
+) -> HTTPAuthorizationCredentials:
+    """
+    Exige Bearer e responde 401 quando ausente (FIX-04 / padrão FIX-08).
+
+    Args:
+        credentials: Credenciais opcionais do header Authorization.
+
+    Returns:
+        Credenciais Bearer presentes na requisição.
+
+    Raises:
+        HTTPException: 401 se o header Authorization estiver ausente.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return credentials
+
 
 def _has_effective_company(
     identity: IdentityApplicationService,
@@ -60,6 +86,50 @@ def _has_effective_company(
     if payload.get("company_id"):
         return True
     return identity.get_primary_membership(user.id) is not None
+
+
+def _resolve_admin_for_payment_mutation(
+    identity: IdentityApplicationService,
+    credentials: HTTPAuthorizationCredentials,
+    tenant: TenantContext,
+) -> User:
+    """
+    Resolve admin autenticado para mutações financeiras (FIX-04).
+
+    Ordem: 401 (token/usuário) → 403 (não admin) → caller aplica
+    ``_has_effective_company`` (403 sem tenant).
+
+    Args:
+        identity: Serviço Identity.
+        credentials: Bearer já exigido.
+        tenant: Contexto de tenant da requisição.
+
+    Returns:
+        User admin ativo.
+
+    Raises:
+        HTTPException: 401 ou 403 conforme regras acima.
+    """
+    payload = identity.tokens.decode(credentials.credentials)
+    if not payload or payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    current_user = identity.get_user_by_id(int(payload.get("sub")))
+    if not current_user or not current_user.ativo:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuário não autenticado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not tenant.is_admin():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso restrito a administradores da empresa",
+        )
+    return current_user
 
 
 @router.get("/dashboard", response_model=AdminDashboardResponse)
@@ -244,7 +314,9 @@ def confirmar_sinal_admin(
 def confirmar_sinal_admin_booking(
     booking_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
+    tenant: TenantContext = Depends(get_tenant_context),
+    identity: IdentityApplicationService = Depends(get_identity_service),
+    credentials: HTTPAuthorizationCredentials = Depends(_require_bearer_credentials),
 ):
     """
     Admin confirma recebimento do sinal diretamente em ``core_bookings`` (R4-F4).
@@ -255,24 +327,62 @@ def confirmar_sinal_admin_booking(
     diretamente via ``PaymentReservationService.confirmar_deposito_por_booking``
     (mesmo path usado por ``/v1/bookings/{id}/approve``, ADR-028).
 
+    FIX-04: exige Bearer (401), tenant efetivo (403 sem fallback
+    ``salao-demo``) e filtra o booking por ``company_id`` na query;
+    cross-tenant / inexistente → 404; cancelado/estornado → 409;
+    reconfirmação no mesmo tenant → 200 idempotente.
+
     Args:
         booking_id: ID ``core_bookings.id``.
         db: Sessão SQLAlchemy.
+        tenant: Contexto de tenant da requisição.
+        identity: Serviço Identity (membership / JWT).
+        credentials: Bearer token (obrigatório).
 
     Returns:
         Dict com ``id``, ``status`` e ``deposit_paid`` do booking atualizado.
     """
+    from app.core.exceptions import (
+        BusinessRuleError,
+        ConflictError,
+        NotFoundError,
+    )
     from app.services.payment_reservation_service import PaymentReservationService
 
+    current_user = _resolve_admin_for_payment_mutation(identity, credentials, tenant)
+    if not _has_effective_company(identity, current_user, credentials):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant não associado ao usuário",
+        )
+
     try:
-        booking = PaymentReservationService(db).confirmar_deposito_por_booking(booking_id)
+        booking = PaymentReservationService(db).confirmar_deposito_por_booking(
+            booking_id, company_id=tenant.company_id
+        )
         return {
             "id": booking.id,
             "status": booking.status.value,
             "deposit_paid": booking.deposit_paid,
         }
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking não encontrado",
+        )
+    except ConflictError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=e.detail,
+        )
+    except BusinessRuleError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.detail,
+        )
+    except HTTPException:
+        raise
     except Exception as e:
-        from fastapi import HTTPException, status
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
@@ -280,7 +390,9 @@ def confirmar_sinal_admin_booking(
 def confirmar_final_admin_booking(
     booking_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
+    tenant: TenantContext = Depends(get_tenant_context),
+    identity: IdentityApplicationService = Depends(get_identity_service),
+    credentials: HTTPAuthorizationCredentials = Depends(_require_bearer_credentials),
 ):
     """
     Admin confirma pagamento final (remaining) em ``core_bookings`` (R4-F10).
@@ -290,18 +402,38 @@ def confirmar_final_admin_booking(
     ``payment_status=PAID``, cria ``Payment`` FINAL_PAYMENT e registra
     entrada ``Financeiro``.
 
+    FIX-04: exige Bearer (401), tenant efetivo (403 sem fallback
+    ``salao-demo``) e filtra o booking por ``company_id`` na query;
+    cross-tenant / inexistente → 404; cancelado/estornado → 409;
+    reconfirmação no mesmo tenant → 200 idempotente.
+
     Args:
         booking_id: ID ``core_bookings.id``.
         db: Sessão SQLAlchemy.
+        tenant: Contexto de tenant da requisição.
+        identity: Serviço Identity (membership / JWT).
+        credentials: Bearer token (obrigatório).
 
     Returns:
         Dict com ``id``, ``status``, ``payment_status`` e ``deposit_paid``.
     """
+    from app.core.exceptions import (
+        BusinessRuleError,
+        ConflictError,
+        NotFoundError,
+    )
     from app.services.payment_reservation_service import PaymentReservationService
+
+    current_user = _resolve_admin_for_payment_mutation(identity, credentials, tenant)
+    if not _has_effective_company(identity, current_user, credentials):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant não associado ao usuário",
+        )
 
     try:
         booking = PaymentReservationService(db).confirmar_pagamento_final_por_booking(
-            booking_id
+            booking_id, company_id=tenant.company_id
         )
         pay_val = (
             booking.payment_status.value
@@ -314,8 +446,24 @@ def confirmar_final_admin_booking(
             "payment_status": pay_val,
             "deposit_paid": booking.deposit_paid,
         }
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking não encontrado",
+        )
+    except ConflictError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=e.detail,
+        )
+    except BusinessRuleError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.detail,
+        )
+    except HTTPException:
+        raise
     except Exception as e:
-        from fastapi import HTTPException, status
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 

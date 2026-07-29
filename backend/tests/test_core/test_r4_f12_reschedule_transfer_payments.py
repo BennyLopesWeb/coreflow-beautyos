@@ -98,7 +98,9 @@ def test_reschedule_transfere_payment_e_core_payment(
     assert create.status_code == 201, create.text
     old_id = create.json()["id"]
 
-    PaymentReservationService(db).confirmar_deposito_por_booking(old_id)
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        old_id, company_id=cliente_exemplo.company_id
+    )
     PaymentLegacySyncService(db).sync_all()
 
     pag_antes = db.query(Payment).filter(Payment.booking_id == old_id).first()

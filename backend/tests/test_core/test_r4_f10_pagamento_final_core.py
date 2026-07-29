@@ -94,7 +94,9 @@ def test_confirmar_final_exige_deposit_pago(
         db, default_company, cliente_exemplo, synced_catalog, deposit_paid=False
     )
     with pytest.raises(Exception) as exc:
-        PaymentReservationService(db).confirmar_pagamento_final_por_booking(booking.id)
+        PaymentReservationService(db).confirmar_pagamento_final_por_booking(
+            booking.id, company_id=default_company.id
+        )
     assert "sinal" in str(exc.value).lower() or "deposit" in str(exc.value).lower()
 
 
@@ -105,7 +107,7 @@ def test_confirmar_final_por_booking_marca_paid_e_financeiro(
     booking = _booking(db, default_company, cliente_exemplo, synced_catalog)
 
     atualizado = PaymentReservationService(db).confirmar_pagamento_final_por_booking(
-        booking.id
+        booking.id, company_id=default_company.id
     )
     assert atualizado.payment_status == StatusPagamento.PAID
 
@@ -136,8 +138,12 @@ def test_reconfirmar_final_nao_duplica_financeiro(
     """Segunda confirmação de final não cria outro movimento Financeiro."""
     booking = _booking(db, default_company, cliente_exemplo, synced_catalog)
     svc = PaymentReservationService(db)
-    svc.confirmar_pagamento_final_por_booking(booking.id)
-    svc.confirmar_pagamento_final_por_booking(booking.id)
+    svc.confirmar_pagamento_final_por_booking(
+        booking.id, company_id=default_company.id
+    )
+    svc.confirmar_pagamento_final_por_booking(
+        booking.id, company_id=default_company.id
+    )
     count = (
         db.query(Financeiro)
         .filter(Financeiro.descricao == f"Pagamento final - Booking #{booking.id}")

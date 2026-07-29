@@ -62,7 +62,9 @@ def test_v1_approve_booking(
     booking = create_resp.json()
     assert booking["legacy_agendamento_id"] is None
 
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking["id"], company_id=cliente_exemplo.company_id
+    )
 
     approve_resp = client.post(
         f"/v1/bookings/{booking['id']}/approve",

@@ -183,7 +183,9 @@ def test_confirmar_deposito_por_booking_cria_payment_ponte(
     db.commit()
     db.refresh(booking)
 
-    atualizado = PaymentReservationService(db).confirmar_deposito_por_booking(booking.id)
+    atualizado = PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking.id, company_id=default_company.id
+    )
 
     assert atualizado.deposit_paid is True
 

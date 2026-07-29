@@ -188,7 +188,9 @@ def test_p07_cancel_approved_core_only_path(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=27
     )
     assert booking["legacy_agendamento_id"] is None
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking["id"], company_id=cliente_exemplo.company_id
+    )
     approve = client.post(
         f"/v1/bookings/{booking['id']}/approve",
         headers=admin_headers,
@@ -213,7 +215,9 @@ def test_p07_cancel_approved_core_path_far_slot(
     booking = _create_booking_api(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=28
     )
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking["id"], company_id=cliente_exemplo.company_id
+    )
     approve = client.post(
         f"/v1/bookings/{booking['id']}/approve",
         headers=admin_headers,
@@ -237,7 +241,9 @@ def test_p07_cancel_approved_within_24h_core_path(
     booking = _create_booking_api(
         client, db, synced_catalog, cliente_exemplo, booking_headers, days_ahead=29
     )
-    PaymentReservationService(db).confirmar_deposito_por_booking(booking["id"])
+    PaymentReservationService(db).confirmar_deposito_por_booking(
+        booking["id"], company_id=cliente_exemplo.company_id
+    )
     approve = client.post(
         f"/v1/bookings/{booking['id']}/approve",
         headers=admin_headers,
