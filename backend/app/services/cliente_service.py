@@ -63,6 +63,37 @@ class ClienteService:
         if not cliente:
             raise NotFoundError("Cliente", str(cliente_id))
         return cliente
+
+    def obter_cliente_do_tenant(self, cliente_id: int, company_id: int) -> Cliente:
+        """
+        Obtém cliente por ID restrito ao tenant (TENANT-FIX-08).
+
+        Aplica ``company_id`` na query SQLAlchemy. Registros com
+        ``company_id IS NULL`` ou de outra empresa não são retornados
+        (tratados como inexistentes pelo caller).
+
+        Args:
+            cliente_id: ID do cliente.
+            company_id: ID da empresa (tenant) ativa.
+
+        Returns:
+            Cliente do tenant.
+
+        Raises:
+            NotFoundError: Se não existir no tenant (inclui outro tenant / órfão).
+        """
+        cliente = (
+            self.db.query(Cliente)
+            .filter(
+                Cliente.id == cliente_id,
+                Cliente.deleted_at.is_(None),
+                Cliente.company_id == company_id,
+            )
+            .first()
+        )
+        if not cliente:
+            raise NotFoundError("Cliente", str(cliente_id))
+        return cliente
     
     def criar_cliente(self, cliente_data: ClienteCreate) -> Cliente:
         """
