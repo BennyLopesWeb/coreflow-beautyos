@@ -9,8 +9,12 @@ from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ValidationError
+from app.core.logging_config import get_logger
 from app.models.payment import Payment, PaymentStatus, PaymentType
 from app.modules.booking.domain.models import CoreBooking
+from app.modules.payments.legacy_sync import PaymentLegacySyncService
+
+logger = get_logger("comprovante_service")
 
 COMPROVANTES_DIR = Path(__file__).resolve().parents[1] / "static" / "comprovantes"
 TIPOS_PERMITIDOS = {
@@ -125,6 +129,19 @@ class ComprovanteService:
             self.db.add(pag)
 
         pag.comprovante_url = url
+        self.db.flush()
+        # SYNC-PAYMENT-COREPAYMENT-01: espelho explícito (PENDING + URL).
+        # Falha do espelho não bloqueia o comprovante — Payment permanece
+        # a fonte primária do snapshot.
+        try:
+            PaymentLegacySyncService(self.db).sync_payment(pag, commit=False)
+        except Exception:
+            logger.warning(
+                "Falha não fatal ao espelhar Payment.id=%s em CorePayment "
+                "(comprovante)",
+                getattr(pag, "id", None),
+                exc_info=True,
+            )
         self.db.commit()
         self.db.refresh(pag)
         return pag
