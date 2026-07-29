@@ -284,7 +284,7 @@ class BookingDomainService:
 
         Args:
             booking: Aggregate carregado.
-            cancel_policy: Port de policy (24h para approved).
+            cancel_policy: Port de policy (janela configurável para approved).
             clock: Relógio UTC.
             reason: Motivo opcional.
 
@@ -292,7 +292,7 @@ class BookingDomainService:
             Aggregate mutado (status cancelled).
 
         Raises:
-            CancelPolicyViolationError: Policy 24h violada (approved).
+            CancelPolicyViolationError: Janela de cancelamento violada (approved).
             InvalidBookingStateTransitionError: Estado terminal ou inválido.
         """
         from app.core.exceptions import CancelPolicyViolationError

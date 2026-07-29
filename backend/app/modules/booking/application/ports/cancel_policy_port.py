@@ -12,7 +12,8 @@ class CancelPolicyPort(Protocol):
     """
     Valida constraints externas antes de cancelar booking approved.
 
-    Aggregate valida lifecycle; port valida policy (24h window).
+    Aggregate valida lifecycle; port valida a janela configurável
+    (``approved_min_hours_before`` via política do tenant).
     """
 
     def may_cancel(self, booking: "Booking", clock: "ClockPort") -> bool:
@@ -20,7 +21,8 @@ class CancelPolicyPort(Protocol):
         Indica se cancelamento é permitido pela policy de negócio.
 
         Args:
-            booking: Aggregate carregado (pending sempre True via domain; approved checa 24h).
+            booking: Aggregate carregado (pending sempre True; approved
+                aplica ``now_utc <= starts_at - N hours``).
             clock: Relógio UTC injetado.
 
         Returns:

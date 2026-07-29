@@ -33,6 +33,7 @@ from app.modules.booking.domain.exceptions import (
 from app.modules.booking.domain.models import CoreBooking
 from app.modules.booking.domain.services.booking_domain_service import BookingDomainService
 from app.modules.booking.domain.value_objects.booking_types import SyncStatus
+from app.modules.booking.domain.policy.resolver import BookingPolicyResolver
 from app.modules.booking.infrastructure.adapters.cancel_policy_adapter import (
     LegacyCancelPolicyAdapter,
 )
@@ -102,19 +103,33 @@ class CancelBookingHandler:
         return self._execute_core_path(command)
 
     def _execute_core_path(self, command: CancelBookingCommand) -> CoreBooking:
-        """Path domain core (R2-F2b) — dual-write TX ADR-025."""
+        """
+        Path domain core (R2-F2b) — dual-write TX ADR-025.
+
+        FIX-CANCEL-POLICY-01: resolve ``approved_min_hours_before`` pelo
+        ``company_id`` do booking via ``BookingPolicyResolver`` e injeta
+        no ``LegacyCancelPolicyAdapter`` (sem hardcode 24h).
+        """
         ArchitectureMetricsStore.get().record_booking_cancel_core_path()
         repository = SqlAlchemyCoreBookingRepository(self.db)
-        cancel_policy = LegacyCancelPolicyAdapter()
         clock = SystemClockAdapter()
         domain_service = BookingDomainService()
 
         booking = repository.get_by_id(command.booking_id, command.company_id)
         if not booking:
             raise NotFoundError("Booking", str(command.booking_id))
+        if not booking.company_id:
+            raise BusinessRuleError(
+                "company_id ausente no booking — cancelamento recusado (fail-closed)"
+            )
         if command.expected_version is not None and booking.version != command.expected_version:
             ArchitectureMetricsStore.get().record_booking_version_conflict()
             raise VersionConflictError()
+
+        policy = BookingPolicyResolver(self.db).resolve(booking.company_id)
+        cancel_policy = LegacyCancelPolicyAdapter(
+            approved_min_hours_before=policy.cancellation.approved_min_hours_before
+        )
 
         expected_version = booking.version
 
