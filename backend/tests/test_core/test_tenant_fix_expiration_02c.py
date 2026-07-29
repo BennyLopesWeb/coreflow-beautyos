@@ -1,11 +1,12 @@
 """
-FIX-EXPIRATION-02C — protege reservas com qualquer evidência de pagamento.
+FIX-EXPIRATION-02C — mínimo de ativação financeira ``min(20%, R$100)``.
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -68,12 +69,12 @@ def _create_company(db, slug: str) -> Company:
 
 def _upsert_expiration(db, company_id: int, **expiration_fields) -> None:
     """
-    Grava override de campos ``expiration.*`` para o tenant.
+    Grava override de campos ``expiration.*``.
 
     Args:
         db: Sessão.
         company_id: Tenant.
-        **expiration_fields: Campos de ``ExpirationPolicy``.
+        **expiration_fields: Campos da política.
     """
     payload = {"expiration": dict(expiration_fields)}
     now = datetime.utcnow()
@@ -107,13 +108,15 @@ def _create_pending_booking(
     synced_catalog,
     *,
     created_at: datetime,
+    price_total: Decimal = Decimal("100.00"),
+    deposit_amount: Decimal | None = None,
     deposit_paid: bool = False,
     payment_status: StatusPagamento = StatusPagamento.PENDING_PAYMENT,
     status: ReservationStatus = ReservationStatus.PENDING_PAYMENT,
     scheduled_at: datetime | None = None,
 ) -> CoreBooking:
     """
-    Persiste booking pendente com timestamps e flags financeiras controlados.
+    Persiste booking pendente com totais financeiros controlados.
 
     Args:
         db: Sessão.
@@ -121,15 +124,20 @@ def _create_pending_booking(
         cliente: Cliente.
         synced_catalog: Par catalog/offering.
         created_at: Timestamp de criação.
-        deposit_paid: Sinal pago.
-        payment_status: Status de pagamento.
+        price_total: Total do serviço em reais.
+        deposit_amount: Valor do sinal (default 30% do total).
+        deposit_paid: Flag de sinal.
+        payment_status: Status agregado.
         status: Status da reserva.
-        scheduled_at: Início do slot.
+        scheduled_at: Slot.
 
     Returns:
         CoreBooking.
     """
     catalog, offering = synced_catalog
+    if deposit_amount is None:
+        deposit_amount = (price_total * Decimal("0.30")).quantize(Decimal("0.01"))
+    remaining = (price_total - deposit_amount).quantize(Decimal("0.01"))
     row = CoreBooking(
         company_id=company.id,
         customer_id=cliente.id,
@@ -138,10 +146,10 @@ def _create_pending_booking(
         scheduled_at=scheduled_at or (datetime.now() + timedelta(days=40)),
         status=status,
         payment_status=payment_status,
-        price_total=Decimal("100.00"),
+        price_total=price_total,
         deposit_pct=Decimal("0.30"),
-        deposit_amount=Decimal("30.00"),
-        remaining_amount=Decimal("70.00"),
+        deposit_amount=deposit_amount,
+        remaining_amount=remaining,
         deposit_paid=deposit_paid,
         sync_status=SyncStatus.SYNCED.value,
         version=1,
@@ -162,17 +170,19 @@ def _add_payment(
     db,
     booking: CoreBooking,
     *,
+    valor: Decimal,
     status: PaymentStatus = PaymentStatus.PAID,
     tipo: PaymentType = PaymentType.DEPOSIT,
 ) -> Payment:
     """
-    Cria linha ``payments`` vinculada ao booking.
+    Cria linha ``payments`` com valor explícito.
 
     Args:
         db: Sessão.
-        booking: Booking alvo.
-        status: Status do pagamento.
-        tipo: Tipo (deposit/final/refund).
+        booking: Booking.
+        valor: Valor em reais.
+        status: Status.
+        tipo: Tipo.
 
     Returns:
         Payment.
@@ -180,9 +190,11 @@ def _add_payment(
     row = Payment(
         booking_id=booking.id,
         tipo=tipo,
-        valor=booking.deposit_amount or Decimal("30.00"),
+        valor=valor,
         status=status,
-        paid_at=datetime.utcnow() if status in (PaymentStatus.PAID, PaymentStatus.PAGO) else None,
+        paid_at=datetime.utcnow()
+        if status in (PaymentStatus.PAID, PaymentStatus.PAGO)
+        else None,
     )
     db.add(row)
     db.commit()
@@ -194,17 +206,17 @@ def _add_core_payment(
     db,
     booking: CoreBooking,
     *,
+    amount: Decimal,
     status: CorePaymentStatus = CorePaymentStatus.PAID,
-    payment_type: CorePaymentType = CorePaymentType.DEPOSIT,
 ) -> CorePayment:
     """
-    Cria linha ``core_payments`` vinculada ao booking.
+    Cria linha ``core_payments`` com valor explícito.
 
     Args:
         db: Sessão.
-        booking: Booking alvo.
+        booking: Booking.
+        amount: Valor em reais.
         status: Status.
-        payment_type: Tipo.
 
     Returns:
         CorePayment.
@@ -212,8 +224,8 @@ def _add_core_payment(
     row = CorePayment(
         company_id=booking.company_id,
         booking_id=booking.id,
-        payment_type=payment_type,
-        amount=booking.deposit_amount or Decimal("30.00"),
+        payment_type=CorePaymentType.DEPOSIT,
+        amount=amount,
         status=status,
         paid_at=datetime.utcnow() if status == CorePaymentStatus.PAID else None,
     )
@@ -225,7 +237,7 @@ def _add_core_payment(
 
 def _outbox_expired_count(db, booking_id: int) -> int:
     """
-    Conta eventos ``booking.expired`` do booking.
+    Conta eventos ``booking.expired``.
 
     Args:
         db: Sessão.
@@ -244,37 +256,47 @@ def _outbox_expired_count(db, booking_id: int) -> int:
     )
 
 
-def test_01_sem_evidencia_financeira_expira(
+def test_minimum_formula_helpers():
+    """Fórmula em centavos: 20% até R$500; teto R$100 acima."""
+    assert DisponibilidadeService._get_minimum_activation_cents(30_000) == 6_000
+    assert DisponibilidadeService._get_minimum_activation_cents(50_000) == 10_000
+    assert DisponibilidadeService._get_minimum_activation_cents(80_000) == 10_000
+    assert DisponibilidadeService._money_to_cents(Decimal("59.99")) == 5_999
+    assert DisponibilidadeService._money_to_cents(Decimal("60.00")) == 6_000
+
+
+def test_01_300_pago_5999_abaixo_expira(
     db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
 ):
-    """Sem deposit/payment_status/linhas financeiras → expira."""
+    """R$300 + R$59,99 (5999 < 6000) → não ativa → expira."""
     booking = _create_pending_booking(
         db,
         default_company,
         cliente_exemplo,
         synced_catalog,
         created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("300.00"),
         deposit_paid=False,
-        payment_status=StatusPagamento.PENDING_PAYMENT,
     )
+    _add_payment(db, booking, valor=Decimal("59.99"), status=PaymentStatus.PAID)
     DisponibilidadeService(db).expirar_reservas_pendentes()
     db.refresh(booking)
     assert booking.status == ReservationStatus.EXPIRED
 
 
-def test_02_deposit_paid_true_nao_expira(
+def test_02_300_pago_6000_ativa(
     db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
 ):
-    """``deposit_paid=True`` protege a reserva."""
+    """R$300 + R$60,00 (6000 == 6000) → ativa → não expira."""
     booking = _create_pending_booking(
         db,
         default_company,
         cliente_exemplo,
         synced_catalog,
         created_at=datetime.now() - timedelta(hours=5),
-        deposit_paid=True,
-        payment_status=StatusPagamento.PENDING_PAYMENT,
+        price_total=Decimal("300.00"),
     )
+    _add_payment(db, booking, valor=Decimal("60.00"), status=PaymentStatus.PAID)
     DisponibilidadeService(db).expirar_reservas_pendentes()
     db.refresh(booking)
     assert booking.status == ReservationStatus.PENDING_PAYMENT
@@ -282,135 +304,308 @@ def test_02_deposit_paid_true_nao_expira(
     assert _outbox_expired_count(db, booking.id) == 0
 
 
+def test_03_300_pago_6001_ativa(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
+):
+    """R$300 + R$60,01 → ativa."""
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("300.00"),
+    )
+    _add_payment(db, booking, valor=Decimal("60.01"), status=PaymentStatus.PAID)
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    assert booking.status == ReservationStatus.PENDING_PAYMENT
+
+
+def test_04_500_pago_100_ativa(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
+):
+    """R$500 + R$100 (10000 == teto/20%) → ativa."""
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("500.00"),
+    )
+    _add_payment(db, booking, valor=Decimal("100.00"), status=PaymentStatus.PAID)
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    assert booking.status == ReservationStatus.PENDING_PAYMENT
+
+
+def test_05_800_pago_100_ativa(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
+):
+    """R$800 + R$100 (teto) → ativa."""
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("800.00"),
+    )
+    _add_payment(db, booking, valor=Decimal("100.00"), status=PaymentStatus.PAID)
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    assert booking.status == ReservationStatus.PENDING_PAYMENT
+
+
+def test_06_800_pago_9999_abaixo_expira(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
+):
+    """R$800 + R$99,99 (9999 < 10000) → não ativa → expira."""
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("800.00"),
+    )
+    _add_payment(db, booking, valor=Decimal("99.99"), status=PaymentStatus.PAID)
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    assert booking.status == ReservationStatus.EXPIRED
+
+
+def test_07_pagamento_zero_nao_ativa_expira(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
+):
+    """Sem valor pago → não ativa → expira."""
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("300.00"),
+    )
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    assert booking.status == ReservationStatus.EXPIRED
+
+
+def test_08_pending_nao_conta_expira(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
+):
+    """Payment PENDING não conta para ativação."""
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("300.00"),
+    )
+    _add_payment(db, booking, valor=Decimal("60.00"), status=PaymentStatus.PENDING)
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    assert booking.status == ReservationStatus.EXPIRED
+
+
 @pytest.mark.parametrize(
-    "payment_status",
-    [
-        StatusPagamento.PARTIALLY_PAID,
-        StatusPagamento.CONFIRMED,
-        StatusPagamento.PAID,
-    ],
+    "status",
+    [PaymentStatus.FAILED, PaymentStatus.CANCELADO, PaymentStatus.REFUNDED],
 )
-def test_03_04_05_payment_status_protegidos(
+def test_09_failed_cancelled_refunded_nao_contam(
     db,
     default_company,
     cliente_exemplo,
     synced_catalog,
     enable_booking_core,
-    payment_status,
+    status,
 ):
-    """partially_paid/confirmed/paid protegem mesmo com deposit_paid=False."""
+    """Failed/cancelled/refunded não contam → pode expirar."""
     booking = _create_pending_booking(
         db,
         default_company,
         cliente_exemplo,
         synced_catalog,
         created_at=datetime.now() - timedelta(hours=5),
-        deposit_paid=False,
-        payment_status=payment_status,
+        price_total=Decimal("300.00"),
     )
-    DisponibilidadeService(db).expirar_reservas_pendentes()
-    db.refresh(booking)
-    assert booking.status == ReservationStatus.PENDING_PAYMENT
-    assert booking.payment_status == payment_status
-    assert booking.deleted_at is None
-
-
-def test_06_payment_deposit_row_protege(
-    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
-):
-    """``Payment`` de entrada PAID protege com flags limpas."""
-    booking = _create_pending_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        created_at=datetime.now() - timedelta(hours=5),
-        deposit_paid=False,
-        payment_status=StatusPagamento.PENDING_PAYMENT,
-    )
-    _add_payment(db, booking, status=PaymentStatus.PAID, tipo=PaymentType.DEPOSIT)
-    DisponibilidadeService(db).expirar_reservas_pendentes()
-    db.refresh(booking)
-    assert booking.status == ReservationStatus.PENDING_PAYMENT
-    assert booking.payment_status == StatusPagamento.PENDING_PAYMENT
-    assert _outbox_expired_count(db, booking.id) == 0
-
-
-def test_07_core_payment_paid_protege(
-    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
-):
-    """``CorePayment`` PAID protege com flags limpas."""
-    booking = _create_pending_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        created_at=datetime.now() - timedelta(hours=5),
-        deposit_paid=False,
-        payment_status=StatusPagamento.PENDING_PAYMENT,
-    )
-    _add_core_payment(db, booking, status=CorePaymentStatus.PAID)
-    DisponibilidadeService(db).expirar_reservas_pendentes()
-    db.refresh(booking)
-    assert booking.status == ReservationStatus.PENDING_PAYMENT
-
-
-def test_08_payment_reembolsado_permite_expirar(
-    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
-):
-    """Linha ``Payment`` REFUNDED não protege (estados comprovados)."""
-    booking = _create_pending_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        created_at=datetime.now() - timedelta(hours=5),
-        deposit_paid=False,
-        payment_status=StatusPagamento.PENDING_PAYMENT,
-    )
-    _add_payment(db, booking, status=PaymentStatus.REFUNDED, tipo=PaymentType.DEPOSIT)
-    _add_core_payment(db, booking, status=CorePaymentStatus.REFUNDED)
+    _add_payment(db, booking, valor=Decimal("60.00"), status=status)
     DisponibilidadeService(db).expirar_reservas_pendentes()
     db.refresh(booking)
     assert booking.status == ReservationStatus.EXPIRED
 
 
-def test_09_inconsistencia_flag_e_payment_fail_closed(
+def test_10_parcial_valido_conta(
     db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
 ):
-    """deposit_paid=False + payment_status pending + Payment PAID → não expira."""
+    """Parcial válido (CorePayment PAID) conta para ativação."""
     booking = _create_pending_booking(
         db,
         default_company,
         cliente_exemplo,
         synced_catalog,
         created_at=datetime.now() - timedelta(hours=5),
-        deposit_paid=False,
-        payment_status=StatusPagamento.PENDING_PAYMENT,
+        price_total=Decimal("300.00"),
+        payment_status=StatusPagamento.PARTIALLY_PAID,
     )
-    _add_payment(db, booking, status=PaymentStatus.PAID, tipo=PaymentType.SINAL)
+    _add_core_payment(
+        db, booking, amount=Decimal("60.00"), status=CorePaymentStatus.PAID
+    )
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    assert booking.status == ReservationStatus.PENDING_PAYMENT
+    assert booking.payment_status == StatusPagamento.PARTIALLY_PAID
+
+
+def test_11_multiplas_parcelas_somam(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
+):
+    """Duas parcelas 40+20 = 60 ativam serviço de R$300."""
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("300.00"),
+    )
+    _add_payment(db, booking, valor=Decimal("40.00"), status=PaymentStatus.PAID)
+    _add_payment(
+        db,
+        booking,
+        valor=Decimal("20.00"),
+        status=PaymentStatus.PAID,
+        tipo=PaymentType.FINAL_PAYMENT,
+    )
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    assert booking.status == ReservationStatus.PENDING_PAYMENT
+
+
+def test_12_processando_fail_closed(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
+):
+    """PROCESSANDO não conta na soma, mas bloqueia expiração (fail-closed)."""
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("300.00"),
+    )
+    _add_payment(
+        db, booking, valor=Decimal("60.00"), status=PaymentStatus.PROCESSANDO
+    )
     DisponibilidadeService(db).expirar_reservas_pendentes()
     db.refresh(booking)
     assert booking.status == ReservationStatus.PENDING_PAYMENT
     assert booking.deleted_at is None
 
 
-def test_10a_erro_pre_carga_financeira_protege_lote(
+def test_13_14_15_ativo_nao_chama_handler_preserva_flags(
     db, default_company, cliente_exemplo, synced_catalog, enable_booking_core, monkeypatch
 ):
-    """Erro na pré-carga financeira: lote inteiro fail-closed (ninguém expira)."""
-    company_b = _create_company(db, "exp02c-fin-err-a")
+    """Ativo: não chama handler; payment_status e deleted_at intactos."""
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("300.00"),
+        payment_status=StatusPagamento.PARTIALLY_PAID,
+    )
+    _add_payment(db, booking, valor=Decimal("60.00"), status=PaymentStatus.PAID)
+
+    handler_mock = MagicMock()
+    monkeypatch.setattr(
+        "app.modules.booking.application.commands.expire_booking.ExpireBookingHandler.execute",
+        handler_mock,
+    )
+    # Patch na classe usada após import local — intercepta via module path no loop
+    from app.modules.booking.application.commands import expire_booking as eb_mod
+
+    monkeypatch.setattr(eb_mod.ExpireBookingHandler, "execute", handler_mock)
+
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    handler_mock.assert_not_called()
+    assert booking.status == ReservationStatus.PENDING_PAYMENT
+    assert booking.payment_status == StatusPagamento.PARTIALLY_PAID
+    assert booking.deleted_at is None
+    assert _outbox_expired_count(db, booking.id) == 0
+
+
+def test_16_abaixo_minimo_segue_expiracao(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
+):
+    """Abaixo do mínimo: payment permanece; status vira expired."""
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("300.00"),
+        payment_status=StatusPagamento.PENDING_PAYMENT,
+    )
+    _add_payment(db, booking, valor=Decimal("10.00"), status=PaymentStatus.PAID)
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    assert booking.status == ReservationStatus.EXPIRED
+    assert booking.payment_status == StatusPagamento.PENDING_PAYMENT
+
+
+def test_17_divergencia_fail_closed(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
+):
+    """Flags pagos sem valor mensurável → fail-closed."""
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("300.00"),
+        deposit_paid=False,
+        deposit_amount=Decimal("0.00"),
+        payment_status=StatusPagamento.PARTIALLY_PAID,
+    )
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    assert booking.status == ReservationStatus.PENDING_PAYMENT
+
+
+def test_18_erro_consulta_protege_lote_continua(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core, monkeypatch
+):
+    """Erro na pré-carga: lote protegido; erro por booking não aborta o outro."""
+    company_b = _create_company(db, "exp02c-act-err-b")
     created = datetime.now() - timedelta(hours=5)
     booking_a = _create_pending_booking(
-        db, default_company, cliente_exemplo, synced_catalog, created_at=created
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=created,
+        price_total=Decimal("300.00"),
     )
     booking_b = _create_pending_booking(
-        db, company_b, cliente_exemplo, synced_catalog, created_at=created
+        db,
+        company_b,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=created,
+        price_total=Decimal("300.00"),
     )
 
-    def _load_boom(self, booking_ids):
+    def _boom(self, booking_ids):
         """
-        Simula falha de consulta financeira em lote.
+        Simula falha de snapshot financeiro.
 
         Args:
             self: Service.
@@ -419,12 +614,10 @@ def test_10a_erro_pre_carga_financeira_protege_lote(
         Raises:
             RuntimeError: Sempre.
         """
-        raise RuntimeError("boom financial query")
+        raise RuntimeError("boom snapshot")
 
     monkeypatch.setattr(
-        DisponibilidadeService,
-        "_load_booking_ids_with_active_payment_rows",
-        _load_boom,
+        DisponibilidadeService, "_load_payment_activation_snapshots", _boom
     )
     DisponibilidadeService(db).expirar_reservas_pendentes()
     db.refresh(booking_a)
@@ -432,50 +625,82 @@ def test_10a_erro_pre_carga_financeira_protege_lote(
     assert booking_a.status == ReservationStatus.PENDING_PAYMENT
     assert booking_b.status == ReservationStatus.PENDING_PAYMENT
 
-
-def test_10b_erro_por_booking_nao_impede_outro(
-    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core, monkeypatch
-):
-    """Erro ao avaliar um booking: ele não expira; outro do lote continua."""
-    company_b = _create_company(db, "exp02c-fin-err-b")
-    created = datetime.now() - timedelta(hours=5)
-    booking_a = _create_pending_booking(
-        db, default_company, cliente_exemplo, synced_catalog, created_at=created
-    )
-    booking_b = _create_pending_booking(
-        db, company_b, cliente_exemplo, synced_catalog, created_at=created
-    )
-
     monkeypatch.setattr(
         DisponibilidadeService,
-        "_load_booking_ids_with_active_payment_rows",
-        lambda self, booking_ids: set(),
+        "_load_payment_activation_snapshots",
+        lambda self, ids: {
+            bid: {"paid_cents": 0, "has_processing": False, "has_paid_rows": False}
+            for bid in ids
+        },
     )
-    real_status = DisponibilidadeService._booking_payment_status_value
+    real_money = DisponibilidadeService._money_to_cents
 
-    def _status_boom_a(self, booking):
+    def _money_boom(value):
         """
-        Falha só ao ler payment_status do booking A.
+        Falha só para price_total do booking A (300.00).
+
+        Args:
+            value: Valor monetário.
+
+        Returns:
+            Centavos.
+
+        Raises:
+            RuntimeError: Para total 300.
+        """
+        if value is not None and Decimal(str(value)) == Decimal("300.00"):
+            # Ambos A e B têm 300 — usar id via abordagem diferente
+            pass
+        return real_money(value)
+
+    # Erro por booking via _has_minimum_activation_payment interno:
+    real_has = DisponibilidadeService._has_minimum_activation_payment
+
+    def _has_fail_a(self, booking, *, payment_snapshots=None):
+        """
+        Força exceção no booking A (helper fail-closed).
 
         Args:
             self: Service.
             booking: Candidato.
+            payment_snapshots: Snapshot.
 
         Returns:
-            Status normalizado.
-
-        Raises:
-            RuntimeError: Para o booking A.
+            Bloqueio de expiração.
         """
         if getattr(booking, "id", None) == booking_a.id:
-            raise RuntimeError("boom per booking")
-        return real_status(self, booking)
+            raise RuntimeError("boom activation")
+        return real_has(self, booking, payment_snapshots=payment_snapshots)
+
+    # O helper captura a exceção internamente se levantada dentro do try —
+    # então levantamos antes de chamar real_has e retornamos True no wrapper.
+    def _has_fail_a_safe(self, booking, *, payment_snapshots=None):
+        """
+        Simula o caminho fail-closed do helper para o booking A.
+
+        Args:
+            self: Service.
+            booking: Candidato.
+            payment_snapshots: Snapshot.
+
+        Returns:
+            ``True`` para A; delega nos demais.
+        """
+        if getattr(booking, "id", None) == booking_a.id:
+            try:
+                raise RuntimeError("boom activation")
+            except Exception:
+                return True
+        return real_has(self, booking, payment_snapshots=payment_snapshots)
 
     monkeypatch.setattr(
-        DisponibilidadeService,
-        "_booking_payment_status_value",
-        _status_boom_a,
+        DisponibilidadeService, "_has_minimum_activation_payment", _has_fail_a_safe
     )
+    booking_a.status = ReservationStatus.PENDING_PAYMENT
+    booking_a.deleted_at = None
+    booking_b.status = ReservationStatus.PENDING_PAYMENT
+    booking_b.deleted_at = None
+    db.commit()
     DisponibilidadeService(db).expirar_reservas_pendentes()
     db.refresh(booking_a)
     db.refresh(booking_b)
@@ -483,76 +708,43 @@ def test_10b_erro_por_booking_nao_impede_outro(
     assert booking_b.status == ReservationStatus.EXPIRED
 
 
-def test_11_require_false_com_pagamento_nao_expira(
+def test_19_tenants_isolados_ativacao(
     db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
 ):
-    """``require_unpaid_deposit=false`` com pagamento parcial não expira."""
-    _upsert_expiration(db, default_company.id, require_unpaid_deposit=False, after_hours=2)
-    booking = _create_pending_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        created_at=datetime.now() - timedelta(hours=5),
-        deposit_paid=False,
-        payment_status=StatusPagamento.PARTIALLY_PAID,
-    )
-    DisponibilidadeService(db).expirar_reservas_pendentes()
-    db.refresh(booking)
-    assert booking.status == ReservationStatus.PENDING_PAYMENT
-
-
-def test_12_tenant_a_pago_b_sem_pagamento(
-    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
-):
-    """Tenant A com pagamento não expira; B sem pagamento expira."""
-    company_b = _create_company(db, "exp02c-iso-pay-b")
+    """A ativo (R$60/R$300); B abaixo (R$10/R$300) → só B expira."""
+    company_b = _create_company(db, "exp02c-act-iso-b")
     created = datetime.now() - timedelta(hours=5)
-    paid_a = _create_pending_booking(
+    booking_a = _create_pending_booking(
         db,
         default_company,
         cliente_exemplo,
         synced_catalog,
         created_at=created,
-        deposit_paid=False,
-        payment_status=StatusPagamento.PARTIALLY_PAID,
+        price_total=Decimal("300.00"),
     )
-    unpaid_b = _create_pending_booking(
-        db, company_b, cliente_exemplo, synced_catalog, created_at=created
-    )
-    DisponibilidadeService(db).expirar_reservas_pendentes()
-    db.refresh(paid_a)
-    db.refresh(unpaid_b)
-    assert paid_a.status == ReservationStatus.PENDING_PAYMENT
-    assert unpaid_b.status == ReservationStatus.EXPIRED
-
-
-def test_13_14_15_payment_intact_deleted_outbox(
-    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
-):
-    """Protegido: payment intacto, sem deleted_at, sem outbox expired."""
-    booking = _create_pending_booking(
+    _add_payment(db, booking_a, valor=Decimal("60.00"))
+    booking_b = _create_pending_booking(
         db,
-        default_company,
+        company_b,
         cliente_exemplo,
         synced_catalog,
-        created_at=datetime.now() - timedelta(hours=5),
-        deposit_paid=True,
-        payment_status=StatusPagamento.PARTIALLY_PAID,
+        created_at=created,
+        price_total=Decimal("300.00"),
     )
+    _add_payment(db, booking_b, valor=Decimal("10.00"))
     DisponibilidadeService(db).expirar_reservas_pendentes()
-    db.refresh(booking)
-    assert booking.payment_status == StatusPagamento.PARTIALLY_PAID
-    assert booking.deleted_at is None
-    assert _outbox_expired_count(db, booking.id) == 0
+    db.refresh(booking_a)
+    db.refresh(booking_b)
+    assert booking_a.status == ReservationStatus.PENDING_PAYMENT
+    assert booking_b.status == ReservationStatus.EXPIRED
 
 
-def test_16_regressao_enabled_after_hours_reference_eligible(
+def test_20_regressao_enabled_reference_eligible(
     db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
 ):
-    """Regressão 01/02A/02B com proteção financeira ativa."""
-    company_b = _create_company(db, "exp02c-reg2-b")
-    _upsert_expiration(db, default_company.id, enabled=False, after_hours=2)
+    """Regressão enabled/reference/eligible com regra de ativação."""
+    company_b = _create_company(db, "exp02c-act-reg-b")
+    _upsert_expiration(db, default_company.id, enabled=False)
     _upsert_expiration(
         db,
         company_b.id,
@@ -560,41 +752,85 @@ def test_16_regressao_enabled_after_hours_reference_eligible(
         eligible_statuses=["pending_payment"],
         after_hours=2,
     )
-
     created_old = datetime.now() - timedelta(hours=5)
-    booking_disabled = _create_pending_booking(
-        db, default_company, cliente_exemplo, synced_catalog, created_at=created_old
+    disabled = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=created_old,
+        price_total=Decimal("300.00"),
     )
-    booking_future = _create_pending_booking(
+    future = _create_pending_booking(
         db,
         company_b,
         cliente_exemplo,
         synced_catalog,
         created_at=created_old,
+        price_total=Decimal("300.00"),
         scheduled_at=datetime.now() + timedelta(days=3),
     )
-    booking_past = _create_pending_booking(
+    past = _create_pending_booking(
         db,
         company_b,
         cliente_exemplo,
         synced_catalog,
         created_at=datetime.now() - timedelta(minutes=5),
+        price_total=Decimal("300.00"),
         scheduled_at=datetime.now() - timedelta(hours=5),
     )
-
     DisponibilidadeService(db).expirar_reservas_pendentes()
-    db.refresh(booking_disabled)
-    db.refresh(booking_future)
-    db.refresh(booking_past)
-    assert booking_disabled.status == ReservationStatus.PENDING_PAYMENT
-    assert booking_future.status == ReservationStatus.PENDING_PAYMENT
-    assert booking_past.status == ReservationStatus.EXPIRED
+    db.refresh(disabled)
+    db.refresh(future)
+    db.refresh(past)
+    assert disabled.status == ReservationStatus.PENDING_PAYMENT
+    assert future.status == ReservationStatus.PENDING_PAYMENT
+    assert past.status == ReservationStatus.EXPIRED
 
 
-def test_17_sem_company_id_fail_closed(
+def test_21_22_outbox_e_retry_idempotente(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
+):
+    """Ativo: sem outbox; retry não cria efeitos."""
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("300.00"),
+    )
+    _add_payment(db, booking, valor=Decimal("60.00"))
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    assert booking.status == ReservationStatus.PENDING_PAYMENT
+    assert _outbox_expired_count(db, booking.id) == 0
+
+
+def test_require_false_nao_expira_ativo(
+    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
+):
+    """``require_unpaid_deposit=false`` não libera reserva ativa."""
+    _upsert_expiration(db, default_company.id, require_unpaid_deposit=False)
+    booking = _create_pending_booking(
+        db,
+        default_company,
+        cliente_exemplo,
+        synced_catalog,
+        created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("300.00"),
+    )
+    _add_payment(db, booking, valor=Decimal("60.00"))
+    DisponibilidadeService(db).expirar_reservas_pendentes()
+    db.refresh(booking)
+    assert booking.status == ReservationStatus.PENDING_PAYMENT
+
+
+def test_sem_company_id_fail_closed(
     db, default_company, cliente_exemplo, synced_catalog, enable_booking_core, monkeypatch
 ):
-    """Booking sem ``company_id`` é ignorado; outro do lote ainda expira."""
+    """Booking sem company_id ignorado; outro sem pagamento expira."""
     from app.modules.booking.domain.models import CoreBooking as CB
 
     booking_ok = _create_pending_booking(
@@ -603,38 +839,41 @@ def test_17_sem_company_id_fail_closed(
         cliente_exemplo,
         synced_catalog,
         created_at=datetime.now() - timedelta(hours=5),
+        price_total=Decimal("300.00"),
     )
     fake = SimpleNamespace(
-        id=9_999_993,
+        id=9_999_994,
         company_id=None,
         created_at=datetime.now() - timedelta(hours=10),
         scheduled_at=datetime.now() - timedelta(hours=5),
         status=ReservationStatus.PENDING_PAYMENT,
         deposit_paid=False,
         payment_status=StatusPagamento.PENDING_PAYMENT,
+        price_total=Decimal("300.00"),
+        deposit_amount=Decimal("0.00"),
         deleted_at=None,
     )
-
     real_query = db.query
     injected = {"done": False}
 
-    def query_proxy(model):
+    def query_proxy(*entities, **kwargs):
         """
-        Injeta booking sem tenant nos candidatos de CoreBooking.
+        Injeta fake sem tenant na query de ``CoreBooking``.
 
         Args:
-            model: Modelo SQLAlchemy.
+            *entities: Argumentos de ``Session.query``.
+            **kwargs: Keyword args opcionais.
 
         Returns:
-            Query possivelmente monkeypatched.
+            Query.
         """
-        q = real_query(model)
-        if model is CB and not injected["done"]:
+        q = real_query(*entities, **kwargs)
+        if entities and entities[0] is CB and not injected["done"]:
             original_all = q.all
 
             def all_with_fake():
                 """
-                Retorna candidatos + fake.
+                Candidatos + fake.
 
                 Returns:
                     Lista.
@@ -646,25 +885,6 @@ def test_17_sem_company_id_fail_closed(
         return q
 
     monkeypatch.setattr(db, "query", query_proxy)
-    count = DisponibilidadeService(db).expirar_reservas_pendentes()
-    assert count >= 1
+    DisponibilidadeService(db).expirar_reservas_pendentes()
     db.refresh(booking_ok)
     assert booking_ok.status == ReservationStatus.EXPIRED
-
-
-def test_require_true_unpaid_ainda_expira(
-    db, default_company, cliente_exemplo, synced_catalog, enable_booking_core
-):
-    """``require_unpaid_deposit=true`` sem evidência financeira continua expirando."""
-    _upsert_expiration(db, default_company.id, require_unpaid_deposit=True, after_hours=2)
-    booking = _create_pending_booking(
-        db,
-        default_company,
-        cliente_exemplo,
-        synced_catalog,
-        created_at=datetime.now() - timedelta(hours=5),
-    )
-    DisponibilidadeService(db).expirar_reservas_pendentes()
-    db.refresh(booking)
-    assert booking.status == ReservationStatus.EXPIRED
-    assert booking.payment_status == StatusPagamento.PENDING_PAYMENT

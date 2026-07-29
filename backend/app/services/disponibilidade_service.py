@@ -4,7 +4,8 @@ Lógica de negócio para cálculo de horários disponíveis.
 """
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, date
-from typing import Dict, List, Optional, Set, FrozenSet
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Dict, List, Optional, Set, FrozenSet, Any
 
 from app.models.agendamento import ReservationStatus, StatusPagamento, STATUS_OCUPAM_VAGA
 from app.models.tranca import Tranca
@@ -35,14 +36,20 @@ _EXPIRATION_SAFE_STATUS_VALUES: FrozenSet[str] = frozenset(
     s.value for s in _EXPIRATION_SAFE_ORM_STATUSES
 )
 
-# payment_status do booking que evidenciam dinheiro recebido (FIX-EXPIRATION-02C).
-_PROTECTED_BOOKING_PAYMENT_STATUS_VALUES: FrozenSet[str] = frozenset(
+# payment_status que sugerem dinheiro recebido — usados só para detectar
+# divergência (flags sem valor pago mensurável) → fail-closed.
+_FLAG_PAID_PAYMENT_STATUS_VALUES: FrozenSet[str] = frozenset(
     {
         StatusPagamento.PARTIALLY_PAID.value,
         StatusPagamento.CONFIRMED.value,
         StatusPagamento.PAID.value,
     }
 )
+
+# Teto de ativação: R$ 100,00 = 10000 centavos (FIX-EXPIRATION-02C).
+_ACTIVATION_CAP_CENTS = 10_000
+# Percentual mínimo sobre o total do serviço.
+_ACTIVATION_PERCENT = 20
 
 
 class DisponibilidadeService:
@@ -160,127 +167,277 @@ class DisponibilidadeService:
             return str(status.value)
         return str(status)
 
-    def _load_booking_ids_with_active_payment_rows(
-        self, booking_ids: List[int]
-    ) -> Set[int]:
+    @staticmethod
+    def _money_to_cents(value) -> Optional[int]:
         """
-        Identifica bookings com linha financeira ativa em ``payments`` ou
-        ``core_payments`` (FIX-EXPIRATION-02C).
-
-        Considera ativo apenas status comprovadamente recebidos
-        (``paid``/``pago``/``processando`` em ``Payment``; ``paid`` em
-        ``CorePayment``). Ignora pending/failed/refunded/cancelado e
-        soft-deleted. Em erro de consulta, propaga a exceção para o
-        chamador aplicar fail-closed.
+        Converte valor monetário decimal/string para centavos inteiros.
 
         Args:
-            booking_ids: IDs de ``core_bookings`` a inspecionar.
+            value: Valor em reais (``Decimal``, ``int``, ``float`` ou str).
 
         Returns:
-            Conjunto de ``booking_id`` com evidência financeira ativa.
+            Centavos >= 0, ou ``None`` se ausente/inválido/negativo.
+        """
+        if value is None:
+            return None
+        try:
+            amount = Decimal(str(value))
+        except Exception:
+            return None
+        if amount < 0:
+            return None
+        cents = (amount * Decimal("100")).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP
+        )
+        return int(cents)
+
+    @staticmethod
+    def _get_minimum_activation_cents(total_service_cents: int) -> int:
+        """
+        Calcula o mínimo de ativação da reserva em centavos.
+
+        Fórmula (inteiros, sem ponto flutuante)::
+
+            min(ceil(total_service_cents * 20 / 100), 10000)
+
+        Args:
+            total_service_cents: Valor total do serviço em centavos (> 0).
+
+        Returns:
+            Mínimo de ativação em centavos.
 
         Raises:
-            Exception: Qualquer falha de consulta ao banco.
+            ValueError: Se ``total_service_cents`` não for positivo.
+        """
+        if not isinstance(total_service_cents, int) or total_service_cents <= 0:
+            raise ValueError("total_service_cents deve ser int positivo")
+        twenty_pct = (total_service_cents * _ACTIVATION_PERCENT + 99) // 100
+        return min(twenty_pct, _ACTIVATION_CAP_CENTS)
+
+    def _load_payment_activation_snapshots(
+        self, booking_ids: List[int]
+    ) -> Dict[int, Dict[str, Any]]:
+        """
+        Pré-carrega somas pagas e flags de processamento por booking.
+
+        Conta para ativação apenas ``Payment`` com status ``paid``/``pago`` e
+        ``CorePayment`` com status ``paid`` (não soft-deleted). Usa
+        ``max(soma_payments, soma_core_payments)`` para evitar dupla contagem
+        Strangler Fig. ``processando`` não entra na soma, mas marca
+        ``has_processing`` (fail-closed na expiração).
+
+        Args:
+            booking_ids: IDs de ``core_bookings``.
+
+        Returns:
+            Mapa ``booking_id → {paid_cents, has_processing, has_paid_rows}``.
+
+        Raises:
+            Exception: Falha de consulta (caller aplica fail-closed).
         """
         from app.models.payment import Payment, PaymentStatus
         from app.modules.payments.models import CorePayment, CorePaymentStatus
 
+        snapshots: Dict[int, Dict[str, Any]] = {
+            int(bid): {
+                "paid_cents_payments": 0,
+                "paid_cents_core": 0,
+                "has_processing": False,
+                "has_paid_rows": False,
+            }
+            for bid in booking_ids
+        }
         if not booking_ids:
-            return set()
-
-        active_payment_statuses = (
-            PaymentStatus.PAID,
-            PaymentStatus.PAGO,
-            # Fail-closed: processamento em andamento é evidência ambígua.
-            PaymentStatus.PROCESSANDO,
-        )
-        protected: Set[int] = set()
+            return {}
 
         payment_rows = (
-            self.db.query(Payment.booking_id)
+            self.db.query(Payment)
             .filter(
                 Payment.booking_id.in_(booking_ids),
                 Payment.deleted_at.is_(None),
-                Payment.status.in_(active_payment_statuses),
             )
-            .distinct()
             .all()
         )
-        for (booking_id,) in payment_rows:
-            if booking_id is not None:
-                protected.add(int(booking_id))
+        for row in payment_rows:
+            booking_id = row.booking_id
+            if booking_id is None:
+                continue
+            bid = int(booking_id)
+            snap = snapshots.setdefault(
+                bid,
+                {
+                    "paid_cents_payments": 0,
+                    "paid_cents_core": 0,
+                    "has_processing": False,
+                    "has_paid_rows": False,
+                },
+            )
+            status = row.status
+            status_val = status.value if hasattr(status, "value") else str(status)
+            if status_val == PaymentStatus.PROCESSANDO.value:
+                snap["has_processing"] = True
+                continue
+            if status_val not in (
+                PaymentStatus.PAID.value,
+                PaymentStatus.PAGO.value,
+            ):
+                continue
+            cents = self._money_to_cents(row.valor)
+            if cents is None:
+                continue
+            snap["paid_cents_payments"] += cents
+            snap["has_paid_rows"] = True
 
         core_rows = (
-            self.db.query(CorePayment.booking_id)
+            self.db.query(CorePayment)
             .filter(
                 CorePayment.booking_id.in_(booking_ids),
                 CorePayment.deleted_at.is_(None),
-                CorePayment.status == CorePaymentStatus.PAID,
             )
-            .distinct()
             .all()
         )
-        for (booking_id,) in core_rows:
-            if booking_id is not None:
-                protected.add(int(booking_id))
+        for row in core_rows:
+            booking_id = row.booking_id
+            if booking_id is None:
+                continue
+            bid = int(booking_id)
+            snap = snapshots.setdefault(
+                bid,
+                {
+                    "paid_cents_payments": 0,
+                    "paid_cents_core": 0,
+                    "has_processing": False,
+                    "has_paid_rows": False,
+                },
+            )
+            status = row.status
+            status_val = status.value if hasattr(status, "value") else str(status)
+            if status_val != CorePaymentStatus.PAID.value:
+                continue
+            cents = self._money_to_cents(row.amount)
+            if cents is None:
+                continue
+            snap["paid_cents_core"] += cents
+            snap["has_paid_rows"] = True
 
-        return protected
+        result: Dict[int, Dict[str, Any]] = {}
+        for bid, snap in snapshots.items():
+            paid = max(int(snap["paid_cents_payments"]), int(snap["paid_cents_core"]))
+            result[bid] = {
+                "paid_cents": paid,
+                "has_processing": bool(snap["has_processing"]),
+                "has_paid_rows": bool(snap["has_paid_rows"]),
+            }
+        return result
 
-    def _has_any_protected_payment(
+    def _has_minimum_activation_payment(
         self,
         booking,
         *,
-        payment_row_protected_ids: Optional[Set[int]] = None,
+        payment_snapshots: Optional[Dict[int, Dict[str, Any]]] = None,
     ) -> bool:
         """
-        Indica se o booking possui qualquer evidência de pagamento que
-        bloqueia expiração automática (FIX-EXPIRATION-02C).
+        Indica se a reserva está ativa pelo mínimo financeiro e não deve
+        expirar automaticamente (FIX-EXPIRATION-02C).
 
-        Fontes (fail-closed):
-        - ``deposit_paid=True``;
-        - ``payment_status`` em partially_paid/confirmed/paid;
-        - linha ativa em ``payments`` / ``core_payments`` (quando o
-          conjunto pré-carregado estiver disponível, ou via consulta).
-
-        Não altera dados financeiros. Erro de consulta → protegido.
+        Reserva ativa quando ``paid_cents >= min(ceil(total*20%), 10000)``.
+        Pagamento abaixo do mínimo **não** ativa (pode expirar).
+        ``processando``, total inválido, divergência flag/valor ou erro →
+        fail-closed (não expira). Não altera dados financeiros.
 
         Args:
             booking: Candidato à expiração.
-            payment_row_protected_ids: IDs com linhas ativas pré-carregadas
-                neste lote. Se ``None``, consulta sob demanda.
+            payment_snapshots: Snapshot financeiro pré-carregado do lote.
 
         Returns:
-            ``True`` se a reserva deve ser preservada (não expirar).
+            ``True`` se a expiração deve ser bloqueada (ativa ou fail-closed).
         """
         company_id = getattr(booking, "company_id", None)
         booking_id = getattr(booking, "id", None)
 
         try:
-            if bool(getattr(booking, "deposit_paid", False)):
-                return True
-
-            pay_status = self._booking_payment_status_value(booking)
-            if pay_status in _PROTECTED_BOOKING_PAYMENT_STATUS_VALUES:
-                return True
-
             if booking_id is None:
-                # Sem id: não dá para cruzar financeiro com segurança.
                 logger.warning(
-                    "Expiração: booking sem id — tratado como protegido "
-                    "(fail-closed) company_id=%s",
+                    "Expiração: booking sem id — fail-closed company_id=%s",
                     company_id,
                 )
                 return True
 
-            if payment_row_protected_ids is not None:
-                return int(booking_id) in payment_row_protected_ids
+            total_cents = self._money_to_cents(getattr(booking, "price_total", None))
+            if total_cents is None or total_cents <= 0:
+                logger.warning(
+                    "Expiração: booking_id=%s company_id=%s sem price_total "
+                    "válido — fail-closed",
+                    booking_id,
+                    company_id,
+                )
+                return True
 
-            return int(booking_id) in self._load_booking_ids_with_active_payment_rows(
-                [int(booking_id)]
+            if payment_snapshots is None:
+                payment_snapshots = self._load_payment_activation_snapshots(
+                    [int(booking_id)]
+                )
+            snap = payment_snapshots.get(
+                int(booking_id),
+                {"paid_cents": 0, "has_processing": False, "has_paid_rows": False},
             )
+            paid_cents = int(snap.get("paid_cents") or 0)
+
+            # deposit_paid + deposit_amount como fallback de valor pago no booking.
+            if bool(getattr(booking, "deposit_paid", False)):
+                deposit_cents = self._money_to_cents(
+                    getattr(booking, "deposit_amount", None)
+                )
+                if deposit_cents is not None:
+                    paid_cents = max(paid_cents, deposit_cents)
+
+            if snap.get("has_processing"):
+                logger.info(
+                    "Expiração: booking_id=%s company_id=%s com pagamento "
+                    "processando — fail-closed (não conta na ativação)",
+                    booking_id,
+                    company_id,
+                )
+                return True
+
+            pay_status = self._booking_payment_status_value(booking)
+            flags_suggest_paid = bool(getattr(booking, "deposit_paid", False)) or (
+                pay_status in _FLAG_PAID_PAYMENT_STATUS_VALUES
+            )
+            if flags_suggest_paid and paid_cents <= 0:
+                logger.warning(
+                    "Expiração: booking_id=%s company_id=%s divergência "
+                    "financeira (flags pagos sem valor) — fail-closed",
+                    booking_id,
+                    company_id,
+                )
+                return True
+
+            minimum = self._get_minimum_activation_cents(total_cents)
+            if paid_cents >= minimum:
+                logger.info(
+                    "Expiração: booking_id=%s company_id=%s ativo "
+                    "(paid_cents=%s >= minimum=%s) — não expira",
+                    booking_id,
+                    company_id,
+                    paid_cents,
+                    minimum,
+                )
+                return True
+
+            if paid_cents > 0:
+                logger.info(
+                    "Expiração: booking_id=%s company_id=%s pagamento abaixo "
+                    "do mínimo (paid_cents=%s < minimum=%s) — pode expirar",
+                    booking_id,
+                    company_id,
+                    paid_cents,
+                    minimum,
+                )
+            return False
         except Exception:
             logger.warning(
-                "Falha ao avaliar evidência financeira booking_id=%s "
+                "Falha ao avaliar ativação financeira booking_id=%s "
                 "company_id=%s — expiração ignorada (fail-closed)",
                 booking_id,
                 company_id,
@@ -290,25 +447,24 @@ class DisponibilidadeService:
 
     def _expirar_core_bookings_pendentes(self) -> int:
         """
-        Expira ``CoreBooking`` elegível sem evidência de pagamento
+        Expira ``CoreBooking`` elegível sem ativação financeira mínima
         (FIX-EXPIRATION-02A/02B/02C).
 
         Candidatos SQL: status PENDING-like seguros, não soft-deleted.
         Por tenant: ``enabled``, ``after_hours``, ``reference``,
-        ``eligible_statuses``. Antes do handler, aplica proteção financeira
-        via ``_has_any_protected_payment`` (deposit_paid, payment_status,
-        Payment/CorePayment).
+        ``eligible_statuses``. Antes do handler, bloqueia reservas ativas
+        via ``_has_minimum_activation_payment``
+        (``min(ceil(total*20%), R$100)``).
 
         Comparação exclusiva: ``reference_ts < now - after_hours``.
 
-        FIX-EXPIRATION-02C: ``require_unpaid_deposit=false`` é lido, mas
-        **não** amplia elegibilidade — qualquer evidência de pagamento
-        bloqueia até existir ``FIX-RESCHEDULE-*``. ``touch_payment_status``
-        permanece sem efeito. ``payment_status`` é lido só para proteção;
-        nunca alterado aqui.
+        FIX-EXPIRATION-02C: ``require_unpaid_deposit=false`` não amplia
+        elegibilidade de reservas ativas. Pagamento abaixo do mínimo não
+        ativa e pode expirar. ``touch_payment_status`` sem efeito;
+        ``payment_status`` nunca é alterado aqui.
 
-        Falhas isoladas (resolve, booking sem tenant, handler, financeiro)
-        não interrompem o lote — best-effort com log.
+        Falhas isoladas (resolve, tenant, handler, financeiro) não
+        interrompem o lote — best-effort com log.
 
         Returns:
             Quantidade de bookings core expirados neste ciclo.
@@ -321,8 +477,7 @@ class DisponibilidadeService:
         from app.modules.booking.domain.policy.resolver import BookingPolicyResolver
 
         # Pré-filtro: só status com caminho seguro até ExpireBookingHandler.
-        # Proteção financeira (deposit/payment_status/Payment/CorePayment)
-        # é aplicada por booking antes do handler — fail-closed.
+        # Ativação financeira (mínimo 20%/R$100) é aplicada antes do handler.
         pendentes = (
             self.db.query(CoreBooking)
             .filter(
@@ -336,17 +491,22 @@ class DisponibilidadeService:
             int(b.id) for b in pendentes if getattr(b, "id", None) is not None
         ]
         try:
-            payment_row_protected_ids = self._load_booking_ids_with_active_payment_rows(
-                booking_ids
-            )
+            payment_snapshots = self._load_payment_activation_snapshots(booking_ids)
         except Exception:
             logger.warning(
-                "Falha ao pré-carregar evidências financeiras do lote de "
+                "Falha ao pré-carregar snapshots financeiros do lote de "
                 "expiração — todos os candidatos tratados como protegidos "
                 "(fail-closed)",
                 exc_info=True,
             )
-            payment_row_protected_ids = set(booking_ids)
+            payment_snapshots = {
+                bid: {
+                    "paid_cents": 0,
+                    "has_processing": True,
+                    "has_paid_rows": False,
+                }
+                for bid in booking_ids
+            }
 
         handler = ExpireBookingHandler(self.db)
         resolver = BookingPolicyResolver(self.db)
@@ -391,14 +551,13 @@ class DisponibilidadeService:
                     continue
 
                 # FIX-EXPIRATION-02C — require_unpaid_deposit=false NÃO amplia
-                # elegibilidade até FIX-RESCHEDULE-*. Qualquer evidência de
-                # pagamento continua bloqueando a expiração.
+                # elegibilidade; reserva ativa (mínimo atingido) nunca expira.
                 if expiration.require_unpaid_deposit is False:
                     pass
 
-                if self._has_any_protected_payment(
+                if self._has_minimum_activation_payment(
                     booking,
-                    payment_row_protected_ids=payment_row_protected_ids,
+                    payment_snapshots=payment_snapshots,
                 ):
                     continue
 
