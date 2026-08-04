@@ -25,6 +25,7 @@ Esta operação é **exclusivamente read-only**. Não autoriza backfill.
 | staging (read-only) | Sim, com checklist completo |
 | produção | Não |
 | SQLite local (`trancapro.db`) | Não — não é staging |
+| MySQL Docker local (dados sintéticos) | Ensaio de lógica apenas — ver `docs/operations/LOCAL-MYSQL-LEGACY-EVIDENCE-REHEARSAL.md`. **Não** substitui staging. |
 
 ## Variável de ambiente esperada
 
