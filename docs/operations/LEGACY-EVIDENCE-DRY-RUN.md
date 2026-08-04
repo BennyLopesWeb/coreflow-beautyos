@@ -99,7 +99,69 @@ Se qualquer item falhar, **não executar**.
 - [ ] produção não será consultada nesta etapa;
 - [ ] SQLite local não será usado como substituto.
 
+## Checklist de infraestrutura AWS (teste final)
+
+Para dry-run via **AWS Secrets Manager**, completar **antes** de qualquer
+`get-secret-value` ou consulta ao banco. Não preencher com valores inventados.
+
+- [ ] conta AWS confirmada pelo responsável de infraestrutura (staging CoreFlow);
+- [ ] role de execução confirmada;
+- [ ] região AWS confirmada;
+- [ ] secret ARN/nome confirmado;
+- [ ] secret possui metadado `environment=staging` (ou equivalente acordado);
+- [ ] secret não pertence à produção;
+- [ ] permissão IAM limitada a `secretsmanager:GetSecretValue` (mínimo necessário);
+- [ ] credencial do banco é somente leitura;
+- [ ] database/schema de staging confirmados;
+- [ ] formato do `SecretString` confirmado (A ou B — ver abaixo);
+- [ ] `DATABASE_URL` será injetada somente no processo (sem `export` persistente);
+- [ ] nenhum segredo será gravado em disco;
+- [ ] `--dry-run` será usado;
+- [ ] `--apply` e `--backfill` não serão usados;
+- [ ] identidade `Curso-bedrock` (ou equivalente de curso/treino) **não** será usada.
+
+Plano detalhado: `docs/operations/STAGING-LEGACY-EVIDENCE-FINAL-TEST-PLAN.md`.
+
+## Contrato do secret (placeholders — sem valores reais)
+
+A resolução AWS permanece **externa** ao backend. O script continua dependendo
+apenas de `DATABASE_URL`. Não adicionar SDK AWS à aplicação para esta operação.
+
+Não assumir o formato final sem confirmação da infraestrutura.
+
+### Formato A — SecretString JSON com URL completa
+
+```json
+{
+  "DATABASE_URL": "<staging-read-only-database-url>"
+}
+```
+
+### Formato B — SecretString JSON com campos de conexão
+
+```json
+{
+  "engine": "postgresql",
+  "host": "<staging-db-host>",
+  "port": 5432,
+  "dbname": "<staging-database>",
+  "username": "<readonly-user>",
+  "password": "<secret>"
+}
+```
+
+Regras:
+
+- o secret deve representar **staging**;
+- o usuário SQL deve ter **somente leitura**;
+- o secret não deve conter credenciais de produção;
+- ARN real só deve ser commitado se a política interna permitir (preferir
+  placeholder no git);
+- o valor nunca deve aparecer em logs, PRs ou relatórios.
+
 ## Comando de dry-run
+
+Injeção genérica (canal seguro já resolveu a URL):
 
 ```bash
 cd backend
@@ -112,6 +174,45 @@ python scripts/audit_legacy_evidence_pending.py \
   --dry-run \
   --json-out /tmp/legacy-evidence-audit-staging.json
 ```
+
+### Padrão futuro via AWS Secrets Manager (não executar sem checklist completo)
+
+Se a infra confirmar que `SecretString` **é a URL pura**:
+
+```bash
+cd backend
+
+DATABASE_URL="$(
+  aws secretsmanager get-secret-value \
+    --secret-id "<STAGING_SECRET_ARN>" \
+    --query 'SecretString' \
+    --output text
+)" \
+python scripts/audit_legacy_evidence_pending.py \
+  --dry-run \
+  --json-out /tmp/legacy-evidence-audit-staging.json
+```
+
+Se o secret for JSON (Formato A ou B), extrair `DATABASE_URL` (ou montar a URL)
+com ferramenta/local acordada pela infra, **em memória**, sem gravar em arquivo
+e sem `echo`/`env`/`printenv`/`set -x`. Confirmar o parsing antes do teste final;
+não inventar parser no repositório sem necessidade.
+
+Antes de iniciar o Python, garantir (sem imprimir) que o valor injetado **não**
+é SQLite (`sqlite:`). O default local da aplicação (`sqlite:///./trancapro.db`)
+**não** é staging — ausência de injeção explícita bloqueia o teste real.
+
+Não usar:
+
+```bash
+export DATABASE_URL=...
+echo "$DATABASE_URL"
+env
+printenv
+set -x
+```
+
+Não salvar o resultado de `get-secret-value` em arquivo temporário.
 
 Validação de flags (deve falhar com exit ≠ 0):
 
