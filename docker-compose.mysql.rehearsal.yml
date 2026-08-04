@@ -1,0 +1,14 @@
+# Overlay opcional — ensaio local quando a porta 3306 do host já está em uso
+# (ex.: mysqld nativo). Não altera staging/produção.
+#
+# Uso:
+#   docker compose -f docker-compose.yml \
+#     -f docker-compose.mysql.yml \
+#     -f docker-compose.mysql.rehearsal.yml up -d --build
+#
+# Host: 127.0.0.1:3307 → container mysql:3306
+
+services:
+  mysql:
+    ports: !override
+      - "3307:3306"
